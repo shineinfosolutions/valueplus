@@ -1,0 +1,52 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "valueplus-erp",
+  "main": "worker.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "services": [
+    {
+      "binding": "WORKER_SELF_REFERENCE",
+      "service": "valueplus-erp"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "NEXTAUTH_URL": "https://valuplus.shineinfosolutions.in"
+  },
+  "routes": [
+    { "pattern": "valuplus.shineinfosolutions.in", "custom_domain": true }
+  ],
+  // See AppServer in worker.ts — kept only for the earlier deployment's namespace.
+  "durable_objects": {
+    "bindings": [{ "name": "APP_SERVER", "class_name": "AppServer" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["AppServer"] }],
+  "env": {
+    // Test copy on workers.dev — deploy with `npx opennextjs-cloudflare deploy --env staging`.
+    "staging": {
+      "name": "valueplus-erp-staging",
+      // Never take over the production custom domain.
+      "routes": [],
+      "workers_dev": true,
+      "durable_objects": {
+        "bindings": [{ "name": "APP_SERVER", "class_name": "AppServer" }]
+      },
+      "services": [
+        {
+          "binding": "WORKER_SELF_REFERENCE",
+          "service": "valueplus-erp-staging"
+        }
+      ],
+      "vars": {
+        "NEXTAUTH_URL": "https://valueplus-erp-staging.shineinfosolutions1.workers.dev"
+      }
+    }
+  }
+}

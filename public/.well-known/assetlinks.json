@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "app.vercel.valuplserpsystem.twa",
+        "sha256_cert_fingerprints": ["F3:AE:1E:16:03:C3:D2:62:9E:08:B2:D1:B7:97:C8:DE:B7:2C:72:81:D9:DC:48:4E:CF:A2:5B:5D:31:17:BB:4D"]
+      }
+    }]

@@ -1,0 +1,156 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 210 40% 98%;
+    --foreground: 220 13% 13%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 13% 13%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 13% 13%;
+    --primary: 222 53% 40%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 20% 96%;
+    --secondary-foreground: 220 13% 13%;
+    --muted: 210 20% 96%;
+    --muted-foreground: 220 9% 46%;
+    --accent: 210 20% 96%;
+    --accent-foreground: 220 13% 13%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 222 53% 40%;
+    --radius: 0.85rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-[#F4F7FB] text-[#1A202C] antialiased;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Smooth scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-slate-300 rounded-full border-2 border-transparent bg-clip-padding;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-slate-400 bg-clip-padding;
+  }
+}
+
+@layer utilities {
+  .page-container {
+    @apply flex-1 overflow-auto bg-[#F4F7FB] min-h-screen relative;
+  }
+  
+  .page-header {
+    @apply sticky top-0 z-30 flex flex-wrap items-center justify-between gap-3 px-4 sm:px-6 py-3 sm:py-3.5 bg-white/80 backdrop-blur-xl border-b border-black/[0.04] shadow-[0_1px_2px_rgba(0,0,0,0.02)];
+  }
+
+  .page-content {
+    @apply p-3 sm:p-5 space-y-3 sm:space-y-5;
+  }
+
+  .metric-card {
+    @apply bg-white rounded-[18px] border border-slate-100 p-4 shadow-[0_4px_20px_rgb(0,0,0,0.03)] hover:shadow-[0_12px_40px_rgb(0,0,0,0.08)] hover:-translate-y-1 transition-all duration-300 relative overflow-hidden;
+  }
+
+  .data-table-container {
+    @apply bg-white rounded-[18px] border border-slate-100 shadow-[0_4px_20px_rgb(0,0,0,0.03)] overflow-hidden p-2;
+  }
+
+  .btn-primary {
+    @apply bg-[#30539C] hover:bg-[#25427D] text-white font-semibold rounded-xl px-4 py-2 text-sm transition-all duration-200 shadow-[0_4px_12px_rgba(48,83,156,0.25)] hover:shadow-[0_6px_16px_rgba(48,83,156,0.35)] hover:-translate-y-0.5 active:translate-y-0;
+  }
+
+  .badge-success {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-[#76C043]/10 text-[#5da42f] border border-[#76C043]/20;
+  }
+
+  .badge-warning {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-600 border border-amber-500/20;
+  }
+
+  .badge-danger {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-red-500/10 text-red-600 border border-red-500/20;
+  }
+
+  .badge-info {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-[#30539C]/10 text-[#30539C] border border-[#30539C]/20;
+  }
+
+  .badge-neutral {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200;
+  }
+
+  @keyframes shimmerEffect {
+    0% {
+      background-position: -200% 0;
+    }
+    100% {
+      background-position: 200% 0;
+    }
+  }
+
+  .shimmer-pulse {
+    background: linear-gradient(90deg, #f1f5f9 0%, #e2e8f0 35%, #cbd5e1 50%, #e2e8f0 65%, #f1f5f9 100%);
+    background-size: 200% 100%;
+    animation: shimmerEffect 1.6s infinite ease-in-out;
+  }
+
+  .section-title {
+    @apply text-[17px] font-bold text-foreground tracking-tight;
+  }
+
+  .text-label {
+    @apply text-[11px] font-bold text-slate-400 uppercase tracking-widest;
+  }
+}
+
+@media print {
+  @page {
+    margin: 6mm 8mm;
+    size: A4 portrait;
+  }
+
+  html, body {
+    height: auto !important;
+    min-height: 100% !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .no-print,
+  .print\:hidden,
+  header,
+  aside,
+  nav,
+  button,
+  [data-radix-dialog-close],
+  .fixed.inset-0 {
+    display: none !important;
+  }
+}

@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1B2537"/>
+      <stop offset="50%" stop-color="#30539C"/>
+      <stop offset="100%" stop-color="#162238"/>
+    </linearGradient>
+    <linearGradient id="greenGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#8CE846"/>
+      <stop offset="100%" stop-color="#76C043"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#76C043" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <!-- Background with rounded corners -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)"/>
+  
+  <!-- Subtle border -->
+  <rect x="6" y="6" width="500" height="500" rx="106" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="6"/>
+
+  <!-- Stylized V with dynamic Plus badge -->
+  <g transform="translate(256, 230)">
+    <!-- Letter V -->
+    <path d="M-120 -100 L-45 100 L45 100 L120 -100 L55 -100 L0 50 L-55 -100 Z" fill="#FFFFFF" filter="url(#glow)"/>
+    
+    <!-- Accent Plus Symbol -->
+    <g transform="translate(70, -60)">
+      <rect x="-14" y="-45" width="28" height="90" rx="10" fill="url(#greenGrad)" filter="url(#glow)"/>
+      <rect x="-45" y="-14" width="90" height="28" rx="10" fill="url(#greenGrad)" filter="url(#glow)"/>
+    </g>
+  </g>
+
+  <!-- Text: VALUE PLUS -->
+  <text x="256" y="405" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="52" font-weight="900" letter-spacing="4" fill="#FFFFFF">
+    VALUE<tspan fill="#76C043">PLUS</tspan>
+  </text>
+  
+  <!-- Subtitle Tagline -->
+  <text x="256" y="445" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="20" font-weight="600" letter-spacing="2" fill="#93C5FD">
+    रिश्ता विश्वास का • ERP
+  </text>
+</svg>

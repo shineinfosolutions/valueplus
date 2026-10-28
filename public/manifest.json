@@ -1,0 +1,70 @@
+{
+  "name": "ValuePlus ERP — Ashoka Enterprises",
+  "short_name": "ValuePlus",
+  "description": "Enterprise Resource Planning, POS Billing, Godown Logistics, and Staff Management for Value Plus / Ashoka Enterprises.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#1B2537",
+  "theme_color": "#30539C",
+  "orientation": "portrait-primary",
+  "lang": "en-IN",
+  "dir": "ltr",
+  "categories": ["business", "finance", "productivity", "shopping"],
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Tax Invoices (POS)",
+      "short_name": "Billing",
+      "description": "Create new POS tax invoice",
+      "url": "/sales/invoices",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Daily Attendance",
+      "short_name": "Punch",
+      "description": "Punch check-in and check-out",
+      "url": "/staff/attendance",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Godown Master Hub",
+      "short_name": "Godown",
+      "description": "View live inventory and stock transfers",
+      "url": "/warehouse",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Commercial Estimates",
+      "short_name": "Estimates",
+      "description": "Create quotation or estimate",
+      "url": "/sales/estimates",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}

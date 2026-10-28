@@ -1,0 +1,17 @@
+{
+ "_id": "6ad78e3f3174bc94ef7cc9f0",
+ "type": "OUTFLOW",
+ "category": "MD_HANDOVER",
+ "amount": 167500,
+ "date": "2026-10-20",
+ "time": "21:22",
+ "referenceNo": "CSH-551555",
+ "description": "Cash handover to Admin",
+ "partyName": "Admin",
+ "targetBankAccount": "",
+ "handedTo": "Admin",
+ "recordedBy": "Ansh Gaur",
+ "createdAt": "2026-10-20T15:52:31.557Z",
+ "updatedAt": "2026-10-20T15:52:31.557Z",
+ "__v": 0
+}
