@@ -18,6 +18,7 @@ import Item from "@/models/Item";
 import { BILLING_ENTITIES, entityOf, entityLabel, invoiceSeriesOf } from "@/lib/billing-entity";
 import { stampLineCosts } from "@/lib/sale-cost";
 import { fullEditInvoice } from "@/lib/invoice-full-edit";
+import { isAdminRole, pendingApprovalFor, requestAdminApproval } from "@/lib/approval-requests";
 
 /** The next unused number in a series, read from what is actually stored. */
 async function nextNumberInSeries(prefix: string, width: number): Promise<string> {
@@ -125,13 +126,27 @@ export async function POST(req: Request) {
     await connectToDatabase();
     
     // 0a. Bill date. Today (India time) for everyone; an earlier date only for the
-    // Admin or the Store Manager — and a Store Manager's back-dated bill goes to
-    // the Admin for approval. A bill made offline and synced later keeps the day
-    // it was made, so it is not treated as back-dated.
+    // Admin or the Store Manager — and a Store Manager's back-dated bill is held
+    // for the Admin: it is made only when approved (the approvals route posts it
+    // back here, as the Admin, with `approvedBackdate`). A bill made offline and
+    // synced later keeps the day it was made, so it is not treated as back-dated.
     const todayIst = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date());
     const billDay = String(body.date || "").slice(0, 10);
     let backdateNeedsApproval: { by: string } | null = null;
-    if (body.type !== "proforma" && /^\d{4}-\d{2}-\d{2}$/.test(billDay) && billDay !== todayIst && !body.offlineId) {
+    const approvedBackdate = body.approvedBackdate;
+    delete body.approvedBackdate;
+    if (approvedBackdate) {
+      const approver = await getActor();
+      if (!approver || !isAdminRole(approver.role)) {
+        return NextResponse.json({ success: false, error: "Only the Admin can approve a back-dated bill." }, { status: 403 });
+      }
+      if (billDay > todayIst) {
+        return NextResponse.json({ success: false, error: "A bill cannot be dated in the future." }, { status: 400 });
+      }
+      body.backdateMadeOn = approvedBackdate.madeOn || todayIst;
+      body.backdateStatus = "approved";
+      body.backdateRequestedBy = approvedBackdate.by || "";
+    } else if (body.type !== "proforma" && /^\d{4}-\d{2}-\d{2}$/.test(billDay) && billDay !== todayIst && !body.offlineId) {
       if (billDay > todayIst) {
         return NextResponse.json({ success: false, error: "A bill cannot be dated in the future." }, { status: 400 });
       }
@@ -175,6 +190,32 @@ export async function POST(req: Request) {
           { status: 400 }
         );
       }
+    }
+
+    // 0b. A Store Manager's back-dated bill waits for the Admin, whole: no
+    // customer, stock, number or receipt is touched until it is approved. The
+    // stock comes from the Manager's own warehouse, so that is fixed now.
+    if (backdateNeedsApproval) {
+      const actor = await getActor();
+      const held = { ...body };
+      const warehouseId = await resolveSaleWarehouseId(held);
+      if (warehouseId) held.warehouseId = warehouseId;
+      delete held.backdateStatus;
+      delete held.backdateRequestedBy;
+      const approval = await requestAdminApproval({
+        actor: actor || { name: backdateNeedsApproval.by },
+        storeName: held.warehouse || "Store",
+        title: `Approve back-dated bill for ${held.customerName || "customer"} (${billDay})`,
+        description: `${held.customerName || ""} · ₹${Number(held.total || 0).toLocaleString("en-IN")} · dated ${billDay}, made on ${todayIst}`,
+        amount: Number(held.total) || 0,
+        payload: { kind: "invoice_create", body: held, date: billDay, madeOn: todayIst },
+      });
+      return NextResponse.json({
+        success: true,
+        pendingApproval: true,
+        approvalId: approval.activityId,
+        message: "Back-dated bill sent to the Admin for approval. It will be made once approved.",
+      });
     }
 
     // 1. Customer Auto-Add Logic & Offline Sync Reconciliation
@@ -361,35 +402,6 @@ export async function POST(req: Request) {
     delete body.creditAdjusted;
 
     const invoice = await Invoice.create(body);
-
-    // A Store Manager's back-dated bill: the Admin is asked to approve it.
-    if (backdateNeedsApproval) {
-      try {
-        const StoreActivityApproval = (await import("@/models/StoreActivityApproval")).default;
-        const { notifyAdmins } = await import("@/lib/notify");
-        await StoreActivityApproval.create({
-          activityId: `ACT-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}-${Math.floor(100 + Math.random() * 900)}`,
-          storeName: (invoice as any).warehouse || "Store",
-          storeInchargeName: backdateNeedsApproval.by,
-          storeInchargeEmail: (await getActor())?.email || "",
-          activityType: "general",
-          title: `Back-dated bill ${invoice.invoiceNumber} (${invoice.date})`,
-          description: `${invoice.customerName} · ₹${Number(invoice.total || 0).toLocaleString("en-IN")} · dated ${invoice.date}, made on ${body.backdateMadeOn}`,
-          amount: Number(invoice.total) || 0,
-          payload: { kind: "backdated_invoice", invoiceNumber: invoice.invoiceNumber, date: invoice.date, madeOn: body.backdateMadeOn },
-          status: "pending",
-        });
-        await notifyAdmins({
-          type: "approval_request",
-          title: `🔔 Approve back-dated bill ${invoice.invoiceNumber}`,
-          message: `${backdateNeedsApproval.by} dated it ${invoice.date} (made on ${body.backdateMadeOn}) · ${invoice.customerName} · ₹${Number(invoice.total || 0).toLocaleString("en-IN")}`,
-          link: "/admin/approvals",
-          createdBy: backdateNeedsApproval.by,
-        });
-      } catch (approvalErr) {
-        console.warn("Notice: back-date approval request:", approvalErr);
-      }
-    }
 
     try {
       // 2.5 Create Payment Transaction if paidAmount > 0
@@ -1052,11 +1064,46 @@ export async function PUT(req: Request) {
     if (body.action === "full-edit") {
       const gate = await authoriseDestructiveAction(req, "invoice.edit", body.pin, body.reason);
       if (!gate.ok) return gate.response;
-      const result = await fullEditInvoice(existingInvoice, body.invoice || {}, gate.actor, gate.reason, {
-        ip: gate.ip,
-        userAgent: gate.userAgent,
-        usedLegacyPin: gate.usedLegacyPin,
-      });
+      const meta = { ip: gate.ip, userAgent: gate.userAgent, usedLegacyPin: gate.usedLegacyPin };
+
+      // Anyone but the Admin: checked now, made only when the Admin approves it.
+      if (!isAdminRole(gate.actor.role)) {
+        if (await pendingApprovalFor("invoice_edit", { invoiceNumber: existingInvoice.invoiceNumber })) {
+          return NextResponse.json(
+            { success: false, error: `A correction to ${existingInvoice.invoiceNumber} is already waiting for the Admin.` },
+            { status: 409 }
+          );
+        }
+        const check = await fullEditInvoice(existingInvoice, body.invoice || {}, gate.actor, gate.reason, { ...meta, checkOnly: true });
+        if (!check.ok) return NextResponse.json({ success: false, error: check.error }, { status: check.status });
+        const next = body.invoice || {};
+        const oldDate = String(existingInvoice.date || "").slice(0, 10);
+        const newDate = String(next.date || oldDate).slice(0, 10);
+        const approval = await requestAdminApproval({
+          actor: gate.actor,
+          storeName: (existingInvoice as any).warehouse || "Store",
+          title: `Approve correction to bill ${existingInvoice.invoiceNumber}${newDate !== oldDate ? ` (date ${oldDate} → ${newDate})` : ""}`,
+          description: `${next.customerName || existingInvoice.customerName} · ₹${Number(existingInvoice.total || 0).toLocaleString("en-IN")} → ₹${Number(next.total || 0).toLocaleString("en-IN")} · Reason: ${gate.reason}`,
+          amount: Number(next.total) || 0,
+          payload: {
+            kind: "invoice_edit",
+            invoiceNumber: existingInvoice.invoiceNumber,
+            invoice: next,
+            reason: gate.reason,
+            meta,
+            before: { date: oldDate, total: existingInvoice.total, customerName: existingInvoice.customerName },
+          },
+        });
+        return NextResponse.json({
+          success: true,
+          pendingApproval: true,
+          approvalId: approval.activityId,
+          message: `Correction to ${existingInvoice.invoiceNumber} sent to the Admin for approval. The bill changes once approved.`,
+          data: existingInvoice,
+        });
+      }
+
+      const result = await fullEditInvoice(existingInvoice, body.invoice || {}, gate.actor, gate.reason, meta);
       if (!result.ok) return NextResponse.json({ success: false, error: result.error }, { status: result.status });
       return NextResponse.json({ success: true, message: "Invoice updated", data: result.invoice });
     }

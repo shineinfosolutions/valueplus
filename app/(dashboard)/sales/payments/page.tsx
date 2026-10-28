@@ -4,11 +4,12 @@ import { PageShell } from "@/components/shared/page-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Search, WalletCards, ArrowDownLeft, Building2, User, Trash2 } from "lucide-react";
+import { Plus, Search, WalletCards, ArrowDownLeft, Building2, User, Trash2, Pencil } from "lucide-react";
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { PaymentModal } from "@/components/PaymentModal";
+import { EditPaymentDialog } from "@/components/shared/EditPaymentDialog";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -24,6 +25,7 @@ export default function ReceivePaymentPage() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("customers");
   const [deletePaymentId, setDeletePaymentId] = useState<string | null>(null);
+  const [editPayment, setEditPayment] = useState<any>(null);
   const queryClient = useQueryClient();
 
   const deleteMutation = useMutation({
@@ -206,7 +208,13 @@ export default function ReceivePaymentPage() {
                       {p.type === "received" ? "+" : "-"}{formatCurrency(p.amount)}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="px-4 py-3 text-right whitespace-nowrap">
+                    {/* A bill's legacy payment has no record of its own — it is corrected by editing the bill. */}
+                    {!String(p.transactionId || "").startsWith("TXN-LEGACY-") && (
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-[#3F63AD] hover:bg-blue-50" title="Edit payment" onClick={() => setEditPayment(p)}>
+                        <Pencil className="w-4 h-4" />
+                      </Button>
+                    )}
                     <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => setDeletePaymentId(p._id)}>
                       <Trash2 className="w-4 h-4" />
                     </Button>
@@ -226,6 +234,8 @@ export default function ReceivePaymentPage() {
         onSuccess={() => setIsFormOpen(false)} 
         defaultPartyType={activeTab === "customers" ? "Customer" : "Supplier"}
       />
+
+      <EditPaymentDialog payment={editPayment} onClose={() => setEditPayment(null)} />
 
       <Dialog open={!!deletePaymentId} onOpenChange={(open) => !open && setDeletePaymentId(null)}>
         <DialogContent className="sm:max-w-[425px]">

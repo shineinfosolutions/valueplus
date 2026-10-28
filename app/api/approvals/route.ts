@@ -3,6 +3,64 @@ import connectToDatabase from "@/lib/db";
 import StoreActivityApproval from "@/models/StoreActivityApproval";
 import { notifyAdmins, notifyEmail } from "@/lib/notify";
 import { getActor } from "@/lib/requirePermission";
+import { todayInIndia } from "@/lib/today";
+import { applyPaymentEdit, auditPaymentEdit, recordPayment } from "@/lib/payments";
+import { POST as createInvoice } from "@/app/api/invoices/route";
+
+/**
+ * Carries out a held change (see lib/approval-requests.ts) once the Admin
+ * approves it. Returns an error when it can no longer be made — the request
+ * then stays pending, so the Admin can reject it instead.
+ */
+async function carryOut(req: Request, approval: any, approverName: string): Promise<{ ok: true; ref?: string } | { ok: false; error: string }> {
+  const p = approval.payload || {};
+  const by = p.requestedBy || { name: approval.storeInchargeName, email: approval.storeInchargeEmail };
+
+  if (p.kind === "invoice_create") {
+    if (String(p.body?.date || "").slice(0, 10) > todayInIndia()) return { ok: false, error: "The bill is dated in the future." };
+    const res = await createInvoice(
+      new Request(new URL("/api/invoices", req.url), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...p.body, approvedBackdate: { by: by.name, madeOn: p.madeOn } }),
+      })
+    );
+    const json: any = await res.json().catch(() => ({}));
+    if (!json.success) return { ok: false, error: json.error || "The bill could not be made." };
+    return { ok: true, ref: json.data?.invoiceNumber };
+  }
+
+  if (p.kind === "invoice_edit") {
+    const Invoice = (await import("@/models/Invoice")).default;
+    const { fullEditInvoice } = await import("@/lib/invoice-full-edit");
+    const invoice = await Invoice.findOne({ invoiceNumber: p.invoiceNumber });
+    if (!invoice) return { ok: false, error: `Bill ${p.invoiceNumber} no longer exists.` };
+    const result = await fullEditInvoice(invoice, p.invoice || {}, by, p.reason || "Correction", {
+      ...(p.meta || {}),
+      approvedBy: approverName,
+    });
+    if (!result.ok) return { ok: false, error: result.error };
+    return { ok: true, ref: p.invoiceNumber };
+  }
+
+  if (p.kind === "payment_create") {
+    const result = await recordPayment({ ...(p.data || {}) });
+    if (!result.ok) return { ok: false, error: result.error };
+    return { ok: true, ref: result.payment?.transactionId };
+  }
+
+  if (p.kind === "payment_edit") {
+    const PaymentTransaction = (await import("@/models/PaymentTransaction")).default;
+    const before: any = await PaymentTransaction.findById(p.paymentId).lean();
+    if (!before) return { ok: false, error: "That payment no longer exists." };
+    const result = await applyPaymentEdit(p.paymentId, p.changes || {});
+    if (!result.ok) return { ok: false, error: result.error };
+    await auditPaymentEdit(before, result.payment, by, p.reason || "", approverName);
+    return { ok: true, ref: p.transactionId };
+  }
+
+  return { ok: true };
+}
 
 export async function GET(req: Request) {
   try {
@@ -34,6 +92,9 @@ export async function POST(req: Request) {
     const body = await req.json();
     await connectToDatabase();
 
+    // Held bills, corrections and payments are filed by their own routes after
+    // their own checks; one sent here would skip those checks.
+    const heldKinds = ["invoice_create", "invoice_edit", "payment_create", "payment_edit"];
     const activityId = `ACT-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}-${Math.floor(100 + Math.random() * 900)}`;
 
     const newApproval = await StoreActivityApproval.create({
@@ -45,7 +106,7 @@ export async function POST(req: Request) {
       title: body.title,
       description: body.description,
       amount: Number(body.amount) || 0,
-      payload: body.payload || {},
+      payload: heldKinds.includes(body.payload?.kind) ? { ...body.payload, kind: "" } : body.payload || {},
       status: "pending",
     });
 
@@ -82,11 +143,34 @@ export async function PUT(req: Request) {
       return NextResponse.json({ success: false, error: "activityId and action (approve/reject) are required" }, { status: 400 });
     }
 
+    if (action !== "approve" && action !== "reject") {
+      return NextResponse.json({ success: false, error: "action must be approve or reject" }, { status: 400 });
+    }
+
     await connectToDatabase();
 
     const existing = await StoreActivityApproval.findOne({ activityId });
     if (!existing) {
       return NextResponse.json({ success: false, error: "Approval request not found" }, { status: 404 });
+    }
+
+    if (existing.status !== "pending") {
+      return NextResponse.json({ success: false, error: `This request was already ${existing.status}.` }, { status: 400 });
+    }
+
+    // A held bill, bill correction or payment is made only now, on approval.
+    if (action === "approve") {
+      const done = await carryOut(req, existing, approver.name);
+      if (!done.ok) {
+        return NextResponse.json(
+          { success: false, error: `Could not carry this out: ${done.error} It is still pending — reject it if it should not go through.` },
+          { status: 400 }
+        );
+      }
+      if (done.ref) {
+        existing.payload = { ...(existing.payload || {}), result: done.ref };
+        existing.markModified("payload");
+      }
     }
 
     existing.status = action === "approve" ? "approved" : "rejected";

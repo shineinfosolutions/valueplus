@@ -16,11 +16,12 @@ import {
 } from "@/components/ui/dialog";
 import { TableShimmer } from "@/components/shared/shimmer-skeleton";
 import { DateRangeFilter, resolveDateRange } from "@/components/shared/date-range-filter";
-import { Plus, Search, Trash2, WalletCards, ArrowDownLeft, ArrowUpRight } from "lucide-react";
+import { Plus, Search, Trash2, WalletCards, ArrowDownLeft, ArrowUpRight, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { formatCurrency, formatDate, cn } from "@/lib/utils";
 import { RoleGuard, usePermissions } from "@/components/shared/role-guard";
 import { PaymentModal } from "@/components/PaymentModal";
+import { EditPaymentDialog } from "@/components/shared/EditPaymentDialog";
 import { ExportMenu } from "@/components/shared/ExportMenu";
 
 export default function SupplierPaymentsPage() {
@@ -39,6 +40,7 @@ function SupplierPaymentsInner() {
   const [range, setRange] = useState<{ start?: string; end?: string }>({});
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
+  const [editTarget, setEditTarget] = useState<any | null>(null);
 
   const { data: payments = [], isLoading } = useQuery({
     queryKey: ["supplier-payments", range.start, range.end],
@@ -226,7 +228,18 @@ function SupplierPaymentsInner() {
                         {formatCurrency(p.amount)}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-right">
+                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                      {can("payment.record") && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-slate-500 hover:text-[#3F63AD] hover:bg-blue-50"
+                          title="Edit payment"
+                          onClick={() => setEditTarget(p)}
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </Button>
+                      )}
                       {can("payment.record") && (
                         <Button
                           variant="ghost"
@@ -252,6 +265,8 @@ function SupplierPaymentsInner() {
         onSuccess={() => queryClient.invalidateQueries({ queryKey: ["supplier-payments"] })}
         defaultPartyType="Supplier"
       />
+
+      <EditPaymentDialog payment={editTarget} onClose={() => setEditTarget(null)} />
 
       <Dialog open={Boolean(deleteTarget)} onOpenChange={(o) => !o && setDeleteTarget(null)}>
         <DialogContent className="max-w-md">

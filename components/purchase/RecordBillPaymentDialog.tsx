@@ -71,7 +71,8 @@ export function RecordBillPaymentDialog({
     },
     onSuccess: (json) => {
       const left = Number(json.bill?.balance) || 0;
-      toast.success(left > 0 ? `Payment recorded. ${formatCurrency(left)} is still due on ${bill.billNo}.` : `${bill.billNo} is now fully paid.`);
+      if (json.pendingApproval) toast.info(json.message || "Sent to the Admin for approval.", { duration: 8000 });
+      else toast.success(left > 0 ? `Payment recorded. ${formatCurrency(left)} is still due on ${bill.billNo}.` : `${bill.billNo} is now fully paid.`);
       queryClient.invalidateQueries({ queryKey: ["purchase-entries"] });
       queryClient.invalidateQueries({ queryKey: ["suppliers"] });
       queryClient.invalidateQueries({ queryKey: ["supplier-payments"] });
@@ -124,7 +125,7 @@ export function RecordBillPaymentDialog({
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Date</Label>
-            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            <Input type="date" max={todayInIndia()} value={date} onChange={(e) => setDate(e.target.value)} />
           </div>
           <div className="col-span-2 space-y-1">
             <Label className="text-xs">UTR / Cheque no. (optional)</Label>

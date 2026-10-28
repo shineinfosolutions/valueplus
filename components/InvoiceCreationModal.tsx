@@ -1205,6 +1205,7 @@ export function InvoiceCreationModal({
       });
       const json = await res.json();
       if (!json.success) throw new Error(json.error || "Failed to generate invoice");
+      if (json.pendingApproval) return { isOffline: false, pendingApproval: true, message: json.message };
       return {
         isOffline: false,
         data: json.data,
@@ -1213,6 +1214,13 @@ export function InvoiceCreationModal({
       };
     },
     onSuccess: (result: any) => {
+      // A back-dated bill from the Store Manager is held for the Admin: nothing
+      // to print until it is approved.
+      if (result.pendingApproval) {
+        toast.info(result.message || "Sent to the Admin for approval.", { duration: 8000 });
+        onSuccess && onSuccess();
+        return;
+      }
       if (result.isOffline) {
         toast.warning("⚡ Saved locally in offline queue. Auto-sync on connection.", { duration: 5000 });
         setOfflineInvoiceToPrint(result.data);
@@ -1275,10 +1283,17 @@ export function InvoiceCreationModal({
       });
       const json = await res.json().catch(() => ({}));
       if (!json.success) throw new Error(json.error || "Could not update the invoice");
+      if (json.pendingApproval) return { pendingApproval: true, message: json.message };
       return json.data;
     },
     onSuccess: (data: any) => {
       setPendingEdit(null);
+      // Anyone but the Admin: the correction waits for the Admin's approval.
+      if (data?.pendingApproval) {
+        toast.info(data.message || "Sent to the Admin for approval.", { duration: 8000 });
+        onSuccess && onSuccess();
+        return;
+      }
       toast.success(`Invoice ${data?.invoiceNumber || ""} updated.`);
       queryClient.invalidateQueries({ queryKey: ["invoices"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
@@ -1716,7 +1731,7 @@ export function InvoiceCreationModal({
               <div className="rounded-xl border border-blue-200 bg-blue-50/60 px-4 py-3 text-xs text-slate-700">
                 Editing bill <strong className="font-mono text-[#3F63AD]">{editInvoice?.invoiceNumber}</strong> of{" "}
                 <strong>{billingEntity ? entityLabel(billingEntity) : ""}</strong>, dated <strong>{String(editInvoice?.date || "").slice(0, 10)}</strong>.
-                Number and company stay the same; the Admin or Store Manager can change the Bill Date below. Stock,
+                Number and company stay the same; the Admin or Store Manager can change the Bill Date below. Changes by anyone other than the Admin are made only after the Admin approves them. Stock,
                 serial numbers, the customer&apos;s balance and payment are corrected when you save (Security PIN needed).
               </div>
             ) : (

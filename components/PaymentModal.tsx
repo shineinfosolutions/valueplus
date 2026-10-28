@@ -102,10 +102,12 @@ export function PaymentModal({ isOpen, onClose, onSuccess, defaultPartyType = "C
       });
       const json = await res.json();
       if (!json.success) throw new Error(json.error || "Failed to record payment");
-      return json.data;
+      return json;
     },
-    onSuccess: () => {
-      toast.success("Payment recorded successfully");
+    onSuccess: (json: any) => {
+      // A back-dated payment from anyone but the Admin waits for the Admin.
+      if (json?.pendingApproval) toast.info(json.message || "Sent to the Admin for approval.", { duration: 8000 });
+      else toast.success("Payment recorded successfully");
       queryClient.invalidateQueries({ queryKey: ["payments"] });
       queryClient.invalidateQueries({ queryKey: ["customers"] });
       queryClient.invalidateQueries({ queryKey: ["invoices"] });
@@ -229,6 +231,7 @@ export function PaymentModal({ isOpen, onClose, onSuccess, defaultPartyType = "C
                 <Label className="text-xs font-semibold text-slate-700">Payment Date *</Label>
                 <Input 
                   type="date" 
+                  max={todayInIndia()}
                   value={form.date} 
                   onChange={(e) => setForm({ ...form, date: e.target.value })} 
                   className="bg-slate-50 border-slate-300" 

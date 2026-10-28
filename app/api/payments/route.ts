@@ -1,20 +1,22 @@
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import PaymentTransaction from "@/models/PaymentTransaction";
-import { purchasePaymentState, round2 } from "@/lib/purchase-payments";
+import { purchasePaymentState } from "@/lib/purchase-payments";
+import { getActor } from "@/lib/requirePermission";
+import { todayInIndia } from "@/lib/today";
+import { isAdminRole, pendingApprovalFor, requestAdminApproval } from "@/lib/approval-requests";
+import {
+  applyPaymentEdit,
+  auditPaymentEdit,
+  checkNewPayment,
+  checkPaymentEdit,
+  cleanPaymentChanges,
+  purchaseBillFor,
+  recordPayment,
+} from "@/lib/payments";
 
-/** The purchase bill a supplier payment is made against, if it names one. */
-async function purchaseBillFor(referenceId: any) {
-  const ref = String(referenceId || "").trim();
-  if (!ref) return null;
-  const PurchaseEntry = (await import("@/models/PurchaseEntry")).default;
-  const escaped = ref.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return PurchaseEntry.findOne({
-    billNo: { $regex: new RegExp(`^${escaped}$`, "i") },
-    type: { $ne: "debit-note" },
-    status: { $ne: "cancelled" },
-  });
-}
+const PAYMENT_ROLES = ["admin", "superadmin", "manager", "accounts", "cashier"];
+const inr = (n: any) => `₹${(Number(n) || 0).toLocaleString("en-IN")}`;
 
 export async function GET(request: Request) {
   try {
@@ -74,108 +76,116 @@ export async function POST(request: Request) {
   try {
     await connectToDatabase();
     const data = await request.json();
-    
-    // A payment to a supplier against one purchase bill. Checked before anything
-    // is written: it may not be more than what is still due on that bill, and
-    // the supplier is taken from the bill when the form did not pick one.
-    const bill: any = data.partyType === "Supplier" && data.type === "paid" ? await purchaseBillFor(data.referenceId) : null;
-    if (bill) {
-      const due = purchasePaymentState(bill.total, bill.paid).balance;
-      if (!(Number(data.amount) > 0)) {
-        return NextResponse.json({ success: false, error: "Enter the amount paid." }, { status: 400 });
-      }
-      if (round2(data.amount) > due + 0.001) {
-        return NextResponse.json(
-          { success: false, error: `Only ₹${due.toFixed(2)} is due on bill ${bill.billNo}.` },
-          { status: 400 }
-        );
-      }
-      if (!data.partyId && bill.supplierId) data.partyId = String(bill.supplierId);
-      if (!data.partyName) data.partyName = bill.supplierName;
-      if (!data.transactionId) data.transactionId = `TXN-${Date.now()}`;
-      data.referenceId = bill.billNo;
-    }
 
-    // Find the customer/supplier to update balance
-    if (data.partyType === "Customer") {
-      const Customer = (await import("@/models/Customer")).default;
-      const customer = await Customer.findById(data.partyId);
-      
-      if (!customer) {
-        return NextResponse.json({ success: false, error: "Customer not found" }, { status: 404 });
-      }
-      
-      const multiplier = data.type === "paid" ? 1 : -1;
-      // Decrease outstanding balance if received, increase if paid (refund)
-      await Customer.findByIdAndUpdate(data.partyId, {
-        $inc: { outstandingBalance: multiplier * Number(data.amount) }
-      });
-    } else if (data.partyType === "Supplier") {
-      const Supplier = (await import("@/models/Supplier")).default;
-      const supplier = await Supplier.findById(data.partyId);
-      
-      if (!supplier) {
-        return NextResponse.json({ success: false, error: "Supplier not found" }, { status: 404 });
-      }
-      
-      // If we pay supplier, our outstanding to them decreases (-1)
-      // If we receive refund from supplier, our outstanding to them increases (1)
-      const multiplier = data.type === "paid" ? -1 : 1;
-      await Supplier.findByIdAndUpdate(data.partyId, {
-        $inc: { outstandingBalance: multiplier * Number(data.amount) }
-      });
+    // A payment is dated today or earlier, never ahead. An earlier date from
+    // anyone but the Admin waits for the Admin: nothing is recorded until then.
+    const today = todayInIndia();
+    const day = String(data.date || "").slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(day) && day > today) {
+      return NextResponse.json({ success: false, error: "A payment cannot be dated in the future." }, { status: 400 });
     }
-    
-    // Update invoice if referenceId matches an invoiceNumber
-    if (data.partyType === "Customer" && data.referenceId) {
-      try {
-        const Invoice = (await import("@/models/Invoice")).default;
-        const inv = await Invoice.findOne({ invoiceNumber: data.referenceId });
-        if (inv) {
-          const newPaid = Math.min(Number(inv.total) || 0, (Number(inv.paidAmount) || 0) + Number(data.amount));
-          const newBalance = Math.max(0, (Number(inv.total) || 0) - newPaid);
-          const newStatus = newBalance <= 0 ? "paid" : "partial";
-          await Invoice.findByIdAndUpdate(inv._id, {
-            paidAmount: newPaid,
-            balanceAmount: newBalance,
-            status: newStatus,
-          });
-        }
-      } catch (e) {
-        console.warn("Notice updating invoice from payment:", e);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(day) && day < today) {
+      const actor = await getActor();
+      if (!actor) {
+        return NextResponse.json({ success: false, error: "You must be signed in to do this." }, { status: 401 });
       }
-    }
-    
-    if (bill) {
-      // What was paid when the bill was entered never had a transaction of its
-      // own; the supplier ledger reads it off the bill only while no transaction
-      // names the bill. Before the first one does, it is recorded as one, so it
-      // is not dropped from the ledger. (The supplier balance already excludes
-      // it, so it is not counted against the balance again.)
-      const alreadyLinked = await PaymentTransaction.exists({ partyType: "Supplier", referenceId: bill.billNo });
-      if (!alreadyLinked && Number(bill.paid) > 0) {
-        await PaymentTransaction.create({
-          transactionId: `TXN-PE-${bill.billNo}`,
-          partyId: data.partyId || String(bill.supplierId || ""),
-          partyType: "Supplier",
-          partyName: bill.supplierName,
-          amount: round2(bill.paid),
-          paymentMode: bill.paymentMode || "Cash",
-          date: bill.billDate,
-          referenceId: bill.billNo,
-          notes: "Paid at purchase entry",
-          type: "paid",
+      if (!isAdminRole(actor.role)) {
+        const check = await checkNewPayment(data);
+        if (!check.ok) return NextResponse.json({ success: false, error: check.error }, { status: check.status });
+        const approval = await requestAdminApproval({
+          actor,
+          title: `Approve back-dated payment ${data.partyName || ""} (${day})`.trim(),
+          description: `${data.type === "paid" ? "Paid to" : "Received from"} ${data.partyName || data.partyType} · ${inr(data.amount)} ${data.paymentMode || ""} · dated ${day}, entered on ${today}${data.referenceId ? ` · against ${data.referenceId}` : ""}`,
+          amount: Number(data.amount) || 0,
+          payload: { kind: "payment_create", data, date: day, madeOn: today },
+        });
+        return NextResponse.json({
+          success: true,
+          pendingApproval: true,
+          approvalId: approval.activityId,
+          message: "Back-dated payment sent to the Admin for approval. It will be recorded once approved.",
         });
       }
-      const state = purchasePaymentState(bill.total, (Number(bill.paid) || 0) + Number(data.amount));
-      bill.paid = state.paid;
-      bill.balance = state.balance;
-      bill.status = state.status;
-      await bill.save();
     }
 
-    const payment = await PaymentTransaction.create(data);
-    return NextResponse.json({ success: true, data: payment, bill: bill ? { billNo: bill.billNo, paid: bill.paid, balance: bill.balance, status: bill.status } : undefined });
+    const result = await recordPayment(data);
+    if (!result.ok) return NextResponse.json({ success: false, error: result.error }, { status: result.status });
+    return NextResponse.json({ success: true, data: result.payment, bill: result.bill });
+  } catch (error: any) {
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
+}
+
+/**
+ * Correct a saved payment: amount, mode, date, notes, bank reference. The
+ * Admin's correction is made at once; anyone else's goes to the Admin and is
+ * made only when approved.
+ */
+export async function PUT(request: Request) {
+  try {
+    await connectToDatabase();
+    const body = await request.json();
+    const actor = await getActor();
+    if (!actor) {
+      return NextResponse.json({ success: false, error: "You must be signed in to do this." }, { status: 401 });
+    }
+    if (!PAYMENT_ROLES.includes(actor.role)) {
+      return NextResponse.json({ success: false, error: "You are not allowed to correct payments." }, { status: 403 });
+    }
+    const id = String(body.id || "");
+    const payment: any = /^[a-f0-9]{24}$/i.test(id) ? await PaymentTransaction.findById(id).lean() : null;
+    if (!payment) {
+      return NextResponse.json({ success: false, error: "Payment not found. A bill's legacy payment is corrected by editing the bill." }, { status: 404 });
+    }
+
+    const changes = cleanPaymentChanges(body);
+    for (const k of Object.keys(changes)) {
+      if (String(changes[k]) === String((payment as any)[k] ?? "")) delete changes[k];
+    }
+    if (Object.keys(changes).length === 0) {
+      return NextResponse.json({ success: false, error: "Nothing was changed." }, { status: 400 });
+    }
+    if (changes.date && changes.date > todayInIndia()) {
+      return NextResponse.json({ success: false, error: "A payment cannot be dated in the future." }, { status: 400 });
+    }
+    const check = await checkPaymentEdit(payment, changes);
+    if (!check.ok) return NextResponse.json({ success: false, error: check.error }, { status: check.status });
+
+    const reason = String(body.reason || "").trim();
+    if (isAdminRole(actor.role)) {
+      const result = await applyPaymentEdit(id, changes);
+      if (!result.ok) return NextResponse.json({ success: false, error: result.error }, { status: result.status });
+      await auditPaymentEdit(payment, result.payment, actor, reason, "");
+      return NextResponse.json({ success: true, data: result.payment, message: "Payment updated" });
+    }
+
+    if (!reason) {
+      return NextResponse.json({ success: false, error: "Give a reason for the correction — the Admin sees it." }, { status: 400 });
+    }
+    if (await pendingApprovalFor("payment_edit", { paymentId: id })) {
+      return NextResponse.json(
+        { success: false, error: "A correction to this payment is already waiting for the Admin." },
+        { status: 409 }
+      );
+    }
+    const before = Object.fromEntries(Object.keys(changes).map((k) => [k, (payment as any)[k] ?? ""]));
+    const describe = (o: any) =>
+      Object.entries(o)
+        .map(([k, v]) => `${k} ${k === "amount" ? inr(v) : v || "—"}`)
+        .join(", ");
+    const approval = await requestAdminApproval({
+      actor,
+      title: `Approve payment correction ${payment.transactionId}`,
+      description: `${payment.partyName} · ${describe(before)} → ${describe(changes)} · Reason: ${reason}`,
+      amount: Number(changes.amount ?? payment.amount) || 0,
+      payload: { kind: "payment_edit", paymentId: id, transactionId: payment.transactionId, before, changes, reason },
+    });
+    return NextResponse.json({
+      success: true,
+      pendingApproval: true,
+      approvalId: approval.activityId,
+      message: "Correction sent to the Admin for approval. The payment changes once approved.",
+    });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }

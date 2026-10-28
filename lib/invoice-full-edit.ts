@@ -22,8 +22,12 @@ import { entityOf, entityLabel } from "@/lib/billing-entity";
  * the bill (due clearances) stays collected.
  *
  * The date may change under the same rule as a new bill: Admin or Store
- * Manager only, never in the future, and a Store Manager's back-dated bill
- * goes to the Admin for approval (a rejection puts the old date back).
+ * Manager only, never in the future.
+ *
+ * Only the Admin's edit is made at once. Anyone else's is first run with
+ * `checkOnly` (everything is checked, nothing written) and filed for the
+ * Admin; the approvals route runs it for real, with `approvedBy`, once the
+ * Admin approves it.
  */
 
 type Result = { ok: true; invoice: any } | { ok: false; status: number; error: string };
@@ -51,7 +55,7 @@ export async function fullEditInvoice(
   incoming: any,
   actor: { name: string; id?: string; role?: string; email?: string },
   reason: string,
-  meta: { ip?: string; userAgent?: string; usedLegacyPin?: boolean } = {}
+  meta: { ip?: string; userAgent?: string; usedLegacyPin?: boolean; checkOnly?: boolean; approvedBy?: string } = {}
 ): Promise<Result> {
   // ── 1. What may be edited ────────────────────────────────────────────────
   if (existing.type !== "tax-invoice") {
@@ -77,7 +81,6 @@ export async function fullEditInvoice(
   if (!/^\d{4}-\d{2}-\d{2}$/.test(billDate)) billDate = oldDate;
   const dateChanged = billDate !== oldDate;
   const dateUpdate: any = {};
-  let backdateNeedsApproval = false;
   if (dateChanged) {
     if (billDate > todayIst) {
       return { ok: false, status: 400, error: "A bill cannot be dated in the future." };
@@ -88,14 +91,10 @@ export async function fullEditInvoice(
     }
     dateUpdate.date = billDate;
     if (billDate < todayIst) {
+      // Made only by the Admin, or once the Admin has approved it.
       dateUpdate.backdateMadeOn = todayIst;
-      if (role === "manager") {
-        dateUpdate.backdateStatus = "pending";
-        dateUpdate.backdateRequestedBy = actor.name;
-        backdateNeedsApproval = true;
-      } else {
-        dateUpdate.backdateStatus = "approved";
-      }
+      dateUpdate.backdateStatus = "approved";
+      dateUpdate.backdateRequestedBy = actor.name;
     } else {
       dateUpdate.backdateStatus = "";
       dateUpdate.backdateRequestedBy = "";
@@ -229,6 +228,20 @@ export async function fullEditInvoice(
   const paidAmount = round2(paidAtBilling + collectedLater);
   const balanceAmount = round2(Math.max(0, total - advance - paidAmount));
   const status = balanceAmount <= 1 ? "paid" : paidAmount > 0 ? "partial" : "sent";
+
+  // Everything that can be checked without writing has been. (A customer
+  // typed in new is only matched or made when the edit is carried out.)
+  if (meta.checkOnly) {
+    const nextCustomer = String(incoming.customerId || existing.customerId || "");
+    if (advance > 0 && mongoose.isValidObjectId(nextCustomer) && nextCustomer !== String(existing.customerId || "")) {
+      return {
+        ok: false,
+        status: 400,
+        error: "An advance from this customer was used on the bill, so it cannot be moved to a different customer. Cancel it and make a new bill instead.",
+      };
+    }
+    return { ok: true, invoice: null };
+  }
 
   // ── 3. Customer ──────────────────────────────────────────────────────────
   let customerId = String(incoming.customerId || existing.customerId || "");
@@ -464,36 +477,6 @@ export async function fullEditInvoice(
 
   const saved = await Invoice.findOneAndUpdate({ _id: existing._id }, { $set: update }, { new: true });
 
-  // A Store Manager's back-dated edit: the Admin is asked to approve it. A
-  // rejection sets the date back to what it was before this edit.
-  if (backdateNeedsApproval) {
-    try {
-      const StoreActivityApproval = (await import("@/models/StoreActivityApproval")).default;
-      const { notifyAdmins } = await import("@/lib/notify");
-      await StoreActivityApproval.create({
-        activityId: `ACT-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}-${Math.floor(100 + Math.random() * 900)}`,
-        storeName: existing.warehouse || "Store",
-        storeInchargeName: actor.name,
-        storeInchargeEmail: actor.email || actor.name,
-        activityType: "general",
-        title: `Back-dated bill ${existing.invoiceNumber} (${billDate}) — edited`,
-        description: `${customerName} · ₹${total.toLocaleString("en-IN")} · date changed from ${oldDate} to ${billDate} on ${todayIst}`,
-        amount: total,
-        payload: { kind: "backdated_invoice", invoiceNumber: existing.invoiceNumber, date: billDate, madeOn: oldDate },
-        status: "pending",
-      });
-      await notifyAdmins({
-        type: "approval_request",
-        title: `🔔 Approve back-dated bill ${existing.invoiceNumber}`,
-        message: `${actor.name} changed its date from ${oldDate} to ${billDate} · ${customerName} · ₹${total.toLocaleString("en-IN")}`,
-        link: "/admin/approvals",
-        createdBy: actor.name,
-      });
-    } catch (approvalErr) {
-      console.warn("Notice: back-date approval request (edit):", approvalErr);
-    }
-  }
-
   // ── 5. Audit trail ───────────────────────────────────────────────────────
   try {
     const summarise = (inv: any) => ({
@@ -512,7 +495,7 @@ export async function fullEditInvoice(
       entityId: String(existing._id),
       partyName: customerName,
       amount: total,
-      reason,
+      reason: meta.approvedBy ? `${reason} (approved by ${meta.approvedBy})` : reason,
       performedBy: actor.name,
       performedByUserId: actor.id,
       performedByRole: actor.role,
