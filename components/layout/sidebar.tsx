@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useMemo } from "react";
-import { useSession, signOut } from "next-auth/react";
+import { useSession } from "next-auth/react";
+import { signOutAndForgetDevice } from "@/lib/push-client";
 import { motion, AnimatePresence } from "framer-motion";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
@@ -340,7 +341,7 @@ export function Sidebar() {
             </div>
           </div>
           <button
-            onClick={() => signOut({ callbackUrl: logoutUrl })}
+            onClick={() => signOutAndForgetDevice({ callbackUrl: logoutUrl })}
             className="p-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 hover:text-rose-100 border border-rose-500/30 transition-colors shrink-0"
             title="Log out of Value Plus"
           >

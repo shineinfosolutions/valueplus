@@ -22,6 +22,7 @@ import { formatCurrency, formatDate, cn } from "@/lib/utils";
 import { RoleGuard, usePermissions } from "@/components/shared/role-guard";
 import { PaymentModal } from "@/components/PaymentModal";
 import { ExportMenu } from "@/components/shared/ExportMenu";
+import { PaymentChangeControls } from "@/components/payments/PaymentChangeControls";
 
 export default function SupplierPaymentsPage() {
   return (
@@ -38,7 +39,6 @@ function SupplierPaymentsInner() {
   const [dateFilter, setDateFilter] = useState("All Time");
   const [range, setRange] = useState<{ start?: string; end?: string }>({});
   const [isFormOpen, setIsFormOpen] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
 
   const { data: payments = [], isLoading } = useQuery({
     queryKey: ["supplier-payments", range.start, range.end],
@@ -53,25 +53,6 @@ function SupplierPaymentsInner() {
     },
   });
 
-  const removeMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const res = await fetch(`/api/payments?id=${id}`, { method: "DELETE" });
-      const json = await res.json();
-      if (!json.success) throw new Error(json.error);
-      return json;
-    },
-    onSuccess: () => {
-      toast.success("Payment removed");
-      queryClient.invalidateQueries({ queryKey: ["supplier-payments"] });
-      queryClient.invalidateQueries({ queryKey: ["all-ledgers"] });
-      queryClient.invalidateQueries({ queryKey: ["supplier-ledger-all"] });
-      setDeleteTarget(null);
-    },
-    onError: (e: any) => {
-      toast.error(e.message);
-      setDeleteTarget(null);
-    },
-  });
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -227,16 +208,7 @@ function SupplierPaymentsInner() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {can("payment.record") && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-red-500 hover:bg-red-50"
-                          onClick={() => setDeleteTarget(p)}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      )}
+                      <PaymentChangeControls payment={p} />
                     </td>
                   </tr>
                 ))
@@ -253,33 +225,6 @@ function SupplierPaymentsInner() {
         defaultPartyType="Supplier"
       />
 
-      <Dialog open={Boolean(deleteTarget)} onOpenChange={(o) => !o && setDeleteTarget(null)}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Remove this payment?</DialogTitle>
-            <DialogDescription>
-              {deleteTarget && (
-                <>
-                  {formatCurrency(deleteTarget.amount)} for {deleteTarget.partyName} on{" "}
-                  {formatDate(deleteTarget.date)} will be removed, and their pending balance will be reversed.
-                </>
-              )}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => removeMutation.mutate(deleteTarget._id)}
-              disabled={removeMutation.isPending}
-            >
-              {removeMutation.isPending ? "Removing…" : "Remove"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </PageShell>
   );
 }

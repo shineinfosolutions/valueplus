@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { formatCurrency } from "@/lib/utils";
 import { todayInIndia } from "@/lib/today";
+import { CustomerPicker, checkCustomerDraft, type NewCustomerDraft } from "@/components/payments/CustomerPicker";
 
 export function PaymentModal({ isOpen, onClose, onSuccess, defaultPartyType = "Customer", initialPartyId }: { isOpen: boolean; onClose: () => void; onSuccess?: () => void; defaultPartyType?: "Customer" | "Supplier"; initialPartyId?: string }) {
   const queryClient = useQueryClient();
@@ -44,9 +45,17 @@ export function PaymentModal({ isOpen, onClose, onSuccess, defaultPartyType = "C
     type: defaultPartyType === "Supplier" ? "paid" : "received",
   });
 
+  // A customer is picked by typing; someone not on the list can be added right here.
+  // (Suppliers keep the plain list.)
+  const [partyQuery, setPartyQuery] = useState("");
+  const [newCustomer, setNewCustomer] = useState<NewCustomerDraft | null>(null);
+  const [creatingCustomer, setCreatingCustomer] = useState(false);
+
   // Reset form when modal opens
   useEffect(() => {
     if (isOpen) {
+      setPartyQuery("");
+      setNewCustomer(null);
       setForm({
         partyId: "",
         partyName: "",
@@ -81,6 +90,8 @@ export function PaymentModal({ isOpen, onClose, onSuccess, defaultPartyType = "C
       if (defaultPartyType === "Customer" && isNegative) paymentType = "paid";
       if (defaultPartyType === "Supplier" && isNegative) paymentType = "received";
 
+      setPartyQuery(`${found.name}${found.phone ? ` (${found.phone})` : ""}`);
+      setNewCustomer(null);
       setForm({ 
         ...form, 
         partyId: found._id, 
@@ -122,27 +133,81 @@ export function PaymentModal({ isOpen, onClose, onSuccess, defaultPartyType = "C
     }
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!form.partyId || !form.amount || Number(form.amount) <= 0) {
-      toast.error(`Please select a ${defaultPartyType.toLowerCase()} and enter a valid amount.`);
-      return;
-    }
-
-    const payload = {
+  const recordPayment = (partyId: string, partyName: string) => {
+    createPaymentMutation.mutate({
       transactionId: `TXN-${Date.now()}`,
-      partyId: form.partyId,
+      partyId,
       partyType: defaultPartyType,
-      partyName: form.partyName,
+      partyName,
       amount: Number(form.amount),
       paymentMode: form.paymentMode,
       date: form.date,
       referenceId: form.referenceId,
       notes: form.notes,
-      type: form.type
-    };
+      type: form.type,
+    });
+  };
 
-    createPaymentMutation.mutate(payload);
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    // Someone new: add them to the Customer list first, with the same details the Customer
+    // screen asks for, then record the payment against them.
+    if (defaultPartyType === "Customer" && newCustomer && !form.partyId) {
+      if (!form.amount || Number(form.amount) <= 0) {
+        toast.error("Enter a valid amount.");
+        return;
+      }
+      if (form.type === "paid") {
+        toast.error("A new customer has nothing to refund. Choose “Receive Payment (In)”.");
+        return;
+      }
+      const problem = checkCustomerDraft(newCustomer, customers);
+      if (problem) {
+        toast.error(problem);
+        return;
+      }
+      setCreatingCustomer(true);
+      try {
+        const res = await fetch("/api/customers", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: newCustomer.name.trim(),
+            phone: newCustomer.phone.replace(/\D/g, ""),
+            email: newCustomer.email.trim(),
+            address: newCustomer.address.trim(),
+            state: newCustomer.state,
+            city: newCustomer.city,
+            pincode: newCustomer.pincode.trim(),
+            gstNumber: newCustomer.gst.trim(),
+            group: newCustomer.group,
+            creditLimit: newCustomer.creditLimit,
+          }),
+        });
+        const json = await res.json();
+        if (!json.success) throw new Error(json.error || "Could not add the customer");
+        // From here on they are an existing customer, so a retry never adds them twice.
+        const created = json.data;
+        queryClient.invalidateQueries({ queryKey: ["customers"] });
+        setForm((f) => ({ ...f, partyId: String(created._id), partyName: created.name }));
+        setNewCustomer(null);
+        setPartyQuery(`${created.name} (${created.phone})`);
+        toast.success(`New customer added: ${created.name}`);
+        recordPayment(String(created._id), created.name);
+      } catch (err: any) {
+        toast.error(err.message || "Could not add the customer");
+      } finally {
+        setCreatingCustomer(false);
+      }
+      return;
+    }
+
+    if (!form.partyId || !form.amount || Number(form.amount) <= 0) {
+      toast.error(`Please select a ${defaultPartyType.toLowerCase()} and enter a valid amount.`);
+      return;
+    }
+    recordPayment(form.partyId, form.partyName);
   };
 
   return (
@@ -169,19 +234,38 @@ export function PaymentModal({ isOpen, onClose, onSuccess, defaultPartyType = "C
               <Label className="text-xs font-semibold text-slate-700">
                 {defaultPartyType === "Supplier" ? "Supplier Name *" : "Customer Name *"}
               </Label>
-              <Select value={form.partyId} onValueChange={handleSelectParty}>
-                <SelectTrigger className="bg-slate-50 border-slate-300 font-semibold text-[#3F63AD]">
-                  <SelectValue placeholder={defaultPartyType === "Supplier" ? "Select Supplier..." : "Select Customer..."} />
-                </SelectTrigger>
-                <SelectContent>
-                  {parties.map((p: any) => (
-                    <SelectItem key={p._id} value={p._id}>
-                      {p.name} {p.phone ? `(${p.phone})` : ""}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {defaultPartyType === "Customer" ? (
+                <CustomerPicker
+                  customers={customers}
+                  query={partyQuery}
+                  onQueryChange={setPartyQuery}
+                  selectedId={form.partyId}
+                  onSelect={(id) => (id ? handleSelectParty(id) : setForm((f) => ({ ...f, partyId: "", partyName: "" })))}
+                  draft={newCustomer}
+                  onDraftChange={setNewCustomer}
+                />
+              ) : (
+                <Select value={form.partyId} onValueChange={handleSelectParty}>
+                  <SelectTrigger className="bg-slate-50 border-slate-300 font-semibold text-[#3F63AD]">
+                    <SelectValue placeholder={defaultPartyType === "Supplier" ? "Select Supplier..." : "Select Customer..."} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {parties.map((p: any) => (
+                      <SelectItem key={p._id} value={p._id}>
+                        {p.name} {p.phone ? `(${p.phone})` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
+
+            {newCustomer && defaultPartyType === "Customer" && (
+              <p className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-2.5 text-[11px] font-medium text-emerald-900">
+                A new customer starts with ₹0 due, so this payment is kept as money they have already paid — it is shown on their next bill and
+                taken off it.
+              </p>
+            )}
 
             {selectedParty && (
               <div className="bg-blue-50/50 p-3 rounded-lg border border-blue-100 flex items-center justify-between">
@@ -276,8 +360,8 @@ export function PaymentModal({ isOpen, onClose, onSuccess, defaultPartyType = "C
 
           <DialogFooter className="bg-slate-100 px-6 py-4 -mx-6 -mb-6 rounded-b-2xl border-t border-slate-200 flex items-center justify-between">
             <Button type="button" variant="ghost" onClick={onClose} className="text-slate-600">Cancel</Button>
-            <Button type="submit" disabled={createPaymentMutation.isPending} className="bg-[#76C043] hover:bg-[#65A639] text-white shadow-lg shadow-green-900/20 font-bold px-8">
-              {createPaymentMutation.isPending ? "Saving..." : "Record Payment"}
+            <Button type="submit" disabled={createPaymentMutation.isPending || creatingCustomer} className="bg-[#76C043] hover:bg-[#65A639] text-white shadow-lg shadow-green-900/20 font-bold px-8">
+              {createPaymentMutation.isPending || creatingCustomer ? "Saving..." : newCustomer ? "Add Customer & Record Payment" : "Record Payment"}
             </Button>
           </DialogFooter>
         </form>

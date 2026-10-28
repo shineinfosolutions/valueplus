@@ -5,6 +5,9 @@ import PurchaseEntry from "@/models/PurchaseEntry";
 import Supplier from "@/models/Supplier";
 import Item from "@/models/Item";
 import Warehouse from "@/models/Warehouse";
+import { getActor } from "@/lib/requirePermission";
+import { authoriseChange, auditChange, createChangeRequest, versionOf } from "@/lib/change-requests";
+import { checkPurchaseCorrection, applyPurchaseCorrection, summarisePurchaseDetails } from "@/lib/purchase-correction";
 import { applyStockMovement } from "@/lib/stock";
 import PurchaseOrder from "@/models/PurchaseOrder";
 import StockRequest from "@/models/StockRequest";
@@ -99,6 +102,38 @@ export async function POST(req: Request) {
     const body = await req.json();
     await connectToDatabase();
 
+    // Bill date. Today (India time) for everyone; an earlier date only for the Admin or
+    // the Store Manager — and a Store Manager's goes to the Admin for approval (the same
+    // rule as a sales bill). There was no rule at all for purchase bills before.
+    const todayIst = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date());
+    const billDay = String(body.billDate || "").slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(billDay)) {
+      return NextResponse.json({ success: false, error: "The bill date is not valid." }, { status: 400 });
+    }
+    if (billDay > todayIst) {
+      return NextResponse.json({ success: false, error: "A bill cannot be dated in the future." }, { status: 400 });
+    }
+    const dateFlags: any = { backdateStatus: "", backdateRequestedBy: "", backdateMadeOn: "" };
+    let backdateBy: string | null = null;
+    if (billDay !== todayIst) {
+      const dateActor = await getActor();
+      const dateRole = String(dateActor?.role || "");
+      if (!dateActor || !["admin", "superadmin", "manager"].includes(dateRole)) {
+        return NextResponse.json(
+          { success: false, error: "Only the Admin or the Store Manager can enter a purchase bill with an earlier date." },
+          { status: 403 }
+        );
+      }
+      dateFlags.backdateMadeOn = todayIst;
+      if (dateRole === "manager") {
+        dateFlags.backdateStatus = "pending";
+        dateFlags.backdateRequestedBy = dateActor.name;
+        backdateBy = dateActor.name;
+      } else {
+        dateFlags.backdateStatus = "approved";
+      }
+    }
+
     // Whose stock is this: Value Plus or Ashoka Enterprises? A purchase bill has to
     // say, because that is what decides which bills its products can later be sold
     // on. (A debit note follows the bill it returns against, so it is not asked.)
@@ -155,7 +190,13 @@ export async function POST(req: Request) {
     const payload: any = {
       ...body,
       billNo: newBillNo,
+      // Worked out here from the rule above — never taken from what the caller sent.
+      ...dateFlags,
     };
+    delete payload.lastModifiedReason;
+    delete payload.cancelledAt;
+    delete payload.cancelledBy;
+    delete payload.cancelReason;
     // Paid / balance / status are worked out here from the total and what was
     // paid, in paise — never taken as sent (a paisa-fraction balance used to
     // leave a fully paid bill showing "partial").
@@ -194,6 +235,31 @@ export async function POST(req: Request) {
     }
 
     const entry = await PurchaseEntry.create(payload);
+
+    // A Store Manager's back-dated bill: the Admin is asked to approve it.
+    if (backdateBy) {
+      try {
+        const actor = await getActor();
+        if (actor) {
+          await createChangeRequest({
+            kind: "backdated_purchase",
+            target: `backdated_purchase:${entry.billNo}`,
+            title: `Back-dated purchase bill ${entry.billNo} (${entry.billDate})`,
+            description: `${entry.supplierName} · ₹${Number(entry.total || 0).toLocaleString("en-IN")} · dated ${entry.billDate}, entered on ${todayIst}`,
+            amount: Number(entry.total) || 0,
+            storeName: entry.warehouse || undefined,
+            actor,
+            reason: "Purchase bill entered with an earlier date",
+            before: { billDate: todayIst },
+            after: { billDate: entry.billDate },
+            data: { billNo: entry.billNo, date: entry.billDate, madeOn: todayIst },
+            baseVersion: versionOf(entry),
+          });
+        }
+      } catch (approvalErr) {
+        console.warn("Notice: purchase back-date approval request:", approvalErr);
+      }
+    }
 
     // Update Supplier Balance and Auto-create if missing
     if (body.supplierName) {
@@ -465,16 +531,70 @@ export async function PUT(req: Request) {
       });
     }
 
-    // Generic edit — items/stock are untouched here, so this must stay limited
-    // to non-stock fields (supplier contact info, due date, notes, payment)
-    // until an edit UI that reconciles stock diffs exists.
-    const updatedEntry = await PurchaseEntry.findOneAndUpdate(
-      { billNo },
-      { ...body, lastModifiedReason: "content-edit" },
-      { new: true }
-    );
+    // Correct a bill's details (bill date, due date, supplier GSTIN, the "why no PO" note).
+    // Admin: done now. Store Manager: sent to the Admin, and the bill stays as it is until
+    // it is approved. PIN and a reason either way. Money, products and stock are not
+    // touched here — a wrong amount, product, bill number or supplier means cancelling
+    // the bill (PIN protected) and entering it again.
+    if (body.action === "correct") {
+      const gate = await authoriseChange(req, body.pin, body.reason);
+      if (!gate.ok) return gate.response;
 
-    return NextResponse.json({ success: true, data: updatedEntry });
+      const c = body.changes || {};
+      const changes: any = {};
+      for (const k of ["billDate", "dueDate", "supplierGST", "noPoReason"]) {
+        if (c[k] !== undefined) changes[k] = String(c[k]);
+      }
+      const check = checkPurchaseCorrection(entry, changes);
+      if (!check.ok) return NextResponse.json({ success: false, error: check.error }, { status: 400 });
+
+      if (gate.mode === "direct") {
+        const r = await applyPurchaseCorrection(entry, changes, gate.actor);
+        if (!r.ok) return NextResponse.json({ success: false, error: r.error }, { status: 400 });
+        await auditChange({
+          action: "purchase-entry.correct",
+          entityType: "PurchaseEntry",
+          entityRef: entry.billNo,
+          entityId: String(entry._id),
+          partyName: entry.supplierName,
+          amount: Number(entry.total) || 0,
+          reason: gate.reason,
+          actor: gate.actor,
+          ip: gate.ip,
+          userAgent: gate.userAgent,
+          usedLegacyPin: gate.usedLegacyPin,
+          metadata: { before: r.before, after: r.after },
+        });
+        return NextResponse.json({ success: true, message: "Purchase bill corrected", data: await PurchaseEntry.findOne({ billNo }) });
+      }
+
+      const reqResult = await createChangeRequest({
+        kind: "purchase_correction",
+        target: `purchase:${entry.billNo}`,
+        title: `Correct purchase bill ${entry.billNo} — ${entry.supplierName}`,
+        description: check.changed.map((k) => `${k}: ${String((entry as any)[k] || "—").slice(0, 10)} → ${check.next[k] || "—"}`).join(" · "),
+        amount: Number(entry.total) || 0,
+        storeName: entry.warehouse || undefined,
+        actor: gate.actor,
+        reason: gate.reason,
+        before: summarisePurchaseDetails(entry),
+        after: { ...summarisePurchaseDetails(entry), ...check.next },
+        data: { billNo: entry.billNo, changes },
+        baseVersion: versionOf(entry),
+        meta: { ip: gate.ip, userAgent: gate.userAgent, usedLegacyPin: gate.usedLegacyPin },
+      });
+      if (!reqResult.ok) return NextResponse.json({ success: false, error: reqResult.error }, { status: 409 });
+      return NextResponse.json({
+        success: true,
+        pending: true,
+        message: "Sent to the Admin for approval. The bill stays as it is until it is approved.",
+      });
+    }
+
+    return NextResponse.json(
+      { success: false, error: "A purchase bill can only be cancelled or have its details corrected (action: cancel / correct)." },
+      { status: 400 }
+    );
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }

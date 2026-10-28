@@ -1,5 +1,6 @@
 import User from "@/models/User";
 import Notification, { INotification } from "@/models/Notification";
+import { pushToUsers } from "@/lib/push";
 
 /**
  * Send a notification to the bell of one or more users. Best-effort: a failure
@@ -31,6 +32,8 @@ async function send(recipients: Recipient[], input: NotifyInput): Promise<number
       createdBy: input.createdBy || "",
     }))
   );
+  // The same message goes to their phones, so they see it with the app closed.
+  await pushToUsers(Array.from(unique.keys()), { title: input.title, body: input.message, link: input.link });
   return unique.size;
 }
 

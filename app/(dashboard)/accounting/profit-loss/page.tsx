@@ -74,6 +74,9 @@ function ProfitLossContent() {
     totalInvoices: 0,
     totalPurchases: 0,
     totalPurchaseBills: 0,
+    salesGst: 0,
+    purchaseGst: 0,
+    netGst: 0,
   };
 
   const productBreakdown: any[] = reportData?.productBreakdown || [];
@@ -299,7 +302,7 @@ function ProfitLossContent() {
             <div className="absolute top-0 left-0 w-full h-1 bg-orange-500" />
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold tracking-wider uppercase text-slate-500">Purchase Entries</span>
+                <span className="text-[11px] font-bold tracking-wider uppercase text-slate-500">Purchase Entries (before GST)</span>
                 <div className="p-2 rounded-lg bg-orange-50 text-orange-600">
                   <Building2 className="w-4 h-4" />
                 </div>
@@ -308,7 +311,7 @@ function ProfitLossContent() {
                 <span className="text-xl font-black text-slate-900">{formatCurrency(summary.totalPurchases)}</span>
               </div>
               <p className="text-[11px] text-slate-500 mt-1 font-medium">
-                {summary.totalPurchaseBills} bill{summary.totalPurchaseBills === 1 ? "" : "s"} raised this period
+                {summary.totalPurchaseBills} bill{summary.totalPurchaseBills === 1 ? "" : "s"} raised this period · GST kept apart
               </p>
             </CardContent>
           </Card>
@@ -391,6 +394,39 @@ function ProfitLossContent() {
             </CardContent>
           </Card>
         </div>
+
+        {/* GST — kept out of profit. Sales and purchases above are both at their
+            actual amount (before GST); GST is collected on sales and paid on
+            purchases, so it is shown on its own. */}
+        <Card className="border border-slate-200/80 shadow-xs bg-white">
+          <CardContent className="p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+              <span className="text-[11px] font-bold tracking-wider uppercase text-slate-500">GST this period (not part of profit)</span>
+              <span className="text-[10px] text-slate-400">Sales and purchases above are both before GST</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="rounded-lg bg-blue-50/60 border border-blue-100 p-3">
+                <p className="text-[11px] font-semibold text-slate-500">GST on Sales (collected from customers)</p>
+                <p className="text-lg font-black text-slate-900 mt-1">{formatCurrency(summary.salesGst || 0)}</p>
+              </div>
+              <div className="rounded-lg bg-orange-50/60 border border-orange-100 p-3">
+                <p className="text-[11px] font-semibold text-slate-500">GST on Purchases (paid to suppliers)</p>
+                <p className="text-lg font-black text-slate-900 mt-1">{formatCurrency(summary.purchaseGst || 0)}</p>
+              </div>
+              <div className={cn("rounded-lg border p-3", (summary.netGst || 0) > 0 ? "bg-rose-50/60 border-rose-100" : "bg-emerald-50/60 border-emerald-100")}>
+                <p className="text-[11px] font-semibold text-slate-500">
+                  {(summary.netGst || 0) > 0 ? "Net GST to pay (sales − purchases)" : "Purchase GST more than sales GST"}
+                </p>
+                <p className={cn("text-lg font-black mt-1", (summary.netGst || 0) > 0 ? "text-rose-700" : "text-emerald-700")}>
+                  {formatCurrency(Math.abs(summary.netGst || 0))}
+                </p>
+              </div>
+            </div>
+            <p className="text-[10px] text-slate-400 mt-2">
+              From the bills in this period. Whether the purchase GST can be claimed back depends on the GST rules — check with your CA.
+            </p>
+          </CardContent>
+        </Card>
 
         {/* CALCULATION HELPER STRIP */}
         <div className="bg-slate-100/70 p-3 rounded-xl border border-slate-200/80 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
@@ -878,7 +914,7 @@ function ProfitLossContent() {
 
                     <div className="space-y-2.5">
                       <div className="flex items-center justify-between text-slate-600 text-[11px] pl-3 border-l-2 border-slate-200">
-                        <span>Purchases (Stock-In Bills Raised This Period)</span>
+                        <span>Purchases before GST (Stock-In Bills Raised This Period)</span>
                         <span className="font-mono font-semibold">{formatCurrency(summary.totalPurchases)}</span>
                       </div>
 

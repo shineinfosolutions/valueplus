@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { AutocompleteSearch } from "@/components/shared/autocomplete-search";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Plus, Search, ClipboardList, Trash2, AlertTriangle, MoreHorizontal, XCircle, Printer, Download, Eye, UploadCloud, Ban, History, Wallet } from "lucide-react";
+import { Plus, Search, ClipboardList, Trash2, AlertTriangle, MoreHorizontal, XCircle, Printer, Download, Eye, UploadCloud, Ban, History, Wallet, Pencil, Clock } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { AuthorizePinDialog, PinAuthResult } from "@/components/AuthorizePinDialog";
 import { useState, useMemo, useEffect, Suspense } from "react";
@@ -35,6 +35,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { DateRangeFilter, resolveDateRange, isDateInRange } from "@/components/shared/date-range-filter";
 import { TableShimmer } from "@/components/shared/shimmer-skeleton";
 import { ExportMenu } from "@/components/shared/ExportMenu";
+import { PurchaseCorrectionDialog } from "@/components/purchase/PurchaseCorrectionDialog";
+import { EditHistory } from "@/components/shared/EditHistory";
+import { useChangeRole, usePendingChanges } from "@/components/shared/pending-changes";
 
 interface PurchaseEntryItem {
   id: string;
@@ -120,6 +123,10 @@ function PurchaseEntriesContent() {
       setAuthError(error.message || "An error occurred while deleting");
     }
   });
+
+  const [entryToCorrect, setEntryToCorrect] = useState<any | null>(null);
+  const { canChange: canCorrectBill } = useChangeRole();
+  const pendingChanges = usePendingChanges();
 
   const cancelMutation = useMutation({
     mutationFn: async ({ billNo, pin, reason }: { billNo: string; pin: string; reason: string }) => {
@@ -320,7 +327,19 @@ function PurchaseEntriesContent() {
                           );
                         })()}
                         {e.lastModifiedReason === "content-edit" && (
-                          <Badge variant="outline" className="gap-1 whitespace-nowrap text-[10px] border-blue-300 text-blue-700 bg-blue-50">Edited</Badge>
+                          <EditHistory refs={[e.billNo, `purchase:${e.billNo}`]}>
+                            <Badge variant="outline" className="gap-1 whitespace-nowrap text-[10px] border-blue-300 text-blue-700 bg-blue-50" title="Click to see what was changed">Edited</Badge>
+                          </EditHistory>
+                        )}
+                        {e.backdateStatus === "pending" && (
+                          <Badge variant="outline" className="gap-1 whitespace-nowrap text-[10px] border-amber-300 text-amber-800 bg-amber-50" title={`Back-dated by ${e.backdateRequestedBy || "Store Manager"} — waiting for Admin approval`}>
+                            <Clock className="w-2.5 h-2.5" /> Back-dated · approval pending
+                          </Badge>
+                        )}
+                        {pendingChanges.has(`purchase:${e.billNo}`) && (
+                          <Badge variant="outline" className="gap-1 whitespace-nowrap text-[10px] border-amber-300 text-amber-800 bg-amber-50" title="A correction to this bill is waiting for the Admin's approval">
+                            <Clock className="w-2.5 h-2.5" /> Correction pending
+                          </Badge>
                         )}
                       </div>
                     </td>
@@ -355,6 +374,17 @@ function PurchaseEntriesContent() {
                               >
                                 <Wallet className="w-4 h-4" /> Record Payment
                               </DropdownMenuItem>
+                            )}
+                            {e.status !== "cancelled" && canCorrectBill && (
+                              pendingChanges.has(`purchase:${e.billNo}`) ? (
+                                <DropdownMenuItem disabled className="gap-2 text-amber-700">
+                                  <Clock className="w-4 h-4" /> Correction waiting for approval
+                                </DropdownMenuItem>
+                              ) : (
+                                <DropdownMenuItem className="gap-2 cursor-pointer" onClick={() => setEntryToCorrect(e)}>
+                                  <Pencil className="w-4 h-4 text-[#3F63AD]" /> Correct Details
+                                </DropdownMenuItem>
+                              )
                             )}
                             <DropdownMenuSeparator />
                             {e.status !== "cancelled" && (
@@ -414,6 +444,8 @@ function PurchaseEntriesContent() {
         onClose={() => setBillToPrint(null)}
         billData={billToPrint}
       />
+
+      <PurchaseCorrectionDialog entry={entryToCorrect} onClose={() => setEntryToCorrect(null)} />
 
       {/* Delete and Cancel both go through the one authorisation dialog: a PIN the
           server verifies, and a reason the audit trail keeps. */}

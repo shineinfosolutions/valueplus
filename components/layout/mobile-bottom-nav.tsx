@@ -3,7 +3,8 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useSession, signOut } from "next-auth/react";
+import { useSession } from "next-auth/react";
+import { signOutAndForgetDevice } from "@/lib/push-client";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useBranch } from "@/context/BranchContext";
@@ -491,7 +492,7 @@ export function MobileBottomNav() {
           {/* Drawer Footer */}
           <div className="p-3 border-t border-white/10 bg-black/30 flex items-center justify-between">
             <button
-              onClick={() => signOut({ callbackUrl: logoutUrl })}
+              onClick={() => signOutAndForgetDevice({ callbackUrl: logoutUrl })}
               className="flex items-center gap-2 px-3 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-xs font-bold transition-colors"
             >
               <LogOut className="w-4 h-4" />

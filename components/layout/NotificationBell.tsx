@@ -7,6 +7,7 @@ import Link from "next/link";
 import { Bell, CheckCheck, ShieldAlert, BellRing } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { pushSupported, registerThisDevice, sendTestPush } from "@/lib/push-client";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 /**
@@ -40,6 +41,9 @@ export function NotificationBell() {
   const [unread, setUnread] = useState(0);
   const [pendingApprovals, setPendingApprovals] = useState(0);
   const [canAlert, setCanAlert] = useState<NotificationPermission | "unsupported">("unsupported");
+  // This device is signed up to receive notifications even when the app is closed.
+  const [deviceOn, setDeviceOn] = useState(false);
+  const [testing, setTesting] = useState(false);
   // Newest notification already seen; null until the first load, so opening the
   // app doesn't pop up everything that arrived earlier.
   const lastSeenRef = useRef<string | null>(null);
@@ -47,6 +51,20 @@ export function NotificationBell() {
   useEffect(() => {
     if (typeof window !== "undefined" && "Notification" in window) setCanAlert(window.Notification.permission);
   }, []);
+
+  // A device that already allowed notifications is (re)signed up quietly for whoever is logged in
+  // now — so a shared phone sends notifications to the person using it, and nobody else.
+  const userId = String((session?.user as any)?.id || "");
+  useEffect(() => {
+    if (!userId || !pushSupported() || window.Notification.permission !== "granted") return;
+    let cancelled = false;
+    registerThisDevice({ askPermission: false }).then((r) => {
+      if (!cancelled) setDeviceOn(r.ok);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     if (typeof navigator !== "undefined" && !navigator.onLine) return;
@@ -126,6 +144,17 @@ export function NotificationBell() {
     }
   };
 
+  // A push that arrives while the app is open is not shown by the phone (the app shows it itself),
+  // so the service worker tells us and we look straight away instead of waiting for the next check.
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
+    const onMessage = (e: MessageEvent) => {
+      if (e.data?.type === "push") load();
+    };
+    navigator.serviceWorker.addEventListener("message", onMessage);
+    return () => navigator.serviceWorker.removeEventListener("message", onMessage);
+  }, [load]);
+
   const open = (n: any) => {
     if (!n.readAt) markRead({ id: n._id });
     if (n.link) router.push(n.link);
@@ -133,10 +162,24 @@ export function NotificationBell() {
 
   const turnOnAlerts = async () => {
     if (!("Notification" in window)) return;
-    const result = await window.Notification.requestPermission();
-    setCanAlert(result);
-    if (result === "granted") toast.success("Alerts are on — new notifications will pop up on this device.");
-    else toast.error("Alerts are blocked in this browser. Allow notifications for this site in its settings.");
+    const result = await registerThisDevice({ askPermission: true });
+    setCanAlert(result.permission);
+    setDeviceOn(result.ok);
+    if (result.ok) {
+      toast.success("Alerts are on — new notifications will reach this device even when the app is closed.");
+    } else if (result.permission === "denied") {
+      toast.error("Alerts are blocked on this device. Allow notifications for this app in the phone's settings.");
+    } else if (result.permission === "granted") {
+      toast.warning(result.reason || "Pop-up alerts are on, but this device could not be set up for background alerts.");
+    }
+  };
+
+  const runTest = async () => {
+    setTesting(true);
+    const r = await sendTestPush();
+    setTesting(false);
+    if (r.ok) toast.success(r.message);
+    else toast.error(r.message);
   };
 
   const badge = unread + (isAdmin ? pendingApprovals : 0);
@@ -221,8 +264,30 @@ export function NotificationBell() {
             onClick={turnOnAlerts}
             className="w-full px-4 py-2.5 border-t bg-slate-50 text-xs font-bold text-[#30539C] hover:bg-slate-100 flex items-center justify-center gap-1.5"
           >
-            <BellRing className="w-3.5 h-3.5" /> Turn on pop-up alerts on this device
+            <BellRing className="w-3.5 h-3.5" /> Turn on alerts on this device (works even when the app is closed)
           </button>
+        )}
+        {canAlert === "granted" && !deviceOn && pushSupported() && (
+          <button
+            type="button"
+            onClick={turnOnAlerts}
+            className="w-full px-4 py-2.5 border-t bg-amber-50 text-xs font-bold text-amber-900 hover:bg-amber-100 flex items-center justify-center gap-1.5"
+          >
+            <BellRing className="w-3.5 h-3.5" /> Finish setting up alerts for when the app is closed
+          </button>
+        )}
+        {canAlert === "granted" && deviceOn && (
+          <div className="px-4 py-2 border-t bg-emerald-50/60 flex items-center justify-between gap-2 text-[11px] text-emerald-900">
+            <span className="font-semibold">Alerts are on for this device</span>
+            <button type="button" onClick={runTest} disabled={testing} className="font-bold text-[#30539C] hover:underline disabled:opacity-50">
+              {testing ? "Sending…" : "Send a test"}
+            </button>
+          </div>
+        )}
+        {canAlert === "denied" && (
+          <p className="px-4 py-2.5 border-t bg-slate-50 text-[11px] text-slate-600">
+            Alerts are blocked for this app. Allow notifications in the phone&apos;s settings to get them when the app is closed.
+          </p>
         )}
       </DropdownMenuContent>
     </DropdownMenu>

@@ -10,6 +10,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { PaymentModal } from "@/components/PaymentModal";
 import { toast } from "sonner";
+import { PaymentChangeControls } from "@/components/payments/PaymentChangeControls";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DateRangeFilter, resolveDateRange, isDateInRange } from "@/components/shared/date-range-filter";
@@ -23,33 +24,8 @@ export default function ReceivePaymentPage() {
   const [dateRange, setDateRange] = useState(() => resolveDateRange("This Month"));
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("customers");
-  const [deletePaymentId, setDeletePaymentId] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
-  const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const res = await fetch(`/api/payments?id=${id}`, { method: "DELETE" });
-      const json = await res.json();
-      if (!json.success) throw new Error(json.error);
-      return json;
-    },
-    onSuccess: () => {
-      toast.success("Payment deleted successfully");
-      queryClient.invalidateQueries({ queryKey: ["payments"] });
-      queryClient.invalidateQueries({ queryKey: ["customers"] });
-      queryClient.invalidateQueries({ queryKey: ["invoices"] });
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("erp-payment-created"));
-        window.dispatchEvent(new CustomEvent("erp-invoice-created"));
-        window.dispatchEvent(new CustomEvent("erp-customer-updated"));
-      }
-      setDeletePaymentId(null);
-    },
-    onError: (error: any) => {
-      toast.error(error.message || "Failed to delete payment");
-      setDeletePaymentId(null);
-    }
-  });
 
   const { data: payments = [], isLoading } = useQuery({
     queryKey: ["payments"],
@@ -207,9 +183,7 @@ export default function ReceivePaymentPage() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => setDeletePaymentId(p._id)}>
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
+                    <PaymentChangeControls payment={p} />
                   </td>
                 </tr>
               ))}
@@ -227,22 +201,6 @@ export default function ReceivePaymentPage() {
         defaultPartyType={activeTab === "customers" ? "Customer" : "Supplier"}
       />
 
-      <Dialog open={!!deletePaymentId} onOpenChange={(open) => !open && setDeletePaymentId(null)}>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>Delete Payment</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete this payment? This will also revert the customer's outstanding balance. This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeletePaymentId(null)} disabled={deleteMutation.isPending}>Cancel</Button>
-            <Button variant="destructive" onClick={() => deletePaymentId && deleteMutation.mutate(deletePaymentId)} disabled={deleteMutation.isPending}>
-              {deleteMutation.isPending ? "Deleting..." : "Delete Payment"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </PageShell>
   );
 }

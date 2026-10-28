@@ -128,7 +128,13 @@ export default function ReportsPage() {
   // Pending Balance is the total outstanding balance from all customers, not from invoices
   const totalBalance = customers.reduce((acc: any, curr: any) => acc + Math.max(0, curr.outstandingBalance || 0), 0);
   
-  const totalPurchases = filteredPurchases.reduce((acc: any, curr: any) => acc + (curr.total || curr.totalAmount || 0), 0);
+  // Actual amount, before GST (the bill keeps its taxable subtotal and GST apart);
+  // a bill with no subtotal saved falls back to total − GST.
+  const totalPurchases = filteredPurchases.reduce(
+    (acc: any, curr: any) =>
+      acc + (curr.subtotal > 0 ? curr.subtotal : Math.max(0, (curr.total || curr.totalAmount || 0) - (curr.gst || 0))),
+    0
+  );
   const totalExpenses = filteredExpenses.reduce((acc: any, curr: any) => acc + (curr.amount || 0), 0);
   
   const totalStockValue = items.reduce((acc: any, curr: any) => acc + ((curr.currentStock || 0) * (curr.purchasePrice || 0)), 0);
@@ -380,7 +386,7 @@ export default function ReportsPage() {
         <TabsContent value="purchases" className="space-y-6">
           <div className="grid sm:grid-cols-2 gap-4">
             <Card className="p-5 flex flex-col justify-between">
-              <p className="text-sm font-medium text-muted-foreground">Total Purchases</p>
+              <p className="text-sm font-medium text-muted-foreground">Total Purchases (before GST)</p>
               <h3 className="text-2xl font-bold mt-2">₹{totalPurchases.toLocaleString('en-IN')}</h3>
               <p className="text-xs text-muted-foreground mt-2">{filteredPurchases.length} Purchase entries</p>
             </Card>

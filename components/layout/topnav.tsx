@@ -3,7 +3,8 @@
 import { panelForRole } from "@/lib/role-routes";
 import { Bell, Search, Settings, Sun, Moon, ChevronDown, User, LogOut, Sparkles, Wifi, WifiOff, RefreshCw, CloudUpload, CheckCircle2, Power } from "lucide-react";
 import { useState, useEffect } from "react";
-import { useSession, signOut } from "next-auth/react";
+import { useSession } from "next-auth/react";
+import { signOutAndForgetDevice } from "@/lib/push-client";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { useOfflineSync } from "@/components/shared/offline-sync-provider";
@@ -184,7 +185,7 @@ export function Topnav() {
         <Button
           variant="outline"
           size="sm"
-          onClick={() => signOut({ callbackUrl: logoutUrl })}
+          onClick={() => signOutAndForgetDevice({ callbackUrl: logoutUrl })}
           className="h-8 px-2.5 text-xs font-bold text-rose-600 border-rose-200 bg-rose-50 hover:bg-rose-100 hover:text-rose-700 transition-all flex items-center gap-1.5 shadow-2xs"
           title="Sign out / Logout of Value Plus ERP"
         >
@@ -223,7 +224,7 @@ export function Topnav() {
               </Link>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => signOut({ callbackUrl: logoutUrl })} className="cursor-pointer py-2 text-rose-600 focus:text-rose-700 focus:bg-rose-50 font-semibold">
+            <DropdownMenuItem onClick={() => signOutAndForgetDevice({ callbackUrl: logoutUrl })} className="cursor-pointer py-2 text-rose-600 focus:text-rose-700 focus:bg-rose-50 font-semibold">
               <LogOut className="mr-2 h-4 w-4" />
               <span>Log out</span>
             </DropdownMenuItem>

@@ -76,6 +76,9 @@ export async function GET(req: Request) {
     let totalRevenue = 0;
     let totalCOGS = 0;
     let totalTaxCollected = 0;
+    // GST charged on the bill lines this period — same basis as the revenue
+    // above (line taxable amounts), so the GST box compares like with like.
+    let salesGst = 0;
     let totalDiscountGiven = 0;
     let totalUnitsSold = 0;
 
@@ -108,6 +111,7 @@ export async function GET(req: Request) {
 
         invRevenue += lineTaxable;
         invCost += lineCost;
+        salesGst += (Number(line.cgst) || 0) + (Number(line.sgst) || 0) + (Number(line.igst) || 0);
 
         // Aggregate Product metrics
         const prodKey = matched?.code || matched?.vpCode || line.itemCode || line.vpCode || line.itemName || "UNKNOWN";
@@ -196,13 +200,25 @@ export async function GET(req: Request) {
     // A debit-note is a return TO the supplier (stock going back out), so it
     // subtracts from the period's net purchase value rather than adding to
     // it, the same way it already reverses inventory on save.
+    //
+    // Purchases are shown at their ACTUAL amount, before GST — the same basis
+    // as sales (line taxable amounts). A purchase entry's total includes GST,
+    // but the bill stores the taxable `subtotal` and the `gst` apart, so the
+    // actual amount is read, not worked out. A bill with no subtotal saved
+    // falls back to total − gst. The GST on purchases is kept apart as input
+    // GST (purchaseGst) for the GST box on the report.
     let totalPurchases = 0;
+    let purchaseGst = 0;
     const supplierPurchaseMap = new Map<string, { name: string; amount: number; bills: number }>();
 
     for (const pur of purchaseEntries) {
-      const amt = Number(pur.total) || 0;
-      const signedAmt = pur.type === "debit-note" ? -amt : amt;
+      const gstPart = Number(pur.gst) || 0;
+      const totalAmt = Number(pur.total) || 0;
+      const amt = Number(pur.subtotal) > 0 ? Number(pur.subtotal) : Math.max(0, totalAmt - gstPart);
+      const sign = pur.type === "debit-note" ? -1 : 1;
+      const signedAmt = sign * amt;
       totalPurchases += signedAmt;
+      purchaseGst += sign * gstPart;
 
       const supplier = pur.supplierName || "Unknown Supplier";
       if (!supplierPurchaseMap.has(supplier)) {
@@ -284,8 +300,13 @@ export async function GET(req: Request) {
           totalInvoices: invoices.length,
           totalTaxCollected: Math.round(totalTaxCollected),
           totalDiscountGiven: Math.round(totalDiscountGiven),
+          // Before GST (actual amount), like totalRevenue.
           totalPurchases: Math.round(totalPurchases),
           totalPurchaseBills: purchaseEntries.length,
+          // GST apart from profit: charged on sales, paid on purchases.
+          salesGst: Math.round(salesGst),
+          purchaseGst: Math.round(purchaseGst),
+          netGst: Math.round(salesGst - purchaseGst),
         },
         productBreakdown,
         categoryBreakdown,

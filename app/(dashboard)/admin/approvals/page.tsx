@@ -1,4 +1,5 @@
 "use client";
+import { describeChange } from "@/components/shared/EditHistory";
 
 import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -17,6 +18,38 @@ import { toast } from "sonner";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useSession } from "next-auth/react";
 import { ExportMenu } from "@/components/shared/ExportMenu";
+
+/**
+ * What a Store Manager's request would change: who asked and why, and each field as it is now
+ * and as it would become. Nothing has changed yet — approving is what applies it.
+ */
+function ChangeDetails({ act, full = false }: { act: any; full?: boolean }) {
+  const p = act?.payload;
+  if (!p?.before || !p?.after) return null;
+  const lines = describeChange(p.before, p.after, full);
+  return (
+    <div className="mt-1.5 space-y-1 rounded-lg border border-amber-200 bg-amber-50/60 p-2 text-[11px]">
+      {p.requestedBy?.name && (
+        <p className="text-slate-700">
+          <span className="font-semibold">Asked by:</span> {p.requestedBy.name} ({p.requestedBy.role})
+        </p>
+      )}
+      {p.reason && (
+        <p className="text-slate-700">
+          <span className="font-semibold">Reason:</span> {p.reason}
+        </p>
+      )}
+      {lines.length === 0 ? (
+        <p className="text-slate-500">{p.after?.deleted ? "The record would be deleted." : "No visible difference."}</p>
+      ) : (
+        lines.map((l, i) => (
+          <p key={i} className="break-words font-mono text-slate-600">{l}</p>
+        ))
+      )}
+      <p className="text-[10px] font-semibold text-amber-800">Nothing has changed yet — it is applied only when you approve.</p>
+    </div>
+  );
+}
 
 export default function SuperAdminApprovalsPage() {
   const queryClient = useQueryClient();
@@ -217,6 +250,7 @@ export default function SuperAdminApprovalsPage() {
                       </Badge>
                       <p className="font-bold text-slate-900 text-xs">{act.title}</p>
                       <p className="text-xs text-slate-600 mt-0.5">{act.description}</p>
+                      <ChangeDetails act={act} />
                     </td>
 
                     <td className="px-4 py-3 text-right font-mono font-bold text-slate-900">
@@ -301,6 +335,7 @@ export default function SuperAdminApprovalsPage() {
               <div className="bg-slate-50 p-3 rounded-xl border space-y-1.5 text-xs">
                 <p className="font-bold text-slate-800">{selectedActivity.title}</p>
                 <p className="text-slate-600">{selectedActivity.description}</p>
+                <ChangeDetails act={selectedActivity} full />
                 {selectedActivity.amount > 0 && (
                   <p className="font-mono font-bold text-emerald-700 pt-1">
                     Value: {formatCurrency(selectedActivity.amount)}

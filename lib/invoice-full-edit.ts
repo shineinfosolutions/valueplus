@@ -46,12 +46,31 @@ const PROTECTED_FIELDS = [
   "pin", "reason", "action",
 ];
 
+/** A short, comparable picture of a bill, for the audit log and for the Admin's approval screen. */
+export function summariseInvoice(inv: any) {
+  return {
+    customer: `${inv.customerName || ""} ${inv.customerPhone || ""}`.trim(),
+    items: (inv.items || []).map((it: any) => `${it.itemName} x${it.quantity} @ ${it.rate}${it.serialNumber ? ` [${it.serialNumber}]` : ""}`),
+    total: inv.total,
+    paid: inv.paidAmount,
+    balance: inv.balanceAmount,
+    paymentMode: inv.paymentMode,
+    date: String(inv.date || "").slice(0, 10),
+  };
+}
+
+/**
+ * `dryRun` runs every check and stops before anything is written, so a Store
+ * Manager is told straight away if a change cannot be made, instead of the
+ * Admin finding out when approving it.
+ */
 export async function fullEditInvoice(
   existing: any,
   incoming: any,
   actor: { name: string; id?: string; role?: string; email?: string },
   reason: string,
-  meta: { ip?: string; userAgent?: string; usedLegacyPin?: boolean } = {}
+  meta: { ip?: string; userAgent?: string; usedLegacyPin?: boolean } = {},
+  opts: { dryRun?: boolean } = {}
 ): Promise<Result> {
   // ── 1. What may be edited ────────────────────────────────────────────────
   if (existing.type !== "tax-invoice") {
@@ -232,36 +251,44 @@ export async function fullEditInvoice(
 
   // ── 3. Customer ──────────────────────────────────────────────────────────
   let customerId = String(incoming.customerId || existing.customerId || "");
+  let createCustomer = false;
   if (!mongoose.isValidObjectId(customerId)) {
     const phone = String(incoming.customerPhone || "").replace(/\D/g, "");
-    let found: any = phone ? await Customer.findOne({ phone }) : null;
-    if (!found) {
-      const last: any = await Customer.findOne({ code: /^CUST-\d+$/ }).sort({ code: -1 }).lean();
-      const lastNum = last?.code ? parseInt(String(last.code).replace("CUST-", ""), 10) || 0 : 0;
-      found = await Customer.create({
-        code: `CUST-${String(lastNum + 1).padStart(3, "0")}`,
-        name: incoming.customerName || "Walk-in Customer",
-        phone: phone || "0000000000",
-        email: incoming.customerEmail || "",
-        gstNumber: incoming.customerGST || "",
-        billingAddress: {
-          line1: incoming.customerAddress || "Address not provided",
-          city: incoming.customerCity || "City Not Specified",
-          state: incoming.customerState || "Uttar Pradesh",
-          pincode: incoming.customerPin || "",
-          country: "India",
-        },
-      });
-    }
-    customerId = String(found._id);
+    const found: any = phone ? await Customer.findOne({ phone }) : null;
+    if (found) customerId = String(found._id);
+    else createCustomer = true;
   }
-  const customerChanged = String(existing.customerId || "") !== customerId;
+  const customerChanged = createCustomer || String(existing.customerId || "") !== customerId;
   if (customerChanged && advance > 0) {
     return {
       ok: false,
       status: 400,
       error: "An advance from this customer was used on the bill, so it cannot be moved to a different customer. Cancel it and make a new bill instead.",
     };
+  }
+
+  // Every check has passed. A dry run stops here, before anything is written.
+  if (opts.dryRun) return { ok: true, invoice: existing };
+
+  if (createCustomer) {
+    const phone = String(incoming.customerPhone || "").replace(/\D/g, "");
+    const last: any = await Customer.findOne({ code: /^CUST-\d+$/ }).sort({ code: -1 }).lean();
+    const lastNum = last?.code ? parseInt(String(last.code).replace("CUST-", ""), 10) || 0 : 0;
+    const created: any = await Customer.create({
+      code: `CUST-${String(lastNum + 1).padStart(3, "0")}`,
+      name: incoming.customerName || "Walk-in Customer",
+      phone: phone || "0000000000",
+      email: incoming.customerEmail || "",
+      gstNumber: incoming.customerGST || "",
+      billingAddress: {
+        line1: incoming.customerAddress || "Address not provided",
+        city: incoming.customerCity || "City Not Specified",
+        state: incoming.customerState || "Uttar Pradesh",
+        pincode: incoming.customerPin || "",
+        country: "India",
+      },
+    });
+    customerId = String(created._id);
   }
 
   // ── 4. Apply ─────────────────────────────────────────────────────────────
@@ -496,15 +523,7 @@ export async function fullEditInvoice(
 
   // ── 5. Audit trail ───────────────────────────────────────────────────────
   try {
-    const summarise = (inv: any) => ({
-      customer: `${inv.customerName || ""} ${inv.customerPhone || ""}`.trim(),
-      items: (inv.items || []).map((it: any) => `${it.itemName} x${it.quantity} @ ${it.rate}${it.serialNumber ? ` [${it.serialNumber}]` : ""}`),
-      total: inv.total,
-      paid: inv.paidAmount,
-      balance: inv.balanceAmount,
-      paymentMode: inv.paymentMode,
-      date: String(inv.date || "").slice(0, 10),
-    });
+    const summarise = summariseInvoice;
     await AuditLog.create({
       action: "invoice.edit",
       entityType: "Invoice",

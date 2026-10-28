@@ -1275,9 +1275,19 @@ export function InvoiceCreationModal({
       });
       const json = await res.json().catch(() => ({}));
       if (!json.success) throw new Error(json.error || "Could not update the invoice");
-      return json.data;
+      return json;
     },
-    onSuccess: (data: any) => {
+    onSuccess: (json: any) => {
+      // A Store Manager's change is only sent to the Admin: the bill is unchanged until
+      // it is approved, so there is nothing new to print.
+      if (json.pending) {
+        setPendingEdit(null);
+        toast.success("Sent to the Admin for approval. The bill stays as it is until it is approved.", { duration: 7000 });
+        queryClient.invalidateQueries({ queryKey: ["pending-changes"] });
+        onClose();
+        return;
+      }
+      const data = json.data;
       setPendingEdit(null);
       toast.success(`Invoice ${data?.invoiceNumber || ""} updated.`);
       queryClient.invalidateQueries({ queryKey: ["invoices"] });
@@ -1716,8 +1726,10 @@ export function InvoiceCreationModal({
               <div className="rounded-xl border border-blue-200 bg-blue-50/60 px-4 py-3 text-xs text-slate-700">
                 Editing bill <strong className="font-mono text-[#3F63AD]">{editInvoice?.invoiceNumber}</strong> of{" "}
                 <strong>{billingEntity ? entityLabel(billingEntity) : ""}</strong>, dated <strong>{String(editInvoice?.date || "").slice(0, 10)}</strong>.
-                Number and company stay the same; the Admin or Store Manager can change the Bill Date below. Stock,
-                serial numbers, the customer&apos;s balance and payment are corrected when you save (Security PIN needed).
+                Number and company stay the same; the Admin or Store Manager can change the Bill Date below.{" "}
+                {userRole === "manager"
+                  ? "Your change is sent to the Admin and the bill stays as it is until the Admin approves it (Security PIN needed)."
+                  : "Stock, serial numbers, the customer&apos;s balance and payment are corrected when you save (Security PIN needed)."}
               </div>
             ) : (
             <BillingEntityPicker
@@ -3591,7 +3603,7 @@ export function InvoiceCreationModal({
                   ) : (
                     <>
                       <Receipt className="w-4 h-4 mr-2" />
-                      {isIndividualStaff ? "Restricted: Cashier Only" : isEditingInvoice ? "Save Changes" : "Finalize & Generate Invoice"}
+                      {isIndividualStaff ? "Restricted: Cashier Only" : isEditingInvoice ? (userRole === "manager" ? "Send for Approval" : "Save Changes") : "Finalize & Generate Invoice"}
                     </>
                   )}
                 </Button>
@@ -3693,9 +3705,13 @@ export function InvoiceCreationModal({
             }
           }}
           onConfirm={(result) => editInvoiceMutation.mutate(result)}
-          title={`Save changes to ${editInvoice?.invoiceNumber || "invoice"}`}
-          description="Stock, serial numbers, the customer's balance and the bill's payment will be corrected to match. The old and new bill are kept in the audit log with your reason."
-          confirmLabel="Save Changes"
+          title={userRole === "manager" ? `Send changes to ${editInvoice?.invoiceNumber || "invoice"} for approval` : `Save changes to ${editInvoice?.invoiceNumber || "invoice"}`}
+          description={
+            userRole === "manager"
+              ? "The Admin will see what the bill is now and what you want it to become, with your reason. The bill stays exactly as it is until the Admin approves it."
+              : "Stock, serial numbers, the customer's balance and the bill's payment will be corrected to match. The old and new bill are kept in the audit log with your reason."
+          }
+          confirmLabel={userRole === "manager" ? "Send for approval" : "Save Changes"}
           destructive={false}
           isPending={editInvoiceMutation.isPending}
           errorMessage={editAuthError}
