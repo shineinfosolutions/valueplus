@@ -4,6 +4,8 @@ import connectToDatabase from "@/lib/db";
 import Notification from "@/models/Notification";
 import { getActor } from "@/lib/requirePermission";
 import { sendDueDeliveryReminders } from "@/lib/delivery-reminders";
+import { sendOfficeStartReminder } from "@/lib/office-reminder";
+import StaffTask from "@/models/StaffTask";
 
 /**
  * The signed-in user's own notifications (the bell).
@@ -25,6 +27,8 @@ export async function GET() {
     await connectToDatabase();
     // Deliveries due soon are reminded here (no scheduler on the server).
     await sendDueDeliveryReminders();
+    // Back-up for the 10:00 cron: goes out once a day, between 10:00 and 12:00, whoever opens the app first.
+    await sendOfficeStartReminder();
     const [data, unreadCount] = await Promise.all([
       Notification.find({ recipientId: actor.id }).sort({ createdAt: -1 }).limit(30).lean(),
       Notification.countDocuments({ recipientId: actor.id, readAt: null }),
@@ -41,10 +45,23 @@ export async function PATCH(req: Request) {
     if (!actor?.id) return NextResponse.json({ success: false, error: "Not signed in" }, { status: 401 });
     const body = await req.json().catch(() => ({}));
     await connectToDatabase();
+    // Reading a task's notification marks the task as seen by this person (the Admin / Manager see it on the task).
+    const markSeen = async (filter: any) => {
+      const unreadTasks: any[] = await Notification.find({ ...filter, recipientId: actor.id, readAt: null, refType: "task" }, { refId: 1 }).lean();
+      for (const n of unreadTasks) {
+        if (!mongoose.isValidObjectId(n.refId)) continue;
+        await StaffTask.updateOne(
+          { _id: n.refId, "seenBy.userId": { $ne: actor.id } },
+          { $push: { seenBy: { userId: actor.id, name: actor.name, at: new Date() } } }
+        ).catch(() => {});
+      }
+    };
     if (body.all) {
+      await markSeen({});
       await Notification.updateMany({ recipientId: actor.id, readAt: null }, { $set: { readAt: new Date() } });
     } else if (body.id && mongoose.isValidObjectId(body.id)) {
-      await Notification.updateOne({ _id: body.id, recipientId: actor.id }, { $set: { readAt: new Date() } });
+      await markSeen({ _id: body.id });
+      await Notification.updateOne({ _id: body.id, recipientId: actor.id, readAt: null }, { $set: { readAt: new Date() } });
     } else {
       return NextResponse.json({ success: false, error: "Send an id, or all: true" }, { status: 400 });
     }

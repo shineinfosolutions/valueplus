@@ -212,13 +212,13 @@ export function PaymentModal({ isOpen, onClose, onSuccess, defaultPartyType = "C
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl p-0 rounded-2xl border-none shadow-2xl overflow-y-auto">
-        <div className="bg-gradient-to-r from-[#1B2537] via-[#2C3E5A] to-[#1B2537] text-white p-6 flex items-center gap-3">
-          <div className="w-12 h-12 rounded-xl bg-white/10 flex items-center justify-center backdrop-blur-md border border-white/20">
+      <DialogContent className="max-w-2xl w-[calc(100%-0.75rem)] sm:w-[calc(100%-2rem)] p-0 rounded-2xl border-none shadow-2xl overflow-y-auto">
+        <div className="bg-gradient-to-r from-[#1B2537] via-[#2C3E5A] to-[#1B2537] text-white p-3 pr-12 sm:p-6 flex items-center gap-3">
+          <div className="hidden sm:flex w-12 h-12 rounded-xl bg-white/10 flex items-center justify-center backdrop-blur-md border border-white/20">
             <WalletCards className="w-6 h-6 text-[#76C043]" />
           </div>
           <div>
-            <DialogTitle className="text-xl font-bold tracking-tight">
+            <DialogTitle className="text-[15px] sm:text-xl font-bold tracking-tight leading-tight">
               {defaultPartyType === "Supplier" ? "Record Supplier Payout" : "Record Customer Payment Receipt"}
             </DialogTitle>
             <DialogDescription className="text-slate-300 text-xs mt-0.5">
@@ -227,8 +227,8 @@ export function PaymentModal({ isOpen, onClose, onSuccess, defaultPartyType = "C
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-6 bg-slate-50/50">
-          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
+        <form onSubmit={handleSubmit} className="p-2.5 sm:p-6 space-y-3 sm:space-y-6 bg-slate-50/50">
+          <div className="bg-white p-3 sm:p-5 rounded-xl border border-slate-200 shadow-sm space-y-3 sm:space-y-4">
             
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-slate-700">
@@ -358,9 +358,9 @@ export function PaymentModal({ isOpen, onClose, onSuccess, defaultPartyType = "C
 
           </div>
 
-          <DialogFooter className="bg-slate-100 px-6 py-4 -mx-6 -mb-6 rounded-b-2xl border-t border-slate-200 flex items-center justify-between">
+          <DialogFooter className="bg-slate-100 px-3 sm:px-6 py-3 sm:py-4 -mx-2.5 sm:-mx-6 -mb-2.5 sm:-mb-6 rounded-b-2xl border-t border-slate-200 flex flex-row items-center justify-between gap-2">
             <Button type="button" variant="ghost" onClick={onClose} className="text-slate-600">Cancel</Button>
-            <Button type="submit" disabled={createPaymentMutation.isPending || creatingCustomer} className="bg-[#76C043] hover:bg-[#65A639] text-white shadow-lg shadow-green-900/20 font-bold px-8">
+            <Button type="submit" disabled={createPaymentMutation.isPending || creatingCustomer} className="bg-[#76C043] hover:bg-[#65A639] text-white shadow-lg shadow-green-900/20 font-bold px-4 sm:px-8 min-h-[44px] sm:min-h-0 text-xs sm:text-sm whitespace-normal">
               {createPaymentMutation.isPending || creatingCustomer ? "Saving..." : newCustomer ? "Add Customer & Record Payment" : "Record Payment"}
             </Button>
           </DialogFooter>

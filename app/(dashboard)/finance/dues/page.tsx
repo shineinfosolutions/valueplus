@@ -210,7 +210,7 @@ export default function CustomerDuesOverdueStandalonePage() {
     >
       <div className="space-y-4">
         {/* SUMMARY KPI CARDS */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-4">
           <div className="bg-white p-4 rounded-xl border border-rose-200 bg-gradient-to-br from-white to-rose-50/30 shadow-xs flex items-center justify-between">
             <div>
               <span className="text-[11px] font-bold text-rose-700 uppercase tracking-wider">Total Overdue / Due Amount</span>

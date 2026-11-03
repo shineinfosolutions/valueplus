@@ -1,5 +1,6 @@
 "use client";
 
+import { DeliveryPhotos } from "@/components/shared/DeliveryPhotos";
 import { useState, useMemo, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -75,7 +76,7 @@ function SalesInvoicesContent() {
   }, []);
   const [activeTab, setActiveTab] = useState("customers");
   
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(searchParams.get("q") || ""); // ?q= opens the list on one bill (used by the Admin's approvals)
   const [statusFilter, setStatusFilter] = useState("all");
   // Value Plus / Ashoka Enterprises — which company's bills to list.
   const [entityFilter, setEntityFilter] = useState("all");
@@ -463,7 +464,7 @@ function SalesInvoicesContent() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm m-card-table">
             <thead className="bg-slate-50 border-b">
               <tr>
                 {["Invoice #", "Customer Name", "Invoice Date", "Due Date", "Taxable", "GST", "Total Amount", "Paid", "Balance", "Status", "Action"].map((h) => (
@@ -522,7 +523,7 @@ function SalesInvoicesContent() {
                     const StatusIcon = STATUS_CONFIG[inv.status as keyof typeof STATUS_CONFIG]?.icon || Receipt;
                     return (
                       <tr key={inv._id || inv.invoiceNumber} className="hover:bg-slate-50/70 transition-colors">
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3" data-m="two">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <button 
                               className="font-semibold text-foreground hover:text-[#3F63AD] hover:underline flex items-center gap-1"
@@ -551,6 +552,17 @@ function SalesInvoicesContent() {
                                 🚚 Delivery {formatDate(inv.expectedDeliveryDate)}
                               </span>
                             )}
+                            {inv.dispatchType === "delayed_delivery" && inv.deliveryStatus === "delivered" && inv.status !== "cancelled" && (
+                              <span
+                                className="ml-1 font-mono text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-300"
+                                title={inv.deliveredAt ? `Delivered on ${formatDate(inv.deliveredAt)}` : "Delivered"}
+                              >
+                                ✅ Delivered{inv.deliveredAt ? ` ${formatDate(inv.deliveredAt)}` : ""}
+                              </span>
+                            )}
+                            {inv.deliveryProofKey && ["admin", "superadmin", "manager"].includes(userRole) && (
+                              <DeliveryPhotos className="ml-1" invoiceNumber={inv.invoiceNumber} count={inv.deliveryProofKeys?.length || 1} by={inv.deliveryProofBy} />
+                            )}
                             {(inv.reprintCount || 0) > 0 ? (
                               <span 
                                 className="font-mono text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-50 text-amber-800 border border-amber-300"
@@ -563,7 +575,7 @@ function SalesInvoicesContent() {
                             )}
                           </div>
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3" data-m="full">
                           <div className="flex flex-col">
                             <span className="font-semibold text-foreground">{inv.customerName}</span>
                             {/* What was sold on this bill, right under the customer. */}
@@ -598,12 +610,12 @@ function SalesInvoicesContent() {
                             )}
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-muted-foreground">{formatDate(inv.date || inv.createdAt)}</td>
-                        <td className="px-4 py-3 text-muted-foreground">{formatDate(inv.dueDate || inv.createdAt)}</td>
-                        <td className="px-4 py-3 font-mono">{formatCurrency(inv.subtotal || 0)}</td>
-                        <td className="px-4 py-3 font-mono">{formatCurrency(inv.totalGST || 0)}</td>
-                        <td className="px-4 py-3 font-bold font-mono text-[#3F63AD]">{formatCurrency(inv.total || 0)}</td>
-                        <td className="px-4 py-3 font-mono text-emerald-600">
+                        <td className="px-4 py-3 text-muted-foreground" data-label="Date" data-m="end">{formatDate(inv.date || inv.createdAt)}</td>
+                        <td className="px-4 py-3 text-muted-foreground" data-m="hide">{formatDate(inv.dueDate || inv.createdAt)}</td>
+                        <td className="px-4 py-3 font-mono" data-m="hide">{formatCurrency(inv.subtotal || 0)}</td>
+                        <td className="px-4 py-3 font-mono" data-m="hide">{formatCurrency(inv.totalGST || 0)}</td>
+                        <td className="px-4 py-3 font-bold font-mono text-[#3F63AD]" data-label="Total">{formatCurrency(inv.total || 0)}</td>
+                        <td className="px-4 py-3 font-mono text-emerald-600" data-label="Paid">
                           {formatCurrency(inv.paidAmount || (inv.status === "paid" ? inv.total : 0) || 0)}
                           {Number(inv.advanceAdjusted) > 0 && (
                             <span className="block text-[10px] text-amber-700">+ {formatCurrency(inv.advanceAdjusted)} advance</span>
@@ -611,14 +623,14 @@ function SalesInvoicesContent() {
                         </td>
                         {/* The bill's own saved balance: total − paid would count an
                             advance deducted on the bill as still due. */}
-                        <td className="px-4 py-3 font-mono text-red-600">
+                        <td className="px-4 py-3 font-mono text-red-600" data-label="Balance">
                           {formatCurrency(
                             typeof inv.balanceAmount === "number"
                               ? inv.balanceAmount
                               : (inv.total || 0) - (inv.paidAmount || (inv.status === "paid" ? inv.total : 0) || 0)
                           )}
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3" data-m="full">
                           <div className="flex flex-col items-start gap-1">
                             <Badge variant={STATUS_CONFIG[inv.status as keyof typeof STATUS_CONFIG]?.variant || "secondary"} className="gap-1.5 whitespace-nowrap">
                               <StatusIcon className="w-3 h-3" />
@@ -638,7 +650,7 @@ function SalesInvoicesContent() {
                             )}
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-right">
+                        <td className="px-4 py-3 text-right" data-m="actions">
                           <div className="flex items-center justify-end gap-1.5">
                             <Button
                               variant="outline"

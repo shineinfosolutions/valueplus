@@ -63,6 +63,7 @@ self.addEventListener("push", (event) => {
   }
   const title = data.title || "ValuePlus ERP";
   const link = typeof data.link === "string" && data.link.startsWith("/") ? data.link : "/";
+  const nid = typeof data.nid === "string" ? data.nid : "";
 
   event.waitUntil(
     (async () => {
@@ -70,14 +71,25 @@ self.addEventListener("push", (event) => {
       // The app is open and on screen: it shows the message itself (and is told to look now),
       // so the person does not get it twice.
       if (windows.some((c) => c.visibilityState === "visible")) {
-        windows.forEach((c) => c.postMessage({ type: "push", title, link }));
+        windows.forEach((c) => c.postMessage({ type: "push", title, link, nid }));
         return;
       }
+      // The app may be alive but in the background: its page can play the chime itself (the service
+      // worker cannot play sound), besides the phone's own notification sound below.
+      windows.forEach((c) => c.postMessage({ type: "push-sound" }));
       await self.registration.showNotification(title, {
         body: data.body || "",
         icon: "/icons/icon-192.png",
-        data: { link },
-        vibrate: [200, 100, 200],
+        badge: "/icons/icon-192.png",
+        data: { link, nid },
+        // Vibrates and is not silent, so the phone plays its notification sound.
+        vibrate: [250, 120, 250, 120, 250],
+        silent: false,
+        // A new tag every time: a notification that replaces an earlier one with the same tag can arrive
+        // without sound on some phones. renotify makes any replacement alert again.
+        renotify: true,
+        tag: "vp-" + Date.now() + "-" + Math.floor(Math.random() * 1000),
+        timestamp: Date.now(),
       });
     })()
   );
@@ -87,8 +99,17 @@ self.addEventListener("push", (event) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const link = (event.notification.data && event.notification.data.link) || "/";
+  const nid = (event.notification.data && event.notification.data.nid) || "";
   event.waitUntil(
     (async () => {
+      // Tapping it is reading it: mark it read at once (the person is signed in in this browser).
+      if (nid) {
+        try {
+          await fetch("/api/notifications", { method: "PATCH", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: nid }) });
+        } catch (e) {
+          /* it stays unread and is marked when the app opens it */
+        }
+      }
       const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
       for (const client of windows) {
         if ("focus" in client) {

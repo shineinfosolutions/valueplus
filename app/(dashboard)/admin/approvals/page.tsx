@@ -19,16 +19,59 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import { useSession } from "next-auth/react";
 import { ExportMenu } from "@/components/shared/ExportMenu";
 
+const FIELD_LABELS: Record<string, string> = {
+  customer: "Customer",
+  items: "Products",
+  total: "Total",
+  paid: "Paid",
+  balance: "Balance",
+  paymentMode: "Payment mode",
+  date: "Date",
+  billDate: "Bill date",
+  dueDate: "Due date",
+  amount: "Amount",
+  partyName: "Party",
+  reference: "Reference",
+  txnRef: "Transaction ref",
+  notes: "Notes",
+  customerGST: "Customer GSTIN",
+  customerAddress: "Customer address",
+  placeOfSupply: "Place of supply",
+  shippingAddress: "Shipping address",
+  vehicleNumber: "Vehicle no.",
+  expectedDeliveryDate: "Delivery date",
+  discount: "Discount",
+  taxableAmount: "Amount before GST",
+  totalGST: "GST",
+  payments: "Payments",
+  supplierGstin: "Supplier GSTIN",
+  supplierName: "Supplier",
+  billNo: "Bill no.",
+};
+const MONEY_FIELDS = new Set(["total", "paid", "balance", "amount", "subtotal", "gst", "discount", "taxableAmount", "totalGST"]);
+
+const humanise = (k: string) => FIELD_LABELS[k] || k.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase());
+const fmtValue = (k: string, v: any): string => {
+  if (v === null || v === undefined || v === "") return "—";
+  if (MONEY_FIELDS.has(k) && Number.isFinite(Number(v))) return formatCurrency(Number(v));
+  if (typeof v === "object") return JSON.stringify(v);
+  return String(v);
+};
+
 /**
- * What a Store Manager's request would change: who asked and why, and each field as it is now
- * and as it would become. Nothing has changed yet — approving is what applies it.
+ * What a request would change, spelled out: who asked and why, then for each thing that changes what it is
+ * now and what it would become (a product list shows the lines taken out and the lines put in).
+ * Nothing has changed yet — approving is what applies it.
  */
 function ChangeDetails({ act, full = false }: { act: any; full?: boolean }) {
   const p = act?.payload;
   if (!p?.before || !p?.after) return null;
-  const lines = describeChange(p.before, p.after, full);
+  const before = p.before;
+  const after = p.after;
+  const keys = Object.keys({ ...before, ...after }).filter((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]));
+  const shown = full ? keys : keys.slice(0, 4);
   return (
-    <div className="mt-1.5 space-y-1 rounded-lg border border-amber-200 bg-amber-50/60 p-2 text-[11px]">
+    <div className="mt-1.5 space-y-2 rounded-lg border border-amber-200 bg-amber-50/60 p-2.5 text-[11px]">
       {p.requestedBy?.name && (
         <p className="text-slate-700">
           <span className="font-semibold">Asked by:</span> {p.requestedBy.name} ({p.requestedBy.role})
@@ -39,12 +82,61 @@ function ChangeDetails({ act, full = false }: { act: any; full?: boolean }) {
           <span className="font-semibold">Reason:</span> {p.reason}
         </p>
       )}
-      {lines.length === 0 ? (
-        <p className="text-slate-500">{p.after?.deleted ? "The record would be deleted." : "No visible difference."}</p>
+      {String(p.target || "").startsWith("invoice:") && (
+        <a
+          href={`/sales/invoices?q=${encodeURIComponent(String(p.target).slice(8))}`}
+          target="_blank"
+          rel="noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className="inline-block font-bold text-[#30539C] underline"
+        >
+          Open the bill {String(p.target).slice(8)} to see it as it is now →
+        </a>
+      )}
+      <p className="font-bold uppercase tracking-wide text-[10px] text-amber-900">What is changing ({keys.length})</p>
+      {keys.length === 0 ? (
+        <p className="text-slate-500">{after?.deleted ? "The record would be deleted." : "No visible difference."}</p>
       ) : (
-        lines.map((l, i) => (
-          <p key={i} className="break-words font-mono text-slate-600">{l}</p>
-        ))
+        <div className="space-y-1.5">
+          {shown.map((k) => {
+            const bv = before[k];
+            const av = after[k];
+            if (Array.isArray(bv) || Array.isArray(av)) {
+              const bl: any[] = Array.isArray(bv) ? bv : [];
+              const al: any[] = Array.isArray(av) ? av : [];
+              const bset = new Set(bl.map((x) => JSON.stringify(x)));
+              const aset = new Set(al.map((x) => JSON.stringify(x)));
+              const removed = bl.filter((x) => !aset.has(JSON.stringify(x)));
+              const added = al.filter((x) => !bset.has(JSON.stringify(x)));
+              const same = bl.length - removed.length;
+              return (
+                <div key={k} className="rounded-md border border-slate-200 bg-white p-2">
+                  <p className="font-bold text-slate-800">{humanise(k)}</p>
+                  {removed.map((x, i) => (
+                    <p key={`r${i}`} className="break-words font-mono text-rose-700">− {typeof x === "object" ? JSON.stringify(x) : String(x)}</p>
+                  ))}
+                  {added.map((x, i) => (
+                    <p key={`a${i}`} className="break-words font-mono text-emerald-700">+ {typeof x === "object" ? JSON.stringify(x) : String(x)}</p>
+                  ))}
+                  {same > 0 && <p className="text-[10px] text-slate-400">{same} line{same === 1 ? "" : "s"} unchanged</p>}
+                </div>
+              );
+            }
+            return (
+              <div key={k} className="grid grid-cols-[110px_1fr] gap-x-2 items-start rounded-md border border-slate-200 bg-white p-2">
+                <p className="font-bold text-slate-800">{humanise(k)}</p>
+                <p className="break-words">
+                  <span className="text-rose-700 line-through decoration-rose-300">{fmtValue(k, bv)}</span>
+                  <span className="mx-1.5 text-slate-400">→</span>
+                  <span className="font-bold text-emerald-700">{fmtValue(k, av)}</span>
+                </p>
+              </div>
+            );
+          })}
+          {!full && keys.length > shown.length && (
+            <p className="text-[10px] font-semibold text-slate-500">+{keys.length - shown.length} more change{keys.length - shown.length === 1 ? "" : "s"} — press Approve or Reject to see them all</p>
+          )}
+        </div>
       )}
       <p className="text-[10px] font-semibold text-amber-800">Nothing has changed yet — it is applied only when you approve.</p>
     </div>
@@ -143,36 +235,36 @@ export default function SuperAdminApprovalsPage() {
       }
     >
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <div className="bg-gradient-to-br from-amber-500/10 to-orange-500/10 border border-amber-500/30 rounded-2xl p-5 shadow-sm">
+      <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-4 sm:mb-6">
+        <div className="bg-gradient-to-br from-amber-500/10 to-orange-500/10 border border-amber-500/30 rounded-xl sm:rounded-2xl p-2.5 sm:p-5 shadow-sm">
           <div className="flex items-center justify-between">
-            <p className="text-xs font-bold text-amber-700 uppercase tracking-wider">Pending Action Required</p>
-            <Clock className="w-5 h-5 text-amber-600 animate-pulse" />
+            <p className="text-[10px] sm:text-xs font-bold text-amber-700 uppercase tracking-wider leading-tight">Pending <span className="hidden sm:inline">Action Required</span></p>
+            <Clock className="hidden sm:block w-5 h-5 text-amber-600 animate-pulse" />
           </div>
-          <p className="text-3xl font-black text-amber-900 mt-2">{pendingCount}</p>
-          <p className="text-xs text-amber-700 mt-1">Requires Super Admin sign-off</p>
+          <p className="text-xl sm:text-3xl font-black text-amber-900 mt-1 sm:mt-2">{pendingCount}</p>
+          <p className="hidden sm:block text-xs text-amber-700 mt-1">Requires Super Admin sign-off</p>
         </div>
 
-        <div className="bg-gradient-to-br from-emerald-500/10 to-teal-500/10 border border-emerald-500/30 rounded-2xl p-5 shadow-sm">
+        <div className="bg-gradient-to-br from-emerald-500/10 to-teal-500/10 border border-emerald-500/30 rounded-xl sm:rounded-2xl p-2.5 sm:p-5 shadow-sm">
           <div className="flex items-center justify-between">
-            <p className="text-xs font-bold text-emerald-700 uppercase tracking-wider">Approved Activities</p>
-            <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+            <p className="text-[10px] sm:text-xs font-bold text-emerald-700 uppercase tracking-wider leading-tight">Approved<span className="hidden sm:inline"> Activities</span></p>
+            <CheckCircle2 className="hidden sm:block w-5 h-5 text-emerald-600" />
           </div>
-          <p className="text-3xl font-black text-emerald-900 mt-2">
+          <p className="text-xl sm:text-3xl font-black text-emerald-900 mt-1 sm:mt-2">
             {approvals.filter((a: any) => a.status === "approved").length}
           </p>
-          <p className="text-xs text-emerald-700 mt-1">Authorized store operations</p>
+          <p className="hidden sm:block text-xs text-emerald-700 mt-1">Authorized store operations</p>
         </div>
 
-        <div className="bg-gradient-to-br from-red-500/10 to-rose-500/10 border border-red-500/30 rounded-2xl p-5 shadow-sm">
+        <div className="bg-gradient-to-br from-red-500/10 to-rose-500/10 border border-red-500/30 rounded-xl sm:rounded-2xl p-2.5 sm:p-5 shadow-sm">
           <div className="flex items-center justify-between">
-            <p className="text-xs font-bold text-red-700 uppercase tracking-wider">Rejected Requests</p>
-            <XCircle className="w-5 h-5 text-red-600" />
+            <p className="text-[10px] sm:text-xs font-bold text-red-700 uppercase tracking-wider leading-tight">Rejected<span className="hidden sm:inline"> Requests</span></p>
+            <XCircle className="hidden sm:block w-5 h-5 text-red-600" />
           </div>
-          <p className="text-3xl font-black text-red-900 mt-2">
+          <p className="text-xl sm:text-3xl font-black text-red-900 mt-1 sm:mt-2">
             {approvals.filter((a: any) => a.status === "rejected").length}
           </p>
-          <p className="text-xs text-red-700 mt-1">Blocked or returned for revision</p>
+          <p className="hidden sm:block text-xs text-red-700 mt-1">Blocked or returned for revision</p>
         </div>
       </div>
 
@@ -198,8 +290,54 @@ export default function SuperAdminApprovalsPage() {
         ))}
       </div>
 
+      {/* Phone: one compact card per request (the table's narrow columns made every row very tall) */}
+      <div className="md:hidden space-y-2.5">
+        {isLoading ? (
+          <p className="rounded-xl border bg-white p-6 text-center text-xs text-slate-500">Loading approval queue...</p>
+        ) : approvals.length === 0 ? (
+          <div className="rounded-xl border bg-white p-6 text-center">
+            <CheckCircle2 className="mx-auto mb-1.5 h-8 w-8 text-emerald-500 opacity-60" />
+            <p className="text-sm font-bold text-slate-700">No requests</p>
+            <p className="mt-0.5 text-[11px] text-slate-400">Everything is reviewed and in order.</p>
+          </div>
+        ) : (
+          approvals.map((act: any) => (
+            <div key={act.activityId} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate font-mono text-[11px] font-bold text-[#30539C]">{act.activityId}</p>
+                  <p className="text-[10px] text-slate-400">{formatDate(act.createdAt)} · {act.storeInchargeName}</p>
+                </div>
+                <Badge variant={act.status === "approved" ? "success" : act.status === "rejected" ? "destructive" : "warning"} className="shrink-0 text-[10px]">
+                  {act.status.toUpperCase()}
+                </Badge>
+              </div>
+              <div className="mt-1.5">
+                <Badge variant="outline" className="mb-1 text-[9px] font-bold uppercase">{act.activityType?.replace("_", " ")}</Badge>
+                <p className="text-[13px] font-bold leading-snug text-slate-900">{act.title}</p>
+                <p className="mt-0.5 text-[11px] leading-snug text-slate-600">{act.description}</p>
+                <ChangeDetails act={act} />
+              </div>
+              {act.amount > 0 && <p className="mt-1.5 font-mono text-sm font-black text-slate-900">{formatCurrency(act.amount)}</p>}
+              {act.status === "pending" ? (
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <Button size="sm" onClick={() => handleOpenActionModal(act, "approve")} className="h-9 bg-emerald-600 text-xs font-bold text-white hover:bg-emerald-700">
+                    <CheckCircle2 className="mr-1 h-3.5 w-3.5" /> Approve
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => handleOpenActionModal(act, "reject")} className="h-9 border-red-200 text-xs font-bold text-red-600 hover:bg-red-50">
+                    <XCircle className="mr-1 h-3.5 w-3.5" /> Reject
+                  </Button>
+                </div>
+              ) : (
+                <p className="mt-1.5 text-[11px] font-medium text-slate-500">{act.superAdminNotes || "Resolved"}</p>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+
       {/* Approvals Table */}
-      <div className="data-table-container">
+      <div className="data-table-container hidden md:block">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 border-b">

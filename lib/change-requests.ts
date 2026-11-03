@@ -21,9 +21,9 @@ import { notifyAdmins } from "@/lib/notify";
 
 export const ADMIN_ROLES = ["admin", "superadmin"];
 
-export type ChangeKind = "payment_edit" | "payment_delete" | "invoice_edit" | "purchase_correction" | "backdated_purchase";
+export type ChangeKind = "payment_edit" | "payment_delete" | "invoice_edit" | "purchase_correction" | "backdated_purchase" | "deferred";
 
-export const CHANGE_KINDS: ChangeKind[] = ["payment_edit", "payment_delete", "invoice_edit", "purchase_correction"];
+export const CHANGE_KINDS: ChangeKind[] = ["payment_edit", "payment_delete", "invoice_edit", "purchase_correction", "deferred"];
 
 const fail = (status: number, error: string, extra: Record<string, unknown> = {}) => ({
   ok: false as const,
@@ -96,6 +96,19 @@ export async function auditChange(entry: {
   }
 }
 
+/** The first few things a request changes, as " · field: old → new", for the Admin's notification. */
+function changeSummary(before: any, after: any): string {
+  if (!before || !after || typeof before !== "object" || typeof after !== "object") return "";
+  const parts = Object.keys({ ...before, ...after })
+    .filter((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]))
+    .slice(0, 3)
+    .map((k) => {
+      const show = (v: any) => (Array.isArray(v) ? `${v.length} line${v.length === 1 ? "" : "s"}` : typeof v === "object" && v ? "…" : String(v ?? "—"));
+      return `${k}: ${show(before[k])} → ${show(after[k])}`;
+    });
+  return parts.length ? ` · ${parts.join(", ")}` : "";
+}
+
 /** A version stamp, so an approval can tell the record changed after the request was made. */
 export const versionOf = (doc: any) => String(doc?.updatedAt ? new Date(doc.updatedAt).getTime() : "");
 
@@ -165,7 +178,7 @@ export async function createChangeRequest(input: {
     await notifyAdmins({
       type: "approval_request",
       title: `🔔 Approval needed: ${input.title}`,
-      message: `${input.actor.name} · ${input.description}`,
+      message: `${input.actor.name} · ${input.description}${changeSummary(input.before, input.after)}`,
       link: "/admin/approvals",
       createdBy: input.actor.name,
     });
@@ -260,6 +273,13 @@ export async function executeChangeRequest(
         metadata: { before: r.before, after: r.after, requestedBy: p.requestedBy },
       });
       return { ok: true };
+    }
+
+    case "deferred": {
+      // Any other change the Store Manager asked for (cancel / delete a bill, an item, a party, a stock change...):
+      // the same route is run again as the approving Admin.
+      const { executeDeferred } = await import("@/lib/deferred-actions");
+      return executeDeferred(p.data || {}, approver);
     }
 
     default:

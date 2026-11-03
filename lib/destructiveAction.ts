@@ -1,6 +1,8 @@
+import { deferredContext } from "@/lib/deferred-context";
+import { deferManagerRequest } from "@/lib/deferred-actions";
 import { NextResponse } from "next/server";
 import { getActor } from "@/lib/requirePermission";
-import { requirePinAndPermission } from "@/lib/securityPin";
+import { requirePinAndPermission, verifySecurityPin } from "@/lib/securityPin";
 import { Permission } from "@/lib/permissions";
 
 /**
@@ -13,7 +15,9 @@ export async function authoriseDestructiveAction(
   req: Request,
   permission: Permission,
   pin: string,
-  reason: string
+  reason: string,
+  /** What the route already read from the request (a body can only be read once). */
+  body?: any
 ) {
   const actor = await getActor();
   if (!actor) {
@@ -37,7 +41,20 @@ export async function authoriseDestructiveAction(
     };
   }
 
-  const check = await requirePinAndPermission(actor, permission, pin);
+  // An approved request of the Store Manager is being carried out: the Manager already gave the PIN and the reason.
+  if (deferredContext.getStore()) {
+    return {
+      ok: true as const,
+      actor,
+      reason: trimmedReason,
+      usedLegacyPin: false,
+      ip: "",
+      userAgent: "",
+    };
+  }
+
+  // A Store Manager only sends a request (the Admin decides), so his role permission is not what stops it: his PIN is checked.
+  const check = actor.role === "manager" ? await verifySecurityPin(actor, pin) : await requirePinAndPermission(actor, permission, pin);
   if (!check.ok) {
     return {
       ok: false as const,
@@ -46,6 +63,22 @@ export async function authoriseDestructiveAction(
         { status: 403 }
       ),
     };
+  }
+
+  // A Store Manager does not cancel / delete: the request goes to the Admin, who decides.
+  if (actor.role === "manager") {
+    const url = new URL(req.url);
+    const what = permission.startsWith("invoice") ? "bill" : "purchase bill";
+    const verb = permission.endsWith("delete") ? "Delete" : "Cancel";
+    const ref = String(url.searchParams.get("invoiceNumber") || url.searchParams.get("id") || body?.invoiceNumber || body?.billNo || body?.id || "");
+    const response = await deferManagerRequest(req, actor, {
+      title: `${verb} ${what}${ref ? ` ${ref}` : ""}`,
+      description: `${verb} a ${what}${ref ? ` (${ref})` : ""}. Reason: ${trimmedReason}`,
+      target: `${permission}:${req.method}:${url.pathname}${url.search.replace(/[?&](pin)=[^&]*/g, "")}`.slice(0, 300),
+      reason: trimmedReason,
+      body,
+    });
+    return { ok: false as const, response };
   }
 
   return {

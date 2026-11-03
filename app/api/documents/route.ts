@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import connectToDatabase from "@/lib/db";
 import cloudinary from "@/lib/cloudinary";
 import StoredDocument from "@/models/StoredDocument";
+import DocumentFolder from "@/models/DocumentFolder";
 import { getActor } from "@/lib/requirePermission";
 
 /**
@@ -15,7 +16,7 @@ export const maxDuration = 60;
 
 const ALLOWED_TYPES = ["application/pdf", "image/jpeg", "image/jpg", "image/png", "image/webp"];
 const MAX_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
-const VIEW_ROLES = ["admin", "superadmin", "accounts"];
+const VIEW_ROLES = ["admin", "superadmin", "manager", "accounts"];
 
 /** Today's date in India, so an upload late in the evening is not dated tomorrow or yesterday. */
 function todayInIndia(): string {
@@ -30,7 +31,7 @@ async function requireViewer() {
   if (!VIEW_ROLES.includes(actor.role)) {
     return {
       error: NextResponse.json(
-        { success: false, error: "Only the admin and accounts can open the documents section." },
+        { success: false, error: "Only the admin, manager and accounts can open the documents section." },
         { status: 403 }
       ),
     };
@@ -61,6 +62,7 @@ export async function POST(req: Request) {
     const file = form.get("file");
     const narration = String(form.get("narration") || "").trim();
     const requestedDate = String(form.get("date") || "").slice(0, 10);
+    const folderId = String(form.get("folderId") || "");
     const date = /^\d{4}-\d{2}-\d{2}$/.test(requestedDate) ? requestedDate : todayInIndia();
 
     if (!file || !(file instanceof File)) {
@@ -79,6 +81,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: "The document date cannot be in the future." }, { status: 400 });
     }
 
+    if (folderId) {
+      await connectToDatabase();
+      if (!mongoose.isValidObjectId(folderId) || !(await DocumentFolder.exists({ _id: folderId }))) {
+        return NextResponse.json({ success: false, error: "That folder no longer exists." }, { status: 400 });
+      }
+    }
+
     const buffer = Buffer.from(await file.arrayBuffer());
     const dataUri = `data:${file.type};base64,${buffer.toString("base64")}`;
     const uploaded = await cloudinary.uploader.upload(dataUri, {
@@ -95,6 +104,7 @@ export async function POST(req: Request) {
       docNo,
       date,
       narration,
+      folderId,
       fileUrl: uploaded.secure_url,
       filePublicId: uploaded.public_id,
       fileResourceType: uploaded.resource_type,
@@ -111,6 +121,29 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: true, data: record, message: "Document saved." });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message || "Upload failed" }, { status: 500 });
+  }
+}
+
+/** Move a document to another folder (or out of every folder): admin and manager. */
+export async function PUT(req: Request) {
+  try {
+    const actor = await getActor();
+    if (!actor) return NextResponse.json({ success: false, error: "You must be signed in to do this." }, { status: 401 });
+    if (!["admin", "superadmin", "manager"].includes(actor.role)) {
+      return NextResponse.json({ success: false, error: "Only the admin or manager can move a document." }, { status: 403 });
+    }
+    const body = await req.json();
+    if (!mongoose.isValidObjectId(body.id)) return NextResponse.json({ success: false, error: "Document id is required." }, { status: 400 });
+    const folderId = String(body.folderId || "");
+    await connectToDatabase();
+    if (folderId && (!mongoose.isValidObjectId(folderId) || !(await DocumentFolder.exists({ _id: folderId })))) {
+      return NextResponse.json({ success: false, error: "That folder no longer exists." }, { status: 400 });
+    }
+    const doc = await StoredDocument.findByIdAndUpdate(body.id, { $set: { folderId } }, { new: true }).lean();
+    if (!doc) return NextResponse.json({ success: false, error: "Document not found." }, { status: 404 });
+    return NextResponse.json({ success: true, data: doc });
+  } catch (error: any) {
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
 

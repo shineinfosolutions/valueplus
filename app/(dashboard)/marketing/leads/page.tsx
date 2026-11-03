@@ -42,6 +42,36 @@ function calledAgo(at: any): string {
   return new Date(t).toLocaleDateString("en-IN", { day: "2-digit", month: "short", timeZone: "Asia/Kolkata" });
 }
 
+const ACTIVITY_ROLES = ["admin", "superadmin", "manager", "accounts"];
+
+/** The India calendar day (YYYY-MM-DD) of a timestamp. */
+function istDay(at: any): string {
+  const d = at ? new Date(at) : null;
+  return d && !isNaN(d.getTime()) ? d.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }) : "";
+}
+function istTime(at: any): string {
+  const d = at ? new Date(at) : null;
+  return d && !isNaN(d.getTime()) ? d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" }) : "";
+}
+function shortDay(day: string): string {
+  const d = new Date(`${day}T00:00:00`);
+  return isNaN(d.getTime()) ? day : d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
+}
+/** Calls grouped by day, newest day first: [{ day, count, staff }]. */
+function callsByDay(calls: any[] = []) {
+  const map = new Map<string, { day: string; count: number; staff: Map<string, number> }>();
+  for (const c of calls) {
+    const day = istDay(c.at);
+    if (!day) continue;
+    const e = map.get(day) || { day, count: 0, staff: new Map<string, number>() };
+    e.count += 1;
+    const who = c.staff || "Staff";
+    e.staff.set(who, (e.staff.get(who) || 0) + 1);
+    map.set(day, e);
+  }
+  return [...map.values()].sort((a, b) => b.day.localeCompare(a.day));
+}
+
 export default function LeadsPipelinePage() {
   const queryClient = useQueryClient();
   const { data: session } = useSession();
@@ -54,6 +84,20 @@ export default function LeadsPipelinePage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [expandedLeads, setExpandedLeads] = useState<Record<string, boolean>>({});
+  const [activityOpen, setActivityOpen] = useState(false);
+  const [actStaff, setActStaff] = useState("all");
+  const [actFrom, setActFrom] = useState("");
+  const [actTo, setActTo] = useState("");
+  const canSeeActivity = ACTIVITY_ROLES.includes(myRole);
+
+  // "/marketing/leads?new=true" (the New Lead button on the home screen) opens the new-lead form at once.
+  React.useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("new") === "true") {
+      setIsAddModalOpen(true);
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  }, []);
 
   const [leadForm, setLeadForm] = useState({
     customerName: "",
@@ -271,7 +315,7 @@ export default function LeadsPipelinePage() {
     >
       <div className="space-y-4">
         {/* KPI SUMMARY CARDS */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3.5">
           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
             <div>
               <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Pipeline Leads</p>
@@ -338,6 +382,7 @@ export default function LeadsPipelinePage() {
                 Customer: l.customerName,
                 Mobile: l.mobile,
                 Calls: Number(l.callCount) || 0,
+                "Calls By Date": callsByDay(l.calls).map((c) => `${c.day} x${c.count} (${[...c.staff].map(([n, k]) => `${n} ${k}`).join(", ")})`).join("; "),
                 Source: l.source || "Walk-in Store",
                 "Interested Product": l.interestedProduct,
                 "VP Code": l.vpCode || "",
@@ -345,10 +390,16 @@ export default function LeadsPipelinePage() {
                 "Assigned Staff": l.assignedStaff || "Sales Team",
                 "Last Follow-up": l.lastFollowUpDate || "",
                 "Next Follow-up": l.followUpDate || "",
+                "All Follow-ups": (l.followUps || []).map((f: any) => `${f.date}${f.nextDate ? ` -> ${f.nextDate}` : ""}${f.notes ? ` | ${f.notes}` : ""} (${f.staff || ""})`).join("; "),
                 Status: l.status,
               }))}
               filename="leads"
             />
+            {canSeeActivity && (
+              <Button variant="outline" onClick={() => setActivityOpen(true)} className="h-9 text-xs font-bold border-slate-300">
+                <Users className="w-4 h-4 mr-1.5" /> Staff Activity
+              </Button>
+            )}
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="w-[160px] text-xs bg-slate-50 border-slate-300 font-semibold">
                 <SelectValue placeholder="Filter Status" />
@@ -373,38 +424,157 @@ export default function LeadsPipelinePage() {
 
         {/* LEADS DATA TABLE */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
+          {/* PHONE: one card per lead (the wide table below is for larger screens) */}
+          <div className="md:hidden p-2.5 space-y-2.5">
+            {isLoading ? (
+              <p className="p-6 text-center text-xs text-slate-500">Loading live leads from database...</p>
+            ) : filtered.length === 0 ? (
+              <p className="p-6 text-center text-xs text-slate-500 font-medium">No leads found in this pipeline view.</p>
+            ) : (
+              filtered.map((l: any) => {
+                const open = !["Converted", "Lost"].includes(l.status);
+                const overdue = l.followUpDate && l.followUpDate < todayStr && open;
+                const lastFu = [...(l.followUps || [])].reverse()[0];
+                return (
+                  <div key={l._id} className="rounded-xl border border-slate-200 bg-white p-3 shadow-xs">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-sm font-black text-slate-900 truncate">{l.customerName}</p>
+                        <p className="text-[11px] font-mono text-slate-500">
+                          <span className="font-bold text-[#3F63AD]">{l.leadId}</span>
+                          {l.priority === "Urgent" && <span className="ml-1.5 font-sans font-bold text-rose-600">🔥 Urgent</span>}
+                        </p>
+                      </div>
+                      <span className="shrink-0 font-mono font-black text-slate-900 text-sm">₹{indianNumberFormat(l.estimatedValue || 0)}</span>
+                    </div>
+
+                    <div className="mt-2 flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-mono text-slate-600">{l.mobile}</p>
+                        <p className="text-[10px] font-semibold text-slate-500">
+                          {Number(l.callCount) > 0 ? `${l.callCount} call${Number(l.callCount) === 1 ? "" : "s"} · last ${calledAgo(l.lastCalledAt)}` : "Not called yet"}
+                        </p>
+                      </div>
+                      {l.mobile && (
+                        <a
+                          href={telLink(l.mobile)}
+                          onClick={() => logCall(l)}
+                          className="inline-flex items-center gap-1 px-3 py-2 rounded-full bg-emerald-600 text-white text-xs font-bold no-underline shrink-0"
+                        >
+                          📞 Call
+                        </a>
+                      )}
+                    </div>
+
+                    <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px]">
+                      <div className="min-w-0">
+                        <p className="text-[9px] font-bold uppercase text-slate-400">Product</p>
+                        <p className="font-semibold text-slate-800 truncate">{l.interestedProduct || "—"}</p>
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[9px] font-bold uppercase text-slate-400">Staff</p>
+                        <p className="font-semibold text-slate-800 truncate">{(l.assignedStaff || "Sales Team").replace(/\(.*?\)/g, "").trim()}</p>
+                      </div>
+                      <div>
+                        <p className="text-[9px] font-bold uppercase text-slate-400">Last follow-up</p>
+                        <p className="font-mono text-slate-700">{l.lastFollowUpDate || "Not yet"}</p>
+                      </div>
+                      <div>
+                        <p className="text-[9px] font-bold uppercase text-slate-400">Next follow-up</p>
+                        <p className={cn("font-mono", overdue ? "font-bold text-rose-700" : "text-slate-700")}>
+                          {l.followUpDate || "None"}
+                          {overdue && <span className="ml-1 font-sans text-[9px] font-bold uppercase">overdue</span>}
+                        </p>
+                      </div>
+                    </div>
+
+                    {lastFu?.notes && (
+                      <p className="mt-2 text-[11px] text-slate-600 line-clamp-2">
+                        <span className="font-mono font-bold text-slate-800">{lastFu.date}</span> “{lastFu.notes}”{lastFu.staff ? <span className="text-slate-400"> — {lastFu.staff}</span> : null}
+                      </p>
+                    )}
+                    <div className="mt-1.5 flex items-center gap-1.5">
+                      <span className="inline-block text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">{l.source || "Walk-in Store"}</span>
+                      {l.convertedInvoiceNumber && <span className="text-[10px] font-mono font-bold text-emerald-700">Invoice: {l.convertedInvoiceNumber}</span>}
+                    </div>
+
+                    <div className="mt-2.5 flex items-center gap-2">
+                      <Select value={l.status} onValueChange={(val) => updateStatusMutation.mutate({ id: l._id, status: val })}>
+                        <SelectTrigger
+                          className={cn(
+                            "h-10 text-xs font-bold flex-1 border",
+                            l.status === "Converted" && "bg-emerald-50 text-emerald-800 border-emerald-200",
+                            l.status === "Follow-up" && "bg-amber-50 text-amber-800 border-amber-200",
+                            l.status === "New" && "bg-blue-50 text-blue-800 border-blue-200",
+                            l.status === "Interested" && "bg-purple-50 text-purple-800 border-purple-200",
+                            l.status === "Lost" && "bg-rose-50 text-rose-800 border-rose-200"
+                          )}
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="New">New</SelectItem>
+                          <SelectItem value="Contacted">Contacted</SelectItem>
+                          <SelectItem value="Interested">Interested</SelectItem>
+                          <SelectItem value="Follow-up">Follow-up</SelectItem>
+                          <SelectItem value="Converted">🏆 Converted</SelectItem>
+                          <SelectItem value="Lost">Lost</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Button size="sm" variant="outline" onClick={() => handleWhatsApp(l)} className="h-10 px-3 text-emerald-700 border-emerald-300 font-bold" aria-label="WhatsApp follow-up">
+                        <MessageSquare className="w-4 h-4" />
+                      </Button>
+                      {open && (
+                        <Button size="sm" variant="outline" onClick={() => openFollowUp(l)} className="h-10 px-3 text-amber-800 border-amber-300 font-bold" aria-label="Record a follow-up">
+                          <Clock className="w-4 h-4 mr-1" /> Follow-up
+                        </Button>
+                      )}
+                    </div>
+                    {l.status !== "Converted" && (
+                      <Button size="sm" onClick={() => handleConvertLeadToBill(l)} className="mt-2 w-full h-10 bg-[#3F63AD] hover:bg-[#2E4F95] text-white font-bold">
+                        <Sparkles className="w-4 h-4 mr-1.5" /> Bill Now
+                      </Button>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-xs text-left">
             <thead className="bg-slate-50 border-b text-slate-700 uppercase font-bold text-[10px]">
               <tr>
-                <th className="p-3">Lead ID</th>
-                <th className="p-3">Customer & Source</th>
-                <th className="p-3">Interested Product</th>
-                <th className="p-3">Est. Value</th>
-                <th className="p-3">Assigned Staff</th>
-                <th className="p-3">Last Follow-up</th>
-                <th className="p-3">Next Follow-up</th>
-                <th className="p-3">Status</th>
-                <th className="p-3 text-right">Actions</th>
+                <th className="px-2.5 py-2 whitespace-nowrap">Lead ID</th>
+                <th className="px-2.5 py-2 whitespace-nowrap">Customer & Source</th>
+                <th className="px-2.5 py-2 whitespace-nowrap">Interested Product</th>
+                <th className="px-2.5 py-2 whitespace-nowrap">Est. Value</th>
+                <th className="px-2.5 py-2 whitespace-nowrap">Assigned Staff</th>
+                <th className="px-2.5 py-2 whitespace-nowrap">Last Follow-up</th>
+                <th className="px-2.5 py-2 whitespace-nowrap">Next Follow-up</th>
+                <th className="px-2.5 py-2 whitespace-nowrap">Follow-ups & Calls</th>
+                <th className="px-2.5 py-2 whitespace-nowrap">Status</th>
+                <th className="px-2.5 py-2 text-right whitespace-nowrap">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {isLoading ? (
-                <tr><td colSpan={9} className="p-8 text-center text-slate-500">Loading live leads from database...</td></tr>
+                <tr><td colSpan={10} className="p-8 text-center text-slate-500">Loading live leads from database...</td></tr>
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={9} className="p-8 text-center text-slate-500 font-medium">No leads found in this pipeline view. Click &quot;+ New Lead&quot; to register a walk-in enquiry.</td></tr>
+                <tr><td colSpan={10} className="p-8 text-center text-slate-500 font-medium">No leads found in this pipeline view. Click &quot;+ New Lead&quot; to register a walk-in enquiry.</td></tr>
               ) : (
                 filtered.map((l: any) => (
-                  <tr key={l._id} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="p-3 font-mono font-bold text-[#3F63AD]">
+                  <tr key={l._id} className="hover:bg-slate-50/80 transition-colors whitespace-nowrap">
+                    <td className="px-2.5 py-2 font-mono font-bold text-[#3F63AD]">
                       {l.leadId}
                       {l.priority === "Urgent" && (
-                        <span className="block text-[9px] font-bold text-rose-600 uppercase mt-0.5">🔥 Urgent</span>
+                        <span className="ml-1.5 text-[9px] font-bold text-rose-600 uppercase">🔥 Urgent</span>
                       )}
                     </td>
-                    <td className="p-3 font-bold text-slate-900">
+                    <td className="px-2.5 py-2 font-bold text-slate-900">
+                      <span className="inline-flex items-center gap-2">
                       {l.customerName}
-                      <span className="flex items-center gap-1.5 flex-wrap text-[11px] font-mono text-slate-500 font-normal">
+                      <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-slate-500 font-normal">
                         {l.mobile}
                         {l.mobile && (
                           <a
@@ -417,24 +587,26 @@ export default function LeadsPipelinePage() {
                           </a>
                         )}
                       </span>
-                      <span className="block text-[10px] font-semibold text-slate-500 font-sans mt-0.5" title={l.lastCalledAt ? new Date(l.lastCalledAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }) : ""}>
+                      <span className="text-[10px] font-semibold text-slate-500 font-sans" title={l.lastCalledAt ? new Date(l.lastCalledAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }) : ""}>
                         {Number(l.callCount) > 0
                           ? `${l.callCount} call${Number(l.callCount) === 1 ? "" : "s"} · last ${calledAgo(l.lastCalledAt)}`
                           : "Not called yet"}
                       </span>
-                      <span className="inline-block text-[9px] font-bold px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 mt-0.5">
+                      <span className="inline-block text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
                         {l.source || "Walk-in Store"}
                       </span>
+                      </span>
                     </td>
-                    <td className="p-3 font-semibold text-slate-800">
+                    <td className="px-2.5 py-2 font-semibold text-slate-800">
                       {l.interestedProduct}
-                      {l.vpCode && <span className="block text-[10px] font-mono text-blue-600">VP: {l.vpCode}</span>}
+                      {l.vpCode && <span className="ml-1.5 text-[10px] font-mono text-blue-600">VP: {l.vpCode}</span>}
                     </td>
-                    <td className="p-3 font-mono font-black text-slate-900 text-sm">
+                    <td className="px-2.5 py-2 font-mono font-black text-slate-900 text-sm">
                       ₹{indianNumberFormat(l.estimatedValue || 0)}
                     </td>
-                    <td className="p-3 text-slate-700 font-medium">{l.assignedStaff || "Sales Team"}</td>
-                    <td className="p-3 font-mono text-slate-600 text-[11px]">
+                    <td className="px-2.5 py-2 text-slate-700 font-medium">{l.assignedStaff || "Sales Team"}</td>
+                    <td className="px-2.5 py-2 font-mono text-slate-600 text-[11px]">
+                      <span className="inline-flex items-center gap-1.5">
                       {l.lastFollowUpDate ? (
                         <span className="flex items-center gap-1">
                           <CheckCircle2 className="w-3 h-3 text-emerald-500" /> {l.lastFollowUpDate}
@@ -443,10 +615,11 @@ export default function LeadsPipelinePage() {
                         <span className="text-slate-400">Not yet</span>
                       )}
                       {(l.followUps?.length || 0) > 0 && (
-                        <span className="block text-[9px] text-slate-400 font-sans">{l.followUps.length} follow-up{l.followUps.length === 1 ? "" : "s"}</span>
+                        <span className="text-[9px] text-slate-400 font-sans">{l.followUps.length} follow-up{l.followUps.length === 1 ? "" : "s"}</span>
                       )}
+                      </span>
                     </td>
-                    <td className="p-3 font-mono text-slate-600 text-[11px]">
+                    <td className="px-2.5 py-2 font-mono text-slate-600 text-[11px]">
                       {l.followUpDate ? (
                         <span
                           className={cn(
@@ -464,7 +637,54 @@ export default function LeadsPipelinePage() {
                         <span className="text-slate-400">None</span>
                       )}
                     </td>
-                    <td className="p-3">
+                    <td className="px-2.5 py-2 min-w-[240px] max-w-[460px]">
+                      {(() => {
+                        const fus: any[] = [...(l.followUps || [])].reverse();
+                        const days = callsByDay(l.calls);
+                        const open = !!expandedLeads[l._id];
+                        const fuShown = open ? fus : fus.slice(0, 1);
+                        const dayShown = open ? days : days.slice(0, 3);
+                        const more = fus.length > fuShown.length || days.length > dayShown.length;
+                        if (!fus.length && !days.length) return <span className="text-slate-400 text-[11px]">No activity yet</span>;
+                        return (
+                          <div className={open ? "space-y-1.5 whitespace-normal" : "flex items-center gap-2"}>
+                            {days.length > 0 && (
+                              <div className={cn("flex gap-1 shrink-0", open ? "flex-wrap" : "flex-nowrap")}>
+                                {dayShown.map((d) => (
+                                  <span
+                                    key={d.day}
+                                    title={[...d.staff].map(([n, k]) => `${n}: ${k}`).join(", ")}
+                                    className="px-1.5 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-[10px] font-bold text-emerald-800"
+                                  >
+                                    📞 {shortDay(d.day)} ×{d.count}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                            {fuShown.map((f: any, i: number) => (
+                              <p key={i} className={cn("text-[11px] leading-snug text-slate-600", !open && "truncate max-w-[260px]")}>
+                                <span className="font-mono font-bold text-slate-800">{f.date}</span>
+                                {f.nextDate ? <span className="text-amber-700"> → next {f.nextDate}</span> : null}
+                                {f.notes ? <span className={open ? "block text-slate-700" : "text-slate-700"}> “{f.notes}”</span> : null}
+                                {f.staff ? <span className="text-slate-400"> — {f.staff}</span> : null}
+                              </p>
+                            ))}
+                            {more && (
+                              <button type="button" onClick={() => setExpandedLeads((m) => ({ ...m, [l._id]: true }))} className="text-[10px] font-bold text-[#3F63AD] hover:underline shrink-0">
+                                Show all ({fus.length} follow-ups, {days.length} call days)
+                              </button>
+                            )}
+                            {open && (fus.length > 2 || days.length > 4) && (
+                              <button type="button" onClick={() => setExpandedLeads((m) => ({ ...m, [l._id]: false }))} className="text-[10px] font-bold text-slate-500 hover:underline">
+                                Show less
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </td>
+                    <td className="px-2.5 py-2">
+                      <span className="inline-flex items-center gap-2">
                       <Select
                         value={l.status}
                         onValueChange={(val) => updateStatusMutation.mutate({ id: l._id, status: val })}
@@ -489,12 +709,13 @@ export default function LeadsPipelinePage() {
                         </SelectContent>
                       </Select>
                       {l.convertedInvoiceNumber && (
-                        <span className="block text-[10px] font-mono font-bold text-emerald-700 mt-1">
+                        <span className="text-[10px] font-mono font-bold text-emerald-700">
                           Invoice: {l.convertedInvoiceNumber}
                         </span>
                       )}
+                      </span>
                     </td>
-                    <td className="p-3 text-right">
+                    <td className="px-2.5 py-2 text-right">
                       <div className="flex items-center justify-end gap-1.5">
                         <Button
                           size="sm"
@@ -627,6 +848,17 @@ export default function LeadsPipelinePage() {
 
               <div>
                 <Label className="text-xs font-bold text-slate-700">Assigned Staff *</Label>
+                {ownLeadDefault ? (
+                  // A salesman's lead is always his own: only his name, nobody else's.
+                  <select
+                    value={ownLeadDefault}
+                    disabled
+                    onChange={() => {}}
+                    className="mt-1 w-full h-9 rounded-md border border-input bg-slate-50 px-2 py-1 text-xs font-bold shadow-xs"
+                  >
+                    <option value={ownLeadDefault}>👤 {ownLeadDefault.replace(/\(.*?\)/g, "").trim()}</option>
+                  </select>
+                ) : (
                 <select
                   value={leadForm.assignedStaff}
                   onChange={(e) => setLeadForm({ ...leadForm, assignedStaff: e.target.value })}
@@ -640,6 +872,7 @@ export default function LeadsPipelinePage() {
                     </option>
                   ))}
                 </select>
+                )}
               </div>
 
               <div>
@@ -792,6 +1025,114 @@ export default function LeadsPipelinePage() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* STAFF ACTIVITY (admin review of calls + follow-ups) */}
+      <Dialog open={activityOpen} onOpenChange={setActivityOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Staff Activity — Calls & Follow-ups</DialogTitle>
+          </DialogHeader>
+          {(() => {
+            // Names are compared without the "(Sales Executive)" part and without case, so a call logged under
+            // "SHOAIB AHMED" matches the user "Shoaib Ahmed (Sales Executive)".
+            const norm = (n: any) => String(n || "").replace(/\(.*?\)/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+            const nameOf = new Map<string, string>(); // key -> name shown
+            for (const u of rawUsers as any[]) {
+              if (u?.name && u.status !== "inactive" && !["supplier", "vendor"].includes(String(u.role || "").toLowerCase())) nameOf.set(norm(u.name), String(u.name).replace(/\(.*?\)/g, "").replace(/\s+/g, " ").trim());
+            }
+            const activityCount = new Map<string, number>();
+            for (const l of leads as any[]) {
+              for (const who of [...(l.calls || []).map((c: any) => c.staff), ...(l.followUps || []).map((f: any) => f.staff)]) {
+                if (!who) continue;
+                const k = norm(who);
+                if (!nameOf.has(k)) nameOf.set(k, String(who).replace(/\(.*?\)/g, "").replace(/\s+/g, " ").trim());
+                activityCount.set(k, (activityCount.get(k) || 0) + 1);
+              }
+            }
+            // Every staff member, not only the ones with calls or follow-ups so far.
+            const staffOptions = [...nameOf.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+            const inRange = (day: string) => !!day && (!actFrom || day >= actFrom) && (!actTo || day <= actTo);
+            const callRows: any[] = [];
+            const fuRows: any[] = [];
+            for (const l of leads as any[]) {
+              for (const c of l.calls || []) {
+                const day = istDay(c.at);
+                if ((actStaff === "all" || norm(c.staff) === actStaff) && inRange(day)) callRows.push({ day, time: istTime(c.at), staff: c.staff || "Staff", lead: l });
+              }
+              for (const f of l.followUps || []) {
+                if ((actStaff === "all" || norm(f.staff) === actStaff) && inRange(f.date)) fuRows.push({ ...f, lead: l });
+              }
+            }
+            fuRows.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+            const perDay = new Map<string, { day: string; staff: string; count: number; leads: Set<string> }>();
+            for (const r of callRows) {
+              const k = `${r.day}|${r.staff}`;
+              const e = perDay.get(k) || { day: r.day, staff: r.staff, count: 0, leads: new Set<string>() };
+              e.count += 1;
+              e.leads.add(r.lead.customerName);
+              perDay.set(k, e);
+            }
+            const dayRows = [...perDay.values()].sort((a, b) => b.day.localeCompare(a.day) || a.staff.localeCompare(b.staff));
+            const exportData = [
+              ...[...callRows].sort((a, b) => (b.day + b.time).localeCompare(a.day + a.time)).map((r) => ({ Type: "Call", Date: r.day, Time: r.time, Staff: r.staff, "Lead ID": r.lead.leadId, Customer: r.lead.customerName, Mobile: r.lead.mobile, "Next Follow-up": "", Notes: "" })),
+              ...fuRows.map((f) => ({ Type: "Follow-up", Date: f.date, Time: istTime(f.loggedAt), Staff: f.staff || "", "Lead ID": f.lead.leadId, Customer: f.lead.customerName, Mobile: f.lead.mobile, "Next Follow-up": f.nextDate || "", Notes: f.notes || "" })),
+            ];
+            return (
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-end gap-3">
+                  <div>
+                    <Label className="text-xs font-bold">Salesperson</Label>
+                    <select
+                      value={actStaff}
+                      onChange={(e) => setActStaff(e.target.value)}
+                      className="mt-1 h-9 w-[240px] rounded-md border border-slate-300 bg-white px-2 text-xs font-semibold"
+                    >
+                      <option value="all">All staff</option>
+                      {staffOptions.map(([key, name]) => (
+                        <option key={key} value={key}>
+                          {name}
+                          {activityCount.get(key) ? ` (${activityCount.get(key)})` : " (no activity)"}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div><Label className="text-xs font-bold">From</Label><Input type="date" value={actFrom} onChange={(e) => setActFrom(e.target.value)} className="h-9 text-xs mt-1 w-[150px]" /></div>
+                  <div><Label className="text-xs font-bold">To</Label><Input type="date" value={actTo} onChange={(e) => setActTo(e.target.value)} className="h-9 text-xs mt-1 w-[150px]" /></div>
+                  <ExportMenu title="Staff Activity" subtitle={`${callRows.length} calls, ${fuRows.length} follow-ups`} data={exportData} filename="staff-activity" />
+                </div>
+
+                <div>
+                  <p className="text-xs font-black uppercase text-slate-500 mb-1">Calls per day ({callRows.length})</p>
+                  <div className="border rounded-lg overflow-hidden">
+                    <table className="w-full text-xs">
+                      <thead className="bg-slate-50 text-[10px] uppercase text-slate-600"><tr><th className="p-2 text-left">Date</th><th className="p-2 text-left">Staff</th><th className="p-2 text-left">Calls</th><th className="p-2 text-left">Customers</th></tr></thead>
+                      <tbody className="divide-y">
+                        {dayRows.length === 0 ? <tr><td colSpan={4} className="p-4 text-center text-slate-400">No calls in this view.</td></tr> : dayRows.map((r) => (
+                          <tr key={r.day + r.staff}><td className="p-2 font-mono">{r.day}</td><td className="p-2 font-semibold">{r.staff}</td><td className="p-2 font-black">{r.count}</td><td className="p-2 text-slate-600">{[...r.leads].join(", ")}</td></tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-xs font-black uppercase text-slate-500 mb-1">Follow-ups ({fuRows.length})</p>
+                  <div className="border rounded-lg overflow-hidden">
+                    <table className="w-full text-xs">
+                      <thead className="bg-slate-50 text-[10px] uppercase text-slate-600"><tr><th className="p-2 text-left">Date</th><th className="p-2 text-left">Staff</th><th className="p-2 text-left">Customer</th><th className="p-2 text-left">Notes</th><th className="p-2 text-left">Next</th></tr></thead>
+                      <tbody className="divide-y">
+                        {fuRows.length === 0 ? <tr><td colSpan={5} className="p-4 text-center text-slate-400">No follow-ups in this view.</td></tr> : fuRows.map((f, i) => (
+                          <tr key={i}><td className="p-2 font-mono">{f.date}</td><td className="p-2 font-semibold">{f.staff || "—"}</td><td className="p-2">{f.lead.customerName}</td><td className="p-2 text-slate-700">{f.notes || "—"}</td><td className="p-2 font-mono">{f.nextDate || "—"}</td></tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </DialogContent>
       </Dialog>
     </PageShell>

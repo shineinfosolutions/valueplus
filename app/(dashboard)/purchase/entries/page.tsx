@@ -1,5 +1,6 @@
 "use client";
 
+import { useSession } from "next-auth/react";
 import { PageShell } from "@/components/shared/page-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { AutocompleteSearch } from "@/components/shared/autocomplete-search";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Plus, Search, ClipboardList, Trash2, AlertTriangle, MoreHorizontal, XCircle, Printer, Download, Eye, UploadCloud, Ban, History, Wallet, Pencil, Clock } from "lucide-react";
+import { Plus, Search, ClipboardList, Trash2, AlertTriangle, MoreHorizontal, XCircle, Printer, Download, Eye, UploadCloud, Ban, History, Wallet, Pencil, Clock, Barcode } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { AuthorizePinDialog, PinAuthResult } from "@/components/AuthorizePinDialog";
 import { useState, useMemo, useEffect, Suspense } from "react";
@@ -36,6 +37,7 @@ import { DateRangeFilter, resolveDateRange, isDateInRange } from "@/components/s
 import { TableShimmer } from "@/components/shared/shimmer-skeleton";
 import { ExportMenu } from "@/components/shared/ExportMenu";
 import { PurchaseCorrectionDialog } from "@/components/purchase/PurchaseCorrectionDialog";
+import { AddSerialsDialog } from "@/components/purchase/AddSerialsDialog";
 import { EditHistory } from "@/components/shared/EditHistory";
 import { useChangeRole, usePendingChanges } from "@/components/shared/pending-changes";
 
@@ -125,7 +127,10 @@ function PurchaseEntriesContent() {
   });
 
   const [entryToCorrect, setEntryToCorrect] = useState<any | null>(null);
+  const [entryForSerials, setEntryForSerials] = useState<any | null>(null);
   const { canChange: canCorrectBill } = useChangeRole();
+  const { data: authSession } = useSession();
+  const userRole = String((authSession?.user as any)?.role || "").toLowerCase();
   const pendingChanges = usePendingChanges();
 
   const cancelMutation = useMutation({
@@ -386,6 +391,11 @@ function PurchaseEntriesContent() {
                                 </DropdownMenuItem>
                               )
                             )}
+                            {e.status !== "cancelled" && e.type !== "debit-note" && ["admin", "superadmin", "manager", "warehouse"].includes(userRole) && (
+                              <DropdownMenuItem className="gap-2 cursor-pointer" onClick={() => setEntryForSerials(e)}>
+                                <Barcode className="w-4 h-4 text-[#3F63AD]" /> Add Serial Numbers
+                              </DropdownMenuItem>
+                            )}
                             <DropdownMenuSeparator />
                             {e.status !== "cancelled" && (
                               <DropdownMenuItem
@@ -446,6 +456,7 @@ function PurchaseEntriesContent() {
       />
 
       <PurchaseCorrectionDialog entry={entryToCorrect} onClose={() => setEntryToCorrect(null)} />
+      <AddSerialsDialog entry={entryForSerials} onClose={() => setEntryForSerials(null)} />
 
       {/* Delete and Cancel both go through the one authorisation dialog: a PIN the
           server verifies, and a reason the audit trail keeps. */}

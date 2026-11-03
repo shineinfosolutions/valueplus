@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowUpRight, ArrowDownRight, Calculator, FileSpreadsheet } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { TableShimmer } from "@/components/shared/shimmer-skeleton";
+import { GstinBillFixBanner } from "@/components/gst/GstinBillFixBanner";
 import { ExportMenu } from "@/components/shared/ExportMenu";
 import { HsnSummaryView, useHsnSummary, hsnExportRows, exportHsnSummaryExcel } from "@/components/gst/hsn-summary";
 
@@ -202,6 +203,7 @@ export default function GSTReportsPage() {
         </div>
       }
     >
+      <GstinBillFixBanner />
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)} className="w-full">
         <TabsList className="grid w-full max-w-3xl grid-cols-3 sm:grid-cols-6 h-auto mb-6 bg-slate-100 p-1 [&>button]:whitespace-normal [&>button]:text-xs sm:[&>button]:text-sm">
           <TabsTrigger value="gstr3b" className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm">GSTR-3B (Summary)</TabsTrigger>

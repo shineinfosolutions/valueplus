@@ -1,3 +1,4 @@
+import { costWithGst, hasStoredCost } from "@/lib/sale-cost";
 import { NextResponse } from "next/server";
 import mongoose from "mongoose";
 import connectToDatabase from "@/lib/db";
@@ -174,14 +175,18 @@ export async function GET(req: Request) {
 
         if (matches) {
           const qty = Number(line.quantity) || 1;
-          // Rate and amount must share one basis. `line.rate` is GST-inclusive
-          // (₹14,792) while `taxableAmount` is not (₹12,536) — showing them side by
-          // side made a row read "Rate ₹14,792 … ₹12,536", which looks like an error.
-          // Everything here is reported ex-GST, so it is comparable with the ex-GST
-          // purchase cost that the margin is calculated against.
-          const revenue = Number(line.taxableAmount) || Number(line.amount) || (Number(line.rate) || 0) * qty;
+          // Sales are shown GST included, the same as the Profit & Loss report, so a product's
+          // revenue and profit read the same on both screens: the line's taxable amount plus
+          // its CGST / SGST / IGST (what the customer was billed for the product).
+          const taxablePart = Number(line.taxableAmount) || Number(line.amount) || (Number(line.rate) || 0) * qty;
+          const lineGst = (Number(line.cgst) || 0) + (Number(line.sgst) || 0) + (Number(line.igst) || 0);
+          const revenue = taxablePart + lineGst;
           const sellingRate = revenue / qty;
-          const cost = purchaseCost * qty;
+          // The cost the bill line was sold at (the same as Profit & Loss uses); older bills
+          // fall back to the product's current purchase price.
+          // Purchase prices are before GST; the sale is GST included, so the cost gets the product's GST too.
+          const unitCost = costWithGst(hasStoredCost(line) ? Number(line.costPrice) : purchaseCost, line, item);
+          const cost = unitCost * qty;
           const profit = revenue - cost;
 
           totalSoldQty += qty;
@@ -199,7 +204,7 @@ export async function GET(req: Request) {
             qtyIn: 0,
             qtyOut: qty,
             rate: Math.round(sellingRate),
-            costRate: purchaseCost,
+            costRate: unitCost,
             amount: Math.round(revenue),
             profit: Math.round(profit),
             marginPct: revenue > 0 ? Number(((profit / revenue) * 100).toFixed(1)) : 0,

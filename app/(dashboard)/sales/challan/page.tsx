@@ -4,6 +4,8 @@
  * VALUEPLUS ERP — Delivery & Return Challan (GIDA Central Hub Logistics & Official Invoice-Style Print)
  */
 
+import { DeliveryPhotos } from "@/components/shared/DeliveryPhotos";
+import { useSession } from "next-auth/react";
 import { PageShell } from "@/components/shared/page-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,6 +55,9 @@ interface ChallanItem {
   driverPhone: string;
   ewayBillNo?: string;
   flowType?: "CNR" | "PR";
+  autoFromBill?: boolean;
+  deliveryProofKey?: string;
+  deliveryProofKeys?: string[];
   approvalStatus?: "pending" | "approved" | "rejected";
   approvedAt?: string;
   approvedBy?: string;
@@ -72,12 +77,16 @@ const KUNRAGHAT_STORE = {
 };
 
 export default function DeliveryChallanPage() {
+  const { data: session } = useSession();
   const router = useRouter();
   const [challans, setChallans] = useState<ChallanItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [flowFilter, setFlowFilter] = useState("all");
+  // The challans the system makes by itself for a bill with a delivery / vehicle are kept apart from the real
+  // delivery challans: waiting ones under "Pending Delivery", finished ones under "Delivered".
+  const [tab, setTab] = useState<"challans" | "pending" | "delivered">("challans");
   const [dateFilter, setDateFilter] = useState("This Month");
   const [dateRange, setDateRange] = useState(() => resolveDateRange("This Month"));
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -417,8 +426,19 @@ export default function DeliveryChallanPage() {
     } catch (e: any) { toast.error("Error updating flow"); }
   };
 
+  const isBillChallan = (c: ChallanItem) =>
+    c.autoFromBill === true ||
+    (c.type === "Outward Delivery" && !!c.invoiceNumber && ["Home Delivery Dispatch / Godown Delivery", "Tax Invoice Dispatch"].includes(String(c.reason || "")));
+  const pendingCount = challans.filter((c) => isBillChallan(c) && c.status !== "delivered").length;
+  const deliveredBillCount = challans.filter((c) => isBillChallan(c) && c.status === "delivered").length;
+  const realCount = challans.filter((c) => !isBillChallan(c)).length;
+
   const filtered = useMemo(() => {
     return challans.filter((c) => {
+      const bill = isBillChallan(c);
+      if (tab === "challans" && bill) return false;
+      if (tab === "pending" && !(bill && c.status !== "delivered")) return false;
+      if (tab === "delivered" && !(bill && c.status === "delivered")) return false;
       const matchSearch =
         !search ||
         (c.challanNo && c.challanNo.toLowerCase().includes(search.toLowerCase())) ||
@@ -430,10 +450,11 @@ export default function DeliveryChallanPage() {
         (c.vehicleNo && c.vehicleNo.toLowerCase().includes(search.toLowerCase()));
       const matchType = typeFilter === "all" || c.type === typeFilter;
       const matchFlow = flowFilter === "all" || (c.flowType || "CNR") === flowFilter;
-      const matchDate = isDateInRange(c.date, dateRange.start, dateRange.end);
+      // A delivery that is still pending is shown whatever its date: it has to be delivered.
+      const matchDate = tab === "pending" || isDateInRange(c.date, dateRange.start, dateRange.end);
       return matchSearch && matchType && matchFlow && matchDate;
     });
-  }, [challans, search, typeFilter, flowFilter, dateRange]);
+  }, [challans, search, typeFilter, flowFilter, dateRange, tab]);
 
   const handleSave = async () => {
     if (!formData.sourceParty || !formData.itemName) {
@@ -556,6 +577,24 @@ export default function DeliveryChallanPage() {
       </div>
 
       <div className="data-table-container">
+        <div className="flex gap-2 border-b px-4 pt-2">
+          {[
+            { key: "challans" as const, label: "Delivery Challans", count: realCount },
+            { key: "pending" as const, label: "Pending Delivery", count: pendingCount },
+            { key: "delivered" as const, label: "Delivered", count: deliveredBillCount },
+          ].map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setTab(t.key)}
+              className={`px-4 py-2.5 text-sm font-bold border-b-2 -mb-px transition-colors ${
+                tab === t.key ? "border-[#30539C] text-[#30539C]" : "border-transparent text-slate-500 hover:text-slate-800"
+              }`}
+            >
+              {t.label} ({t.count})
+            </button>
+          ))}
+        </div>
         <div className="flex flex-wrap items-center gap-3 p-4 border-b">
           <div className="relative flex-1 min-w-48">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -630,6 +669,9 @@ export default function DeliveryChallanPage() {
                       <td className="px-4 py-3 font-mono font-bold text-[#3F63AD] cursor-pointer" onClick={() => openPrintSheet(c)}>
                         {c.challanNo}
                         <span className="block text-[10px] text-slate-400 font-normal">{formatDate(c.date)}</span>
+                        {c.deliveryProofKey && c.invoiceNumber && ["admin", "superadmin", "manager"].includes(String((session?.user as any)?.role || "")) && (
+                          <DeliveryPhotos className="mt-1" invoiceNumber={c.invoiceNumber || ""} count={c.deliveryProofKeys?.length || 1} />
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <p className="font-bold text-slate-900">{c.sourceParty}</p>

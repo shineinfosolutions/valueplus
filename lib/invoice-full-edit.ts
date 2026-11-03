@@ -46,16 +46,44 @@ const PROTECTED_FIELDS = [
   "pin", "reason", "action",
 ];
 
-/** A short, comparable picture of a bill, for the audit log and for the Admin's approval screen. */
+const txt = (v: any) => String(v ?? "").trim();
+const money = (v: any) => (Number.isFinite(Number(v)) ? Math.round(Number(v) * 100) / 100 : 0);
+
+/**
+ * A readable, comparable picture of a bill, for the audit log and for the Admin's approval screen. The same function
+ * describes the bill as it is and the bill as it would become, so every field that can change shows up as "was -> will be".
+ * An empty value and a missing one read the same, so only real changes show.
+ */
 export function summariseInvoice(inv: any) {
+  const line = (it: any) => {
+    const parts = [`${txt(it.itemName)} x${it.quantity} @ ${money(it.rate)}`];
+    if (Number(it.discount) > 0) parts.push(`discount ${it.discount}${it.discountType === "percent" ? "%" : ""}`);
+    if (it.gstRate !== undefined && it.gstRate !== null && it.gstRate !== "") parts.push(`GST ${it.gstRate}%`);
+    if (txt(it.serialNumber)) parts.push(`serial ${txt(it.serialNumber)}`);
+    if (txt(it.extendedWarrantyPlan)) parts.push(`warranty ${txt(it.extendedWarrantyPlan)}`);
+    return parts.join(" · ");
+  };
+  const pays = (inv.payments || []).map((p: any) => `${txt(p.mode)} ${money(p.amount)}${txt(p.txnId) ? ` (${txt(p.txnId)})` : ""}`);
   return {
-    customer: `${inv.customerName || ""} ${inv.customerPhone || ""}`.trim(),
-    items: (inv.items || []).map((it: any) => `${it.itemName} x${it.quantity} @ ${it.rate}${it.serialNumber ? ` [${it.serialNumber}]` : ""}`),
+    customer: `${txt(inv.customerName)} ${txt(inv.customerPhone)}`.trim(),
+    customerGST: txt(inv.customerGST),
+    customerAddress: txt(inv.customerAddress),
+    placeOfSupply: txt(inv.placeOfSupply),
+    shippingAddress: txt(inv.shippingAddress),
+    vehicleNumber: txt(inv.vehicleNumber),
+    expectedDeliveryDate: txt(inv.expectedDeliveryDate).slice(0, 10),
+    items: (inv.items || []).map(line),
+    discount: money(inv.discount),
+    taxableAmount: money(inv.taxableAmount),
+    totalGST: money(inv.totalGST),
     total: inv.total,
     paid: inv.paidAmount,
     balance: inv.balanceAmount,
     paymentMode: inv.paymentMode,
+    payments: pays,
+    dueDate: txt(inv.dueDate).slice(0, 10),
     date: String(inv.date || "").slice(0, 10),
+    notes: txt(inv.notes),
   };
 }
 
@@ -98,13 +126,13 @@ export async function fullEditInvoice(
   const dateUpdate: any = {};
   let backdateNeedsApproval = false;
   if (dateChanged) {
+    return { ok: false, status: 403, error: "A bill's date cannot be changed. Back-dating is not allowed." };
+  }
+  if (dateChanged) {
     if (billDate > todayIst) {
       return { ok: false, status: 400, error: "A bill cannot be dated in the future." };
     }
     const role = String(actor.role || "");
-    if (!["admin", "superadmin", "manager"].includes(role)) {
-      return { ok: false, status: 403, error: "Only the Admin or the Store Manager can change a bill's date." };
-    }
     dateUpdate.date = billDate;
     if (billDate < todayIst) {
       dateUpdate.backdateMadeOn = todayIst;

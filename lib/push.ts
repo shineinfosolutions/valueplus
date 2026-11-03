@@ -6,6 +6,8 @@ export interface PushMessage {
   body?: string;
   /** A page of this app (e.g. "/staff/tasks") the notification opens. */
   link?: string;
+  /** The notification this push is for (tapping it marks it read). */
+  nid?: string;
 }
 
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
@@ -31,7 +33,7 @@ export async function pushToUsers(
     const subs = await PushSubscription.find({ userId: { $in: userIds.map(String) } }).limit(300).lean();
     if (subs.length === 0) return none;
 
-    const payload = { title: clip(message.title || "ValuePlus ERP", 120), body: clip(message.body || "", 300), link: safeLink(message.link) };
+    const payload = { title: clip(message.title || "ValuePlus ERP", 120), body: clip(message.body || "", 300), link: safeLink(message.link), nid: message.nid && /^[a-f0-9]{24}$/i.test(message.nid) ? message.nid : "" };
     const results = await Promise.all(
       subs.map(async (s) => ({ s, r: await sendWebPush({ endpoint: s.endpoint, p256dh: s.p256dh, auth: s.auth }, payload) }))
     );

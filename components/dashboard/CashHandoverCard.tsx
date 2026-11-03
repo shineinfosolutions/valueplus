@@ -56,7 +56,9 @@ export function CashHandoverCard({ cashierName }: { cashierName: string }) {
   // Cash that has come in since the last handover to the Admin (bills, cash
   // taken on due/finance bills, dues collected — less cash spent or banked).
   // Exactly what should be in the drawer to hand over now.
-  const todaysNetCash = Math.max(0, Number(data?.cashSinceLastHandover) || 0);
+  // Less what is already given and waiting for the Admin's confirmation, so it is not handed over twice.
+  const awaiting = ((data?.pendingHandovers || []) as any[]).reduce((t, p) => t + (Number(p.amount) || 0), 0);
+  const todaysNetCash = Math.max(0, (Number(data?.cashSinceLastHandover) || 0) - awaiting);
   const lastHandover = data?.lastHandover || null;
   const sinceLabel = lastHandover
     ? `since last handover (${lastHandover.date} ${lastHandover.time})`
@@ -91,7 +93,7 @@ export function CashHandoverCard({ cashierName }: { cashierName: string }) {
       return json.data;
     },
     onSuccess: () => {
-      toast.success("Handover recorded — the Admin can now see it.");
+      toast.success("Handover sent — it is complete once the Admin confirms receiving the cash.");
       setIsOpen(false);
       queryClient.invalidateQueries({ queryKey: ["cash-register"] });
     },
@@ -111,8 +113,31 @@ export function CashHandoverCard({ cashierName }: { cashierName: string }) {
     handoverMutation.mutate();
   };
 
+  // Handed over by the cashier but not yet confirmed by the Admin: the cash still counts as the cashier's.
+  const pending: any[] = data?.pendingHandovers || [];
+  const pendingTotal = pending.reduce((t, p) => t + (Number(p.amount) || 0), 0);
+  const refused = (data?.rejectedHandovers || [])[0];
+
   return (
     <div className="bg-white rounded-xl border border-slate-200/90 shadow-sm p-4">
+      {pending.length > 0 && (
+        <div className="mb-3 flex items-center gap-3 rounded-lg border border-amber-300 bg-amber-50 p-2.5">
+          <div className="w-9 h-9 rounded-lg bg-amber-100 border border-amber-300 flex items-center justify-center text-amber-700 shrink-0">
+            <HandCoins className="w-5 h-5" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-black text-amber-900">Waiting for the Admin to confirm {formatCurrency(pendingTotal)}</p>
+            <p className="text-xs text-amber-800">
+              {pending.length} handover{pending.length === 1 ? "" : "s"} given · the cash stays with you until the Admin confirms receiving it.
+            </p>
+          </div>
+        </div>
+      )}
+      {refused && pending.length === 0 && (
+        <div className="mb-3 rounded-lg border border-rose-300 bg-rose-50 p-2.5 text-xs text-rose-900">
+          <b>The Admin did not receive {formatCurrency(refused.amount)}</b> ({refused.date}){refused.reason ? ` — ${refused.reason}` : ""}. Hand it over again.
+        </div>
+      )}
       {todaysHandover ? (
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 shrink-0">

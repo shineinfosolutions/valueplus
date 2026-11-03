@@ -4,6 +4,9 @@ import CashTransaction from "@/models/CashTransaction";
 import BankAccount from "@/models/BankAccount";
 import Expense from "@/models/Expense";
 import { getCashRegisterSummary } from "@/lib/cashRegister";
+import AuditLog from "@/models/AuditLog";
+import mongoose from "mongoose";
+import { notifyAdmins, notifyAssignee } from "@/lib/notify";
 import { getActor } from "@/lib/requirePermission";
 
 export async function GET(req: Request) {
@@ -70,7 +73,19 @@ export async function POST(req: Request) {
       targetBankAccount: targetBankAccount || "",
       handedTo: handedTo || "",
       recordedBy: recordedBy || "Admin / Cashier",
+      // A handover recorded by anyone but the Admin waits for the Admin to confirm receiving the cash.
+      ...(category === "MD_HANDOVER" && !["admin", "superadmin"].includes(actor.role) ? { adminStatus: "pending" } : {}),
     });
+
+    if (category === "MD_HANDOVER" && !["admin", "superadmin"].includes(actor.role)) {
+      await notifyAdmins({
+        type: "general",
+        title: `Cash handover ₹${Number(amount).toLocaleString("en-IN")} waiting for you`,
+        message: `${actor.name} says they handed over ₹${Number(amount).toLocaleString("en-IN")} to you. Confirm on the Dashboard once you have received it.`,
+        link: "/dashboard",
+        createdBy: actor.name,
+      });
+    }
 
     // If Outflow is Bank Deposit -> Automatically credit target Bank Account in MongoDB
     if (category === "BANK_DEPOSIT" && targetBankAccount) {
@@ -106,6 +121,66 @@ export async function POST(req: Request) {
       message: "Cash movement recorded and saved to MongoDB!",
       data: newTxn,
     });
+  } catch (error: any) {
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
+}
+
+/**
+ * The Admin confirms (or refuses) a cashier's handover. Until it is confirmed the cash is still counted as
+ * the cashier's. Body: { id, action: "confirm" | "reject", reason? }. Admin only.
+ */
+export async function PATCH(req: Request) {
+  try {
+    const actor = await getActor();
+    if (!actor) return NextResponse.json({ success: false, error: "You must be signed in to do this." }, { status: 401 });
+    if (!["admin", "superadmin"].includes(actor.role)) {
+      return NextResponse.json({ success: false, error: "Only the Admin can confirm a cash handover." }, { status: 403 });
+    }
+    const body = await req.json();
+    const action = String(body.action || "");
+    if (!mongoose.isValidObjectId(body.id) || !["confirm", "reject"].includes(action)) {
+      return NextResponse.json({ success: false, error: "Handover not found." }, { status: 400 });
+    }
+    const reason = String(body.reason || "").trim();
+    if (action === "reject" && reason.length < 3) {
+      return NextResponse.json({ success: false, error: "Write why the cash was not received." }, { status: 400 });
+    }
+    await connectToDatabase();
+    const txn: any = await CashTransaction.findById(body.id);
+    if (!txn || txn.category !== "MD_HANDOVER" || txn.adminStatus !== "pending") {
+      return NextResponse.json({ success: false, error: "This handover is no longer waiting for you." }, { status: 404 });
+    }
+    txn.adminStatus = action === "confirm" ? "confirmed" : "rejected";
+    txn.adminReviewedBy = actor.name;
+    txn.adminReviewedAt = new Date().toISOString();
+    if (action === "reject") txn.adminRejectReason = reason;
+    await txn.save();
+
+    try {
+      await AuditLog.create({
+        action: action === "confirm" ? "cash.handover.confirm" : "cash.handover.reject",
+        entityType: "CashTransaction",
+        entityRef: txn.referenceNo,
+        entityId: String(txn._id),
+        amount: txn.amount,
+        reason: action === "confirm" ? "Admin received the cash handed over by the cashier" : reason,
+        performedBy: actor.name,
+        performedByUserId: actor.id,
+        performedByRole: actor.role,
+        metadata: { cashier: txn.recordedBy, date: txn.date, time: txn.time },
+      });
+    } catch (e) {
+      console.warn("Notice: audit log for cash handover review:", e);
+    }
+    await notifyAssignee(txn.recordedBy, undefined, {
+      type: "general",
+      title: action === "confirm" ? `Admin received your ₹${Number(txn.amount).toLocaleString("en-IN")} handover` : `Admin did not receive your ₹${Number(txn.amount).toLocaleString("en-IN")} handover`,
+      message: action === "confirm" ? "The handover is complete." : `Reason: ${reason}`,
+      link: "/dashboard",
+      createdBy: actor.name,
+    });
+    return NextResponse.json({ success: true });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }

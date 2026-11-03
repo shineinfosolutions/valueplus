@@ -22,6 +22,13 @@ export async function POST(req: NextRequest) {
 
     // ─── ACTION: OUT FOR DELIVERY ─────────────────────────────────────
     if (action === "out_for_delivery") {
+      // Bajaj Finance asks for the vehicle on the delivery; no other bill needs one.
+      if (/bajaj/i.test(String(invoice?.financeProvider || "")) && !String(vehicleNo || invoice?.driverVehicleNo || "").trim()) {
+        return NextResponse.json(
+          { success: false, error: "Vehicle number is compulsory for a Bajaj Finance delivery." },
+          { status: 400 }
+        );
+      }
       const generatedOtp = invoice?.deliveryOtp || challan?.deliveryOtp || Math.floor(1000 + Math.random() * 9000).toString();
       
       if (invoice) {
@@ -76,6 +83,11 @@ export async function POST(req: NextRequest) {
           success: false, 
           error: "❌ Invalid OTP! Please request the correct 4-digit OTP from the customer." 
         }, { status: 400 });
+      }
+
+      // The delivery boy must have photographed the delivered goods first (the Admin / Manager check it).
+      if (invoice && (invoice.deliveryProofKeys?.length || 0) < 3) {
+        return NextResponse.json({ success: false, error: "Take 3 photos of the delivered goods first." }, { status: 400 });
       }
 
       const now = new Date();

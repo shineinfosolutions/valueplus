@@ -1,5 +1,6 @@
 "use client";
 
+import { MySalesOfProduct } from "@/components/masters/MySalesOfProduct";
 import { useState, useMemo, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -107,9 +108,13 @@ function ItemsPageContent() {
   const { activeLocation } = useBranch();
 
   const { data: session } = useSession();
-  const userRole = ((session?.user as any)?.role || "admin").toLowerCase();
+  // Until the session loads, show the restricted view (no purchase cost) rather than the Admin one.
+  const userRole = ((session?.user as any)?.role || "salesman").toLowerCase();
   const isSuperAdminOrAdmin = userRole === "admin" || userRole === "superadmin" || userRole === "manager" || userRole === "warehouse";
   const isSalesperson = !isSuperAdminOrAdmin;
+  // The whole detail (cost, purchase and sales ledger) is for Admin, Store Manager, godown and the cashier; everyone else sees
+  // the price, MRP, VSP and their own sales of the product.
+  const isFullViewer = isSuperAdminOrAdmin || userRole === "cashier";
 
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
@@ -197,7 +202,8 @@ function ItemsPageContent() {
       if (!json.success) throw new Error(json.error);
       return json.data;
     },
-    enabled: !!viewingItem
+    // The purchase / sales ledger is only for those who see the whole detail.
+    enabled: !!viewingItem && isFullViewer
   });
   const allLedgerTransactions = ledgerData?.transactions || [];
   const ledgerSummary = ledgerData?.summary;
@@ -687,17 +693,8 @@ function ItemsPageContent() {
         )
       }
     >
-      {isSalesperson && (
-        <div className="bg-blue-50/80 border border-blue-200 rounded-xl p-3.5 flex items-center justify-between text-xs text-slate-700 mb-2">
-          <div className="flex items-center gap-2">
-            <Badge className="bg-[#30539C] text-white text-[10px]">Sales Staff View</Badge>
-            <span>You have real-time access to check live stock in your logged-in Showroom and Central Godown.</span>
-          </div>
-        </div>
-      )}
-
       {/* Clean Standard Summary Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
         {[
           { 
             label: "Total Items", 
@@ -746,22 +743,22 @@ function ItemsPageContent() {
                 setPage(1);
               }}
               className={cn(
-                "metric-card flex items-center justify-between p-4 text-left transition-all duration-200 cursor-pointer rounded-2xl border shadow-xs hover:shadow-md hover:scale-[1.02]",
+                "metric-card flex items-center justify-between p-2.5 sm:p-4 text-left transition-all duration-200 cursor-pointer rounded-xl sm:rounded-2xl border shadow-xs hover:shadow-md sm:hover:scale-[1.02]",
                 isSelected ? stat.activeBorder : "bg-white border-slate-200 hover:border-slate-300"
               )}
               title={`Click to filter by ${stat.label}`}
             >
-              <div className="flex items-center gap-3.5">
-                <div className={`w-11 h-11 rounded-2xl flex items-center justify-center ${stat.bg}`}>
-                  <stat.icon className={`w-5 h-5 ${stat.color}`} />
+              <div className="flex items-center gap-2 sm:gap-3.5 min-w-0">
+                <div className={`w-8 h-8 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl flex items-center justify-center shrink-0 ${stat.bg}`}>
+                  <stat.icon className={`w-4 h-4 sm:w-5 sm:h-5 ${stat.color}`} />
                 </div>
-                <div>
-                  <p className="text-2xl font-black text-slate-900 tracking-tight">{stat.value}</p>
-                  <p className="text-xs font-semibold text-slate-500">{stat.label}</p>
+                <div className="min-w-0">
+                  <p className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight leading-tight">{stat.value}</p>
+                  <p className="text-[11px] sm:text-xs font-semibold text-slate-500 truncate">{stat.label}</p>
                 </div>
               </div>
               {isSelected && (
-                <Badge className={cn("text-[10px] font-bold uppercase", stat.filterKey === "low_stock" ? "bg-amber-500" : stat.filterKey === "out_of_stock" ? "bg-red-600" : "bg-[#3F63AD]")}>
+                <Badge className={cn("hidden sm:inline-flex text-[10px] font-bold uppercase", stat.filterKey === "low_stock" ? "bg-amber-500" : stat.filterKey === "out_of_stock" ? "bg-red-600" : "bg-[#3F63AD]")}>
                   Active
                 </Badge>
               )}
@@ -852,8 +849,38 @@ function ItemsPageContent() {
           </div>
         </div>
 
+        {/* Phone: a compact list of three columns (item, stock, view) */}
+        <div className="md:hidden">
+          <div className="grid grid-cols-[minmax(0,1fr)_3.25rem_4rem] gap-2 border-y bg-slate-50 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+            <span>Item</span>
+            <span className="text-right">Stock</span>
+            <span className="text-center">View</span>
+          </div>
+          {loading ? (
+            <div className="p-6 text-center text-xs text-slate-500">Loading...</div>
+          ) : paginated.length === 0 ? (
+            <div className="p-8 text-center text-xs text-slate-500">No items found</div>
+          ) : (
+            paginated.map((item: any) => {
+              const qty = Number(item.showroomStock ?? item.currentStock ?? 0) + Number(item.godownStock ?? item.currentStock ?? 0);
+              return (
+                <div key={item.code} onClick={() => setViewingItem(item)} className="grid cursor-pointer grid-cols-[minmax(0,1fr)_3.25rem_4rem] items-center gap-2 border-b px-3 py-2 active:bg-slate-50">
+                  <div className="min-w-0">
+                    <p className="line-clamp-2 text-[13px] font-semibold leading-tight text-foreground">{item.name}</p>
+                    <p className="mt-0.5 truncate font-mono text-[10px] text-slate-400">{item.vpCode || item.code}{item.brand ? ` · ${item.brand}` : ""}</p>
+                  </div>
+                  <span className={cn("text-right font-mono text-sm font-black", qty === 0 ? "text-red-600" : qty <= (item.reorderLevel || 5) ? "text-amber-600" : "text-slate-900")}>{qty}</span>
+                  <Button size="sm" variant="outline" className="h-7 px-2 text-[11px] font-bold text-[#30539C] border-blue-200" onClick={(e) => { e.stopPropagation(); setViewingItem(item); }}>
+                    <Eye className="mr-1 h-3 w-3" /> View
+                  </Button>
+                </div>
+              );
+            })
+          )}
+        </div>
+
         {/* Table */}
-        <div className="overflow-x-auto">
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 border-b">
               <tr>
@@ -1908,7 +1935,7 @@ function ItemsPageContent() {
                 </div>
 
                 <div className="grid grid-cols-2 gap-4 bg-slate-50 p-3 rounded-lg border border-slate-100">
-                  {!isSalesperson ? (
+                  {isFullViewer ? (
                     <div>
                       <p className="text-xs text-muted-foreground font-semibold uppercase">Purchase Cost</p>
                       <p className="font-bold text-slate-700">{formatCurrency(viewingItem?.purchasePrice || 0)}</p>
@@ -1932,6 +1959,10 @@ function ItemsPageContent() {
             </div>
             
             {/* Right Side: Purchase & Sales Ledger */}
+            {!isFullViewer ? (
+              <MySalesOfProduct code={viewingItem?.code} vpCode={viewingItem?.vpCode} name={viewingItem?.name} unit={viewingItem?.unit} />
+            ) : (
+              <>
             {/* Height grows with the viewport instead of a fixed 400px: the
                 reconciliation banner and the tab strip took ~90px out of that
                 budget, which left the list so short the first row was clipped
@@ -2124,6 +2155,8 @@ function ItemsPageContent() {
                 )}
               </div>
             </div>
+              </>
+            )}
           </div>
           <div className="bg-white px-5 py-3 flex justify-end border-t">
             <Button onClick={() => setViewingItem(null)} className="px-6 bg-slate-800 hover:bg-slate-700 text-white font-semibold shadow-sm">

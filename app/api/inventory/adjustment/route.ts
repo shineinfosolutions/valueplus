@@ -1,3 +1,4 @@
+import { deferIfManager } from "@/lib/deferred-actions";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import StockAdjustment from "@/models/StockAdjustment";
@@ -16,6 +17,14 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
+    const waiting = await deferIfManager(req, {
+      title: "Stock adjustment",
+      description: `Stock adjustment (${body.type || "adjust"}) of ${(body.items || []).length} product(s)${body.reason ? `: ${body.reason}` : ""}.`,
+      target: `stock.adjust:${JSON.stringify(body.items || []).slice(0, 200)}`,
+      reason: body.reason,
+      body,
+    });
+    if (waiting) return waiting;
     if (!body.warehouseId) {
       return NextResponse.json({ success: false, error: "Select which warehouse this adjustment applies to." }, { status: 400 });
     }
@@ -55,6 +64,8 @@ export async function DELETE(req: Request) {
     if (!adjustmentNo) {
       return NextResponse.json({ success: false, error: "adjustmentNo is required" }, { status: 400 });
     }
+    const waiting = await deferIfManager(req, { title: `Delete stock adjustment ${adjustmentNo}`, description: `Delete the stock adjustment ${adjustmentNo}.`, target: `stock.adjust.delete:${adjustmentNo}` });
+    if (waiting) return waiting;
 
     await connectToDatabase();
     const deletedAdjustment = await StockAdjustment.findOneAndDelete({ adjustmentNo });

@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useMemo, Suspense } from "react";
+import { GstinBillFixBanner } from "@/components/gst/GstinBillFixBanner";
+import { buildProfitLossHtml } from "@/lib/profitLossPrint";
+import { useState, useMemo, useRef, Suspense } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { PageShell } from "@/components/shared/page-shell";
 import { 
@@ -33,8 +35,8 @@ const QUICK_DATE_PILLS = [
 ];
 
 function ProfitLossContent() {
-  const [dateFilter, setDateFilter] = useState("This Month");
-  const [dateRange, setDateRange] = useState(() => resolveDateRange("This Month"));
+  const [dateFilter, setDateFilter] = useState("Today");
+  const [dateRange, setDateRange] = useState(() => resolveDateRange("Today"));
   const [activeTab, setActiveTab] = useState("products");
   
   // Filters for Product Table
@@ -48,6 +50,7 @@ function ProfitLossContent() {
 
   // Modals
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+  const printFrameRef = useRef<HTMLIFrameElement>(null);
   const [selectedProductForLedger, setSelectedProductForLedger] = useState<any | null>(null);
 
   // Fetch P&L Report Data
@@ -84,6 +87,23 @@ function ProfitLossContent() {
   const brandBreakdown: any[] = reportData?.brandBreakdown || [];
   const expenseBreakdown: any[] = reportData?.expenseBreakdown || [];
   const purchaseBreakdown: any[] = reportData?.purchaseBreakdown || [];
+
+  // The printable statement (built only while the preview is open).
+  const printHtml = useMemo(
+    () =>
+      isPrintModalOpen
+        ? buildProfitLossHtml({
+            summary,
+            products: productBreakdown,
+            categories: categoryBreakdown,
+            brands: brandBreakdown,
+            expenses: expenseBreakdown,
+            periodLabel: `${formatDate(dateRange.start)} — ${formatDate(dateRange.end)}`,
+          })
+        : "",
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [isPrintModalOpen, reportData, dateRange.start, dateRange.end]
+  );
 
   // Extract unique categories & brands for filter dropdowns
   const uniqueCategories = useMemo(() => {
@@ -222,6 +242,7 @@ function ProfitLossContent() {
         </div>
       }
     >
+      <GstinBillFixBanner />
       <div className="space-y-6">
         {/* QUICK DATE PRESET PILLS BAR */}
         <div className="bg-white p-2.5 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between gap-3 overflow-x-auto">
@@ -260,13 +281,13 @@ function ProfitLossContent() {
           <Card className="border border-slate-200/80 shadow-xs bg-white overflow-hidden relative">
             <div className="absolute top-0 left-0 w-full h-1 bg-blue-500" />
             <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold tracking-wider uppercase text-slate-500">Total Sales Revenue</span>
+              <div className="flex items-start justify-between gap-2 min-h-[2.5rem]">
+                <span className="text-[11px] font-bold tracking-wider uppercase text-slate-500 leading-tight">Total Sales Revenue</span>
                 <div className="p-2 rounded-lg bg-blue-50 text-blue-600">
                   <ShoppingBag className="w-4 h-4" />
                 </div>
               </div>
-              <div className="mt-2 flex items-baseline gap-2">
+              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 min-h-[2.75rem]">
                 <span className="text-xl font-black text-slate-900">{formatCurrency(summary.totalRevenue)}</span>
               </div>
               <p className="text-[11px] text-slate-500 mt-1 flex items-center gap-1 font-medium">
@@ -279,13 +300,13 @@ function ProfitLossContent() {
           <Card className="border border-slate-200/80 shadow-xs bg-white overflow-hidden relative">
             <div className="absolute top-0 left-0 w-full h-1 bg-amber-500" />
             <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold tracking-wider uppercase text-slate-500">Cost of Goods (COGS)</span>
+              <div className="flex items-start justify-between gap-2 min-h-[2.5rem]">
+                <span className="text-[11px] font-bold tracking-wider uppercase text-slate-500 leading-tight">Cost of Goods (COGS)</span>
                 <div className="p-2 rounded-lg bg-amber-50 text-amber-600">
                   <Package className="w-4 h-4" />
                 </div>
               </div>
-              <div className="mt-2 flex items-baseline gap-2">
+              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 min-h-[2.75rem]">
                 <span className="text-xl font-black text-slate-900">{formatCurrency(summary.totalCOGS)}</span>
               </div>
               <p className="text-[11px] text-slate-500 mt-1 font-medium">
@@ -301,13 +322,13 @@ function ProfitLossContent() {
           <Card className="border border-slate-200/80 shadow-xs bg-white overflow-hidden relative">
             <div className="absolute top-0 left-0 w-full h-1 bg-orange-500" />
             <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold tracking-wider uppercase text-slate-500">Purchase Entries (before GST)</span>
+              <div className="flex items-start justify-between gap-2 min-h-[2.5rem]">
+                <span className="text-[11px] font-bold tracking-wider uppercase text-slate-500 leading-tight">Purchase Entries (GST included)</span>
                 <div className="p-2 rounded-lg bg-orange-50 text-orange-600">
                   <Building2 className="w-4 h-4" />
                 </div>
               </div>
-              <div className="mt-2 flex items-baseline gap-2">
+              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 min-h-[2.75rem]">
                 <span className="text-xl font-black text-slate-900">{formatCurrency(summary.totalPurchases)}</span>
               </div>
               <p className="text-[11px] text-slate-500 mt-1 font-medium">
@@ -320,18 +341,18 @@ function ProfitLossContent() {
           <Card className="border border-slate-200/80 shadow-xs bg-white overflow-hidden relative">
             <div className={cn("absolute top-0 left-0 w-full h-1", isGrossProfitable ? "bg-emerald-500" : "bg-rose-500")} />
             <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold tracking-wider uppercase text-slate-500">Gross Profit (Margin)</span>
+              <div className="flex items-start justify-between gap-2 min-h-[2.5rem]">
+                <span className="text-[11px] font-bold tracking-wider uppercase text-slate-500 leading-tight">Gross Profit (Margin)</span>
                 <div className={cn("p-2 rounded-lg", isGrossProfitable ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600")}>
                   <TrendingUp className="w-4 h-4" />
                 </div>
               </div>
-              <div className="mt-2 flex items-baseline gap-2">
+              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 min-h-[2.75rem]">
                 <span className={cn("text-xl font-black", isGrossProfitable ? "text-emerald-700" : "text-rose-600")}>
                   {formatCurrency(summary.grossProfit)}
                 </span>
                 <Badge variant="outline" className={cn(
-                  "text-[10px] font-bold px-1.5 py-0.5",
+                  "text-[10px] font-bold px-1.5 py-0.5 whitespace-nowrap shrink-0",
                   isGrossProfitable ? "bg-emerald-50 text-emerald-700 border-emerald-300" : "bg-rose-50 text-rose-700 border-rose-300"
                 )}>
                   {summary.grossMarginPct}% Margin
@@ -347,13 +368,13 @@ function ProfitLossContent() {
           <Card className="border border-slate-200/80 shadow-xs bg-white overflow-hidden relative">
             <div className="absolute top-0 left-0 w-full h-1 bg-purple-500" />
             <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold tracking-wider uppercase text-slate-500">Operating Expenses</span>
+              <div className="flex items-start justify-between gap-2 min-h-[2.5rem]">
+                <span className="text-[11px] font-bold tracking-wider uppercase text-slate-500 leading-tight">Operating Expenses</span>
                 <div className="p-2 rounded-lg bg-purple-50 text-purple-600">
                   <DollarSign className="w-4 h-4" />
                 </div>
               </div>
-              <div className="mt-2 flex items-baseline gap-2">
+              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 min-h-[2.75rem]">
                 <span className="text-xl font-black text-slate-900">{formatCurrency(summary.totalExpenses)}</span>
               </div>
               <p className="text-[11px] text-slate-500 mt-1 font-medium">
@@ -371,18 +392,18 @@ function ProfitLossContent() {
           )}>
             <div className={cn("absolute top-0 left-0 w-full h-1.5", isNetProfitable ? "bg-emerald-600" : "bg-rose-600")} />
             <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-extrabold tracking-wider uppercase text-slate-700">Net Profit / Loss</span>
+              <div className="flex items-start justify-between gap-2 min-h-[2.5rem]">
+                <span className="text-[11px] font-extrabold tracking-wider uppercase text-slate-700 leading-tight">Net Profit / Loss</span>
                 <div className={cn("p-2 rounded-lg", isNetProfitable ? "bg-emerald-600 text-white" : "bg-rose-600 text-white")}>
                   {isNetProfitable ? <ArrowUpRight className="w-4 h-4" /> : <ArrowDownRight className="w-4 h-4" />}
                 </div>
               </div>
-              <div className="mt-2 flex items-baseline gap-2">
+              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 min-h-[2.75rem]">
                 <span className={cn("text-2xl font-black tracking-tight", isNetProfitable ? "text-emerald-700" : "text-rose-700")}>
                   {formatCurrency(summary.netProfit)}
                 </span>
                 <Badge className={cn(
-                  "text-[10px] font-extrabold px-2 py-0.5",
+                  "text-[10px] font-extrabold px-2 py-0.5 whitespace-nowrap shrink-0",
                   isNetProfitable ? "bg-emerald-600 text-white" : "bg-rose-600 text-white"
                 )}>
                   {summary.netMarginPct}% Net
@@ -395,14 +416,14 @@ function ProfitLossContent() {
           </Card>
         </div>
 
-        {/* GST — kept out of profit. Sales and purchases above are both at their
-            actual amount (before GST); GST is collected on sales and paid on
+        {/* GST — kept out of profit. Sales (invoice amount) and purchases above are
+            both with GST included; GST is collected on sales and paid on
             purchases, so it is shown on its own. */}
         <Card className="border border-slate-200/80 shadow-xs bg-white">
           <CardContent className="p-4">
             <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
               <span className="text-[11px] font-bold tracking-wider uppercase text-slate-500">GST this period (not part of profit)</span>
-              <span className="text-[10px] text-slate-400">Sales and purchases above are both before GST</span>
+              <span className="text-[10px] text-slate-400">Sales and purchases above are both GST included</span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="rounded-lg bg-blue-50/60 border border-blue-100 p-3">
@@ -914,7 +935,7 @@ function ProfitLossContent() {
 
                     <div className="space-y-2.5">
                       <div className="flex items-center justify-between text-slate-600 text-[11px] pl-3 border-l-2 border-slate-200">
-                        <span>Purchases before GST (Stock-In Bills Raised This Period)</span>
+                        <span>Purchases, GST included (Stock-In Bills Raised This Period)</span>
                         <span className="font-mono font-semibold">{formatCurrency(summary.totalPurchases)}</span>
                       </div>
 
@@ -1001,95 +1022,33 @@ function ProfitLossContent() {
         endDate={dateRange.end}
       />
 
-      {/* PRINT P&L STATEMENT MODAL */}
+      {/* PRINT P&L STATEMENT: the preview is the printed document itself (an A4 page in an iframe) */}
       <Dialog open={isPrintModalOpen} onOpenChange={setIsPrintModalOpen}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto p-6">
-          <DialogHeader className="border-b pb-3">
-            <DialogTitle className="text-base font-black text-slate-900 flex items-center justify-between">
-              <span>Financial Profit & Loss Statement</span>
-              <Button size="sm" onClick={() => window.print()} className="bg-[#3F63AD] text-white text-xs font-bold">
-                <Printer className="w-3.5 h-3.5 mr-1" /> Print Paper Copy
+        <DialogContent className="max-w-4xl max-h-[94vh] p-4 flex flex-col gap-3">
+          <DialogHeader className="border-b pb-2">
+            <DialogTitle className="text-base font-black text-slate-900 flex items-center justify-between gap-3 pr-8">
+              <span>Profit & Loss Statement</span>
+              <Button
+                size="sm"
+                onClick={() => {
+                  const frame = printFrameRef.current?.contentWindow;
+                  if (frame) {
+                    frame.focus();
+                    frame.print();
+                  }
+                }}
+                className="bg-[#3F63AD] text-white text-xs font-bold"
+              >
+                <Printer className="w-3.5 h-3.5 mr-1" /> Print / Save as PDF
               </Button>
             </DialogTitle>
           </DialogHeader>
-
-          <div className="space-y-6 pt-2 text-xs">
-            {/* Header */}
-            <div className="text-center border-b pb-4">
-              <h2 className="text-lg font-black text-slate-900 uppercase">M/S ASHOKA ENTERPRISES</h2>
-              <p className="text-xs font-bold text-[#3F63AD]">VALUE PLUS RETAIL ELECTRONICS & APPLIANCES</p>
-              <p className="text-[11px] text-slate-500 mt-0.5">Kunraghat, Gorakhpur · GSTIN: 09ANHPJ7242D1Z2</p>
-              <div className="mt-2 inline-block bg-slate-100 px-3 py-1 rounded font-bold text-slate-700">
-                PROFIT & LOSS STATEMENT ({formatDate(dateRange.start)} — {formatDate(dateRange.end)})
-              </div>
-            </div>
-
-            {/* Financial Summary Table */}
-            <table className="w-full text-xs border border-slate-300">
-              <thead className="bg-slate-100 font-bold border-b border-slate-300">
-                <tr>
-                  <th className="p-2.5 text-left border-r border-slate-300">Financial Metric</th>
-                  <th className="p-2.5 text-right">Amount (INR)</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200 font-medium">
-                <tr>
-                  <td className="p-2.5 border-r border-slate-300 font-bold text-slate-800">Gross Sales Revenue</td>
-                  <td className="p-2.5 text-right font-mono font-bold text-blue-900">{formatCurrency(summary.totalRevenue)}</td>
-                </tr>
-                <tr>
-                  <td className="p-2.5 border-r border-slate-300 text-slate-600">Less: Cost of Goods Sold (Purchase Cost)</td>
-                  <td className="p-2.5 text-right font-mono text-amber-800 font-semibold">{formatCurrency(summary.totalCOGS)}</td>
-                </tr>
-                <tr className="bg-slate-50 font-bold">
-                  <td className="p-2.5 border-r border-slate-300 text-emerald-800 font-extrabold">GROSS PROFIT ({summary.grossMarginPct}%)</td>
-                  <td className="p-2.5 text-right font-mono text-emerald-800 font-black">{formatCurrency(summary.grossProfit)}</td>
-                </tr>
-                <tr>
-                  <td className="p-2.5 border-r border-slate-300 text-slate-600">Less: Total Store Operating Expenses</td>
-                  <td className="p-2.5 text-right font-mono text-purple-800 font-semibold">{formatCurrency(summary.totalExpenses)}</td>
-                </tr>
-                <tr className={cn("font-black text-sm", isNetProfitable ? "bg-emerald-100 text-emerald-900" : "bg-rose-100 text-rose-900")}>
-                  <td className="p-3 border-r border-slate-300 uppercase">NET PROFIT / LOSS ({summary.netMarginPct}%)</td>
-                  <td className="p-3 text-right font-mono text-base">{formatCurrency(summary.netProfit)}</td>
-                </tr>
-              </tbody>
-            </table>
-
-            {/* Top 8 Products Table in Print */}
-            <div>
-              <h4 className="font-bold text-slate-800 text-xs mb-2">Top Profitable Products in this Period:</h4>
-              <table className="w-full text-[11px] border border-slate-200">
-                <thead className="bg-slate-100 font-bold border-b border-slate-200">
-                  <tr>
-                    <th className="p-1.5 text-left">Product</th>
-                    <th className="p-1.5 text-center">Qty Sold</th>
-                    <th className="p-1.5 text-right">Cost Rate</th>
-                    <th className="p-1.5 text-right">Selling Rate</th>
-                    <th className="p-1.5 text-right">Profit (₹)</th>
-                    <th className="p-1.5 text-center">Margin %</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {productBreakdown.slice(0, 8).map((p, i) => (
-                    <tr key={i}>
-                      <td className="p-1.5 font-semibold text-slate-800">{p.name}</td>
-                      <td className="p-1.5 text-center font-mono">{p.qtySold}</td>
-                      <td className="p-1.5 text-right font-mono">{formatCurrency(p.purchasePrice)}</td>
-                      <td className="p-1.5 text-right font-mono">{formatCurrency(p.avgSellingPrice)}</td>
-                      <td className="p-1.5 text-right font-mono font-bold text-emerald-700">{formatCurrency(p.totalProfit)}</td>
-                      <td className="p-1.5 text-center font-mono font-bold">{p.marginPct}%</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="pt-6 border-t flex items-center justify-between text-[10px] text-slate-500">
-              <p>Generated by Value Plus ERP Accounting System</p>
-              <p>Authorized Signatory: ________________________</p>
-            </div>
-          </div>
+          <iframe
+            ref={printFrameRef}
+            title="Profit and Loss statement"
+            srcDoc={isPrintModalOpen ? printHtml : ""}
+            className="w-full flex-1 min-h-[70vh] rounded-lg border border-slate-200 bg-white"
+          />
         </DialogContent>
       </Dialog>
     </PageShell>

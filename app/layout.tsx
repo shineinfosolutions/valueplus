@@ -3,6 +3,7 @@ import "./globals.css";
 import AuthProvider from "@/components/providers/AuthProvider";
 import QueryProvider from "@/components/providers/QueryProvider";
 import { OfflineSyncProvider } from "@/components/shared/offline-sync-provider";
+import { NotificationPermissionPrompt } from "@/components/shared/NotificationPermissionPrompt";
 
 export const metadata: Metadata = {
   title: "ValuePlus ERP — Enterprise Resource Planning",
@@ -46,6 +47,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <AuthProvider>
             <OfflineSyncProvider>
               {children}
+              {/* Asks first thing (login screen included) to allow notifications, so alerts reach a closed app */}
+              <NotificationPermissionPrompt />
             </OfflineSyncProvider>
           </AuthProvider>
         </QueryProvider>

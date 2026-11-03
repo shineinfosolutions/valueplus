@@ -1,5 +1,8 @@
 "use client";
 
+import { BrandSalesCard } from "@/components/shared/BrandSalesCard";
+import { StockOrdersCard } from "@/components/dashboard/StockOrdersCard";
+import { TargetProgress } from "@/components/staff/TargetProgress";
 import React, { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { 
@@ -21,6 +24,13 @@ import ValueplusInvoice from "@/app/invoice/page";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { todayInIndia } from "@/lib/today";
 
+/** "Amit Kumar Singh (Sales Executive)" -> "amit kumar singh", so the same person matches however the name was typed. */
+const normName = (n: any) => String(n || "").replace(/\s*\(.*\)\s*$/, "").replace(/\s+/g, " ").trim().toLowerCase();
+const istDayOf = (at: any) => {
+  const d = at ? new Date(at) : null;
+  return d && !isNaN(d.getTime()) ? d.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }) : "";
+};
+
 export function SalesmanDashboardView({ session }: { session: any }) {
   const { activeLocation } = useBranch();
   const userName = session?.user?.name || "Amit Kumar Singh";
@@ -41,6 +51,14 @@ export function SalesmanDashboardView({ session }: { session: any }) {
     },
   });
 
+  const { data: incentive } = useQuery({
+    queryKey: ["salesman-incentive"],
+    queryFn: async () => {
+      const json = await (await fetch("/api/staff/my-incentive")).json();
+      return json.success ? (json.data as { earned: number; received: number; pending: number }) : null;
+    },
+  });
+
   // 2. Fetch Estimates
   const { data: estimates = [] } = useQuery({
     queryKey: ["salesman-estimates"],
@@ -55,7 +73,7 @@ export function SalesmanDashboardView({ session }: { session: any }) {
   const { data: leads = [] } = useQuery({
     queryKey: ["salesman-leads"],
     queryFn: async () => {
-      const res = await fetch("/api/leads");
+      const res = await fetch("/api/crm/leads");
       const json = await res.json();
       return json.success ? json.data : [];
     },
@@ -74,10 +92,10 @@ export function SalesmanDashboardView({ session }: { session: any }) {
   // Filter Invoices by Salesman and Selected Period
   const filteredInvoices = useMemo(() => {
     const now = new Date();
-    const todayStr = now.toISOString().split("T")[0];
+    const todayStr = todayInIndia();
 
-    const yesterdayObj = new Date(now);
-    yesterdayObj.setDate(yesterdayObj.getDate() - 1);
+    const yesterdayObj = new Date(`${todayStr}T00:00:00Z`);
+    yesterdayObj.setUTCDate(yesterdayObj.getUTCDate() - 1);
     const yesterdayStr = yesterdayObj.toISOString().split("T")[0];
 
     const oneWeekAgo = new Date(now);
@@ -86,14 +104,14 @@ export function SalesmanDashboardView({ session }: { session: any }) {
     const currentYear = now.getFullYear();
     const currentMonth = now.getMonth();
 
-    const firstName = userName.toLowerCase().split(" ")[0];
+    const me = normName(userName);
 
     return invoices.filter((inv: any) => {
       if (inv.type === "credit-note") return false;
 
       // Filter by salesman match (or fallback if store bills)
-      const exec = (inv.salesExecutive || "").toLowerCase();
-      const isMyInvoice = !exec || exec.includes(firstName) || exec === userName.toLowerCase() || exec.includes("sales") || exec.includes("amit");
+      // Only the bills made under this salesperson's own name.
+      const isMyInvoice = normName(inv.salesExecutive) === me;
 
       if (!isMyInvoice) return false;
 
@@ -108,6 +126,19 @@ export function SalesmanDashboardView({ session }: { session: any }) {
       return true; // "all"
     });
   }, [invoices, userName, periodTab, customDate]);
+
+  // The salesman's own bills made today (the top summary always shows today).
+  const todayInvoices = useMemo(() => {
+    const me = normName(userName);
+    const today = todayInIndia();
+    return invoices.filter(
+      (inv: any) =>
+        inv.type !== "credit-note" &&
+        inv.status !== "cancelled" &&
+        normName(inv.salesExecutive) === me &&
+        (inv.date ? new Date(inv.date).toISOString().split("T")[0] : "") === today
+    );
+  }, [invoices, userName]);
 
   // Target Configuration based on period
   const targetConfig = useMemo(() => {
@@ -164,57 +195,154 @@ export function SalesmanDashboardView({ session }: { session: any }) {
       {/* Universal Attendance Punch Timer */}
       <AttendancePunchWidget />
 
-      {/* Hero Welcome Banner */}
-      <div className="bg-gradient-to-r from-[#1A2744] via-[#2C3E5A] to-[#1A2744] rounded-2xl p-4 text-white shadow-xl relative overflow-hidden border border-slate-700/80">
-        <div className="absolute right-0 top-0 w-96 h-full bg-radial from-emerald-500/20 to-transparent blur-2xl pointer-events-none" />
-
-        <div className="relative z-10 flex flex-col xl:flex-row xl:items-center justify-between gap-4">
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/25 border border-emerald-400/40 text-emerald-300 font-bold text-xs">
-                👔 SALES EXECUTIVE WORKSPACE
-              </span>
-              <span className="text-xs text-slate-300 font-medium">📍 {activeLocation?.name}</span>
+      {/* TODAY AT A GLANCE: follow-ups due, sales, revenue, leads, pending tasks */}
+      {(() => {
+        const today = todayInIndia();
+        const openLeads = leads.filter((l: any) => !["Converted", "Lost"].includes(l.status));
+        const dueToday = openLeads.filter((l: any) => l.followUpDate && l.followUpDate === today);
+        const overdue = openLeads.filter((l: any) => l.followUpDate && l.followUpDate < today);
+        const callList = [...dueToday, ...overdue];
+        const pendingTasks = tasks.filter((t: any) => t.status !== "Completed");
+        const doneToday = tasks.filter((t: any) => t.status === "Completed" && istDayOf(t.completedAt || t.updatedAt) === today);
+        const revenueToday = todayInvoices.reduce((sum: number, inv: any) => sum + (Number(inv.total) || 0), 0);
+        const telHref = (m: any) => {
+          const d = String(m || "").replace(/\D/g, "");
+          return d.length === 10 ? `tel:+91${d}` : `tel:${d}`;
+        };
+        return (
+          <div className="space-y-3">
+            {/* Today's follow-ups, first thing on the screen */}
+            <div className={`rounded-2xl border shadow-sm p-3 ${callList.length > 0 ? "bg-amber-50 border-amber-300" : "bg-white border-slate-200"}`}>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs font-black text-slate-900 uppercase tracking-wide flex items-center gap-1.5">
+                  <Calendar className="w-4 h-4 text-amber-600" /> Today's follow-ups ({dueToday.length})
+                  {overdue.length > 0 && <span className="text-rose-700 normal-case">· {overdue.length} overdue</span>}
+                </p>
+                <Link href="/marketing/leads" className="text-[11px] font-bold text-[#30539C] hover:underline shrink-0">View all leads</Link>
+              </div>
+              {callList.length === 0 ? (
+                <p className="text-[11px] text-slate-500 mt-1">No follow-ups due today.</p>
+              ) : (
+                <div className="mt-2 space-y-1.5">
+                  {callList.slice(0, 6).map((l: any) => (
+                    <div key={l._id} className="flex items-center justify-between gap-2 bg-white rounded-xl border border-amber-200 px-2.5 py-1.5">
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-slate-900 truncate">{l.customerName}</p>
+                        <p className="text-xs text-slate-500 truncate">
+                          {l.interestedProduct || "Lead"} · <span className={l.followUpDate < today ? "text-rose-700 font-bold" : ""}>{l.followUpDate < today ? `overdue ${l.followUpDate}` : "today"}</span>
+                        </p>
+                      </div>
+                      {l.mobile && (
+                        <a href={telHref(l.mobile)} className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-600 text-white text-[11px] font-bold no-underline">
+                          <Phone className="w-3 h-3" /> Call
+                        </a>
+                      )}
+                    </div>
+                  ))}
+                  {callList.length > 6 && <p className="text-xs text-slate-500">+{callList.length - 6} more in Leads</p>}
+                </div>
+              )}
             </div>
-            <h2 className="text-xl font-black tracking-tight">Welcome back, {userName}! 👋</h2>
-            <p className="text-xs text-slate-300 max-w-xl leading-relaxed">
-              Track your daily showroom sales targets, monitor commission incentives, and follow up customer leads.
-            </p>
-          </div>
 
-          {/* Clean High-Contrast Action CTAs */}
-          <div className="flex items-center gap-2.5 flex-wrap shrink-0">
-            <Link href="/staff/profile">
-              <Button size="sm" className="bg-white/10 hover:bg-white/20 text-white border border-white/20 font-bold h-9 px-3.5 rounded-xl shadow-xs gap-1.5">
-                <ShieldCheck className="w-4 h-4 text-emerald-400" /> My Profile & KYC
-              </Button>
-            </Link>
-            <Link href="/sales/estimates">
-              <Button size="sm" className="bg-[#76C043] hover:bg-[#65a836] text-slate-950 font-black h-9 px-3.5 rounded-xl shadow-md gap-1.5">
-                <Plus className="w-4 h-4" /> Create Estimate
-              </Button>
-            </Link>
-            <Link href="/marketing/leads">
-              <Button size="sm" className="bg-amber-400 hover:bg-amber-500 text-slate-950 font-black h-9 px-3.5 rounded-xl shadow-md gap-1.5">
-                <Sparkles className="w-4 h-4" /> New Lead
-              </Button>
-            </Link>
-            <Link href="/marketing/walk-in">
-              <Button size="sm" className="bg-blue-500/30 hover:bg-blue-500/40 text-blue-200 border border-blue-400/30 font-bold h-9 px-3 rounded-xl gap-1.5">
-                <Users className="w-4 h-4 text-blue-300" /> Walk-in Query
-              </Button>
-            </Link>
-            <Link href="/marketing/complaints">
-              <Button size="sm" className="bg-red-500/30 hover:bg-red-500/40 text-red-200 border border-red-400/30 font-bold h-9 px-3 rounded-xl gap-1.5">
-                <AlertCircle className="w-4 h-4 text-red-300" /> Complaints Desk
-              </Button>
-            </Link>
-            <Link href="/masters/items">
-              <Button size="sm" variant="ghost" className="text-slate-300 hover:text-white hover:bg-white/10 h-9 px-3 rounded-xl gap-1.5">
-                <Search className="w-4 h-4" /> Check Stock
-              </Button>
-            </Link>
+            {/* The numbers */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+              <div className="bg-white rounded-2xl p-3 border border-slate-200 shadow-sm">
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1"><Receipt className="w-3.5 h-3.5 text-[#30539C]" /> Sales today</p>
+                <p className="text-2xl font-black text-slate-900 mt-0.5">{todayInvoices.length}</p>
+                <p className="text-xs text-slate-500">bill{todayInvoices.length === 1 ? "" : "s"}</p>
+              </div>
+              <div className="bg-white rounded-2xl p-3 border border-slate-200 shadow-sm">
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1"><DollarSign className="w-3.5 h-3.5 text-emerald-600" /> Revenue today</p>
+                <p className="text-2xl font-black text-emerald-700 mt-0.5">{formatCurrency(revenueToday)}</p>
+                <p className="text-xs text-slate-500">from my bills</p>
+              </div>
+              <div className="bg-white rounded-2xl p-3 border border-slate-200 shadow-sm">
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1"><Sparkles className="w-3.5 h-3.5 text-amber-500" /> My leads</p>
+                <p className="text-2xl font-black text-slate-900 mt-0.5">{leads.length}</p>
+                <p className="text-xs text-slate-500"><span className="font-bold text-slate-700">{openLeads.length}</span> open · {leads.filter((l: any) => l.status === "Converted").length} converted</p>
+              </div>
+              <Link href="/staff/tasks" className={`rounded-2xl p-3 border shadow-sm block no-underline ${pendingTasks.length > 0 ? "bg-rose-50 border-rose-200" : "bg-white border-slate-200"}`}>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1"><CheckSquare className="w-3.5 h-3.5 text-rose-600" /> Pending tasks</p>
+                <p className="text-2xl font-black text-slate-900 mt-0.5">{pendingTasks.length}</p>
+                <p className="text-xs text-slate-500 truncate">
+                  {pendingTasks.length > 0 ? pendingTasks.slice(0, 2).map((t: any) => t.taskTitle).join(", ") : "all done"}
+                  {doneToday.length > 0 ? ` · ${doneToday.length} done today` : ""}
+                </p>
+              </Link>
+            </div>
+
+            <StockOrdersCard mode="salesman" />
+
+            {/* Incentive: earned on my bills, and what has been paid out to me */}
+            {(() => {
+              return (
+                <div className="grid grid-cols-2 gap-2.5">
+                  <Link href="/staff/incentives" className="bg-white rounded-2xl p-3 border border-slate-200 shadow-sm block no-underline">
+                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1"><Sparkles className="w-3.5 h-3.5 text-amber-500" /> Incentive earned</p>
+                    <p className="text-2xl font-black text-emerald-700 mt-0.5">{formatCurrency(incentive?.earned || 0)}</p>
+                    <p className="text-xs text-slate-500">total on my bills</p>
+                  </Link>
+                  <Link href="/staff/incentives" className="bg-white rounded-2xl p-3 border border-slate-200 shadow-sm block no-underline">
+                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1"><DollarSign className="w-3.5 h-3.5 text-blue-600" /> Incentive received</p>
+                    <p className="text-2xl font-black text-blue-700 mt-0.5">{formatCurrency(incentive?.received || 0)}</p>
+                    <p className="text-xs text-slate-500">{(incentive?.pending || 0) > 0 ? `${formatCurrency(incentive?.pending || 0)} still to receive` : "paid with salary"}</p>
+                  </Link>
+                </div>
+              );
+            })()}
+
+            {/* Own brand against other brands (pieces only) */}
+            <BrandSalesCard />
+
+            {/* Deals: an estimate the cashier approved is the amount this salesman closed the deal at */}
+            {(() => {
+              const mine = estimates.filter((e: any) => e.kind === "bill" || e.dealAmount);
+              const closed = mine.filter((e: any) => e.status === "Converted" && Number(e.dealAmount) > 0);
+              const closedToday = closed.filter((e: any) => istDayOf(e.updatedAt) === today);
+              const waiting = mine.filter((e: any) => e.approvalStatus === "pending");
+              const rejected = mine.filter((e: any) => e.approvalStatus === "rejected");
+              const sum = (list: any[]) => list.reduce((t: number, e: any) => t + (Number(e.dealAmount) || 0), 0);
+              return (
+                <div className="grid grid-cols-2 gap-2.5">
+                  <Link href="/sales/estimates" className="bg-white rounded-2xl p-3 border border-slate-200 shadow-sm block no-underline">
+                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1"><DollarSign className="w-3.5 h-3.5 text-emerald-600" /> Deals closed</p>
+                    <p className="text-2xl font-black text-emerald-700 mt-0.5">{formatCurrency(sum(closed))}</p>
+                    <p className="text-xs text-slate-500">{closed.length} billed · {formatCurrency(sum(closedToday))} today</p>
+                  </Link>
+                  <Link href="/sales/estimates" className={`rounded-2xl p-3 border shadow-sm block no-underline ${waiting.length + rejected.length > 0 ? "bg-amber-50 border-amber-200" : "bg-white border-slate-200"}`}>
+                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1"><Receipt className="w-3.5 h-3.5 text-amber-600" /> My bills</p>
+                    <p className="text-2xl font-black text-slate-900 mt-0.5">{waiting.length}</p>
+                    <p className="text-xs text-slate-500">waiting for cashier{rejected.length > 0 ? ` · ${rejected.length} rejected` : ""}</p>
+                  </Link>
+                </div>
+              );
+            })()}
           </div>
+        );
+      })()}
+
+      {/* Quick actions */}
+      <div>
+        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Quick actions</p>
+        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+          {[
+            { href: "/sales/estimates?new=bill", label: "New Bill", Icon: Receipt, tone: "bg-[#30539C] text-white border-[#30539C]" },
+            { href: "/sales/estimates?new=true", label: "New Estimate", Icon: Plus, tone: "bg-[#76C043] text-slate-950 border-[#76C043]" },
+            { href: "/sales/new-stock", label: "Gida Order", Icon: Package, tone: "bg-white text-slate-800 border-slate-200", iconTone: "text-emerald-600" },
+            { href: "/marketing/leads", label: "New Lead", Icon: Sparkles, tone: "bg-white text-slate-800 border-slate-200", iconTone: "text-amber-500" },
+            { href: "/marketing/walk-in", label: "Walk-in Query", Icon: Users, tone: "bg-white text-slate-800 border-slate-200", iconTone: "text-blue-600" },
+            { href: "/masters/items", label: "Check Stock", Icon: Search, tone: "bg-white text-slate-800 border-slate-200", iconTone: "text-slate-600" },
+            { href: "/staff/profile", label: "My Profile", Icon: ShieldCheck, tone: "bg-white text-slate-800 border-slate-200", iconTone: "text-emerald-600" },
+          ].map(({ href, label, Icon, tone, iconTone }: any) => (
+            <Link
+              key={href}
+              href={href}
+              className={`flex flex-col items-center justify-center gap-1.5 min-h-[76px] px-1.5 py-2 rounded-2xl border shadow-sm text-xs font-semibold text-center no-underline cursor-pointer transition-all hover:shadow-md active:scale-[0.97] ${tone}`}
+            >
+              <Icon className={`w-5 h-5 ${iconTone || ""}`} aria-hidden="true" />
+              <span className="leading-tight">{label}</span>
+            </Link>
+          ))}
         </div>
       </div>
 
@@ -230,10 +358,13 @@ export function SalesmanDashboardView({ session }: { session: any }) {
                 <span>Active Showroom Sales Target Assigned</span>
                 <Badge className="bg-purple-600 text-white text-[10px]">Auto-Completes On Billing</Badge>
               </p>
-              {tasks.filter((t: any) => t.taskType === "sales_target" && t.status !== "Completed").slice(0, 1).map((targetTask: any) => (
-                <p key={targetTask._id} className="text-xs text-purple-900 mt-0.5 font-medium">
-                  Goal: <span className="font-bold">{targetTask.taskTitle}</span> — Sold: <span className="font-bold text-purple-700">{targetTask.currentQty || 0} / {targetTask.targetQty || 1} units</span> (Due: {targetTask.dueDate})
-                </p>
+              {tasks.filter((t: any) => t.taskType === "sales_target" && t.status !== "Completed").slice(0, 3).map((targetTask: any) => (
+                <div key={targetTask._id} className="mt-1">
+                  <p className="text-xs text-purple-900 font-medium">
+                    Goal: <span className="font-bold">{targetTask.taskTitle}</span> (Due: {targetTask.dueDate})
+                  </p>
+                  <TargetProgress task={targetTask} />
+                </div>
               ))}
             </div>
           </div>
@@ -305,7 +436,7 @@ export function SalesmanDashboardView({ session }: { session: any }) {
                     : "bg-amber-100 text-amber-900 border-amber-300 font-black text-[10px]"
                 }
               >
-                {isTargetAchieved ? `🎯 TARGET ACHIEVED (${targetPercentage}%)` : `⏳ IN PROGRESS (${targetPercentage}%)`}
+                {isTargetAchieved ? `TARGET ACHIEVED (${targetPercentage}%)` : `IN PROGRESS (${targetPercentage}%)`}
               </Badge>
               <p className="text-[10px] text-slate-400 font-mono mt-1">Target: {formatCurrency(targetConfig.targetAmount)}</p>
             </div>

@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { formatCurrency, formatDate, cn } from "@/lib/utils";
 import { ExportMenu } from "@/components/shared/ExportMenu";
+import ValueplusInvoice from "@/app/invoice/page";
 
 interface ProductLedgerModalProps {
   isOpen: boolean;
@@ -37,6 +38,18 @@ export function ProductLedgerModal({
   endDate,
 }: ProductLedgerModalProps) {
   const [activeTab, setActiveTab] = useState("all");
+  // A sale's invoice number opens that invoice.
+  const [openInvoiceNo, setOpenInvoiceNo] = useState<string | null>(null);
+  const { data: openInvoice, isLoading: invoiceLoading } = useQuery({
+    queryKey: ["ledger-invoice", openInvoiceNo],
+    enabled: !!openInvoiceNo,
+    queryFn: async () => {
+      const res = await fetch(`/api/invoices?invoiceNumber=${encodeURIComponent(openInvoiceNo || "")}`);
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || "Could not open the invoice");
+      return json.data;
+    },
+  });
 
   const queryParam = productIdentifier
     ? `code=${encodeURIComponent(productIdentifier.code || "")}&vpCode=${encodeURIComponent(productIdentifier.vpCode || "")}&name=${encodeURIComponent(productIdentifier.name || "")}&id=${encodeURIComponent(productIdentifier.id || "")}`
@@ -300,7 +313,13 @@ export function ProductLedgerModal({
                                 )}
                               </td>
                               <td className="px-3 py-2 font-mono font-bold text-slate-800 whitespace-nowrap">
-                                {t.refNo}
+                                {isSale ? (
+                                  <button type="button" onClick={() => setOpenInvoiceNo(t.refNo)} className="text-[#3F63AD] underline decoration-dotted hover:text-[#2E4F95]" title="Open this invoice">
+                                    {t.refNo}
+                                  </button>
+                                ) : (
+                                  t.refNo
+                                )}
                               </td>
                               <td className="px-3 py-2 font-semibold text-slate-700 max-w-[200px] truncate">
                                 {t.party}
@@ -365,7 +384,11 @@ export function ProductLedgerModal({
                         salesTransactions.map((s, idx) => (
                           <tr key={s.id || idx} className="hover:bg-slate-50">
                             <td className="px-3 py-2 font-mono text-[11px] text-slate-600 font-semibold whitespace-nowrap">{formatDate(s.date)}</td>
-                            <td className="px-3 py-2 font-mono font-bold text-[#3F63AD] whitespace-nowrap">{s.refNo}</td>
+                            <td className="px-3 py-2 font-mono font-bold text-[#3F63AD] whitespace-nowrap">
+                              <button type="button" onClick={() => setOpenInvoiceNo(s.refNo)} className="underline decoration-dotted hover:text-[#2E4F95]" title="Open this invoice">
+                                {s.refNo}
+                              </button>
+                            </td>
                             <td className="px-3 py-2 font-semibold text-slate-800 max-w-[180px] truncate">{s.party}</td>
                             <td className="px-3 py-2 text-center font-mono font-bold whitespace-nowrap">{s.qtyOut}</td>
                             <td className="px-3 py-2 text-right font-mono font-bold text-slate-900 whitespace-nowrap">{formatCurrency(s.rate)}</td>
@@ -489,6 +512,21 @@ export function ProductLedgerModal({
           </Button>
         </div>
       </DialogContent>
+
+      <Dialog open={!!openInvoiceNo} onOpenChange={(o) => { if (!o) setOpenInvoiceNo(null); }}>
+        <DialogContent className="max-w-5xl max-h-[92vh] overflow-y-auto p-2">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Invoice {openInvoiceNo}</DialogTitle>
+          </DialogHeader>
+          {invoiceLoading ? (
+            <p className="p-10 text-center text-sm text-slate-500">Opening invoice…</p>
+          ) : openInvoice ? (
+            <ValueplusInvoice invoiceData={openInvoice} />
+          ) : (
+            <p className="p-10 text-center text-sm text-slate-500">This invoice could not be opened.</p>
+          )}
+        </DialogContent>
+      </Dialog>
     </Dialog>
   );
 }

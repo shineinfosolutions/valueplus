@@ -1,3 +1,4 @@
+import { needsBrand, proposeBrand } from "@/lib/brand-names";
 import { NextResponse } from "next/server";
 import mongoose from "mongoose";
 import connectToDatabase from "@/lib/db";
@@ -81,6 +82,11 @@ async function completeEntryReminderTask(poNo: string) {
   }
 }
 
+async function brandForNewProduct(name: string): Promise<string> {
+  const known = ((await Item.distinct("brand")) as string[]).filter((b) => b && !needsBrand(b));
+  return proposeBrand(String(name || ""), "", known)?.brand || "";
+}
+
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
@@ -116,22 +122,11 @@ export async function POST(req: Request) {
     const dateFlags: any = { backdateStatus: "", backdateRequestedBy: "", backdateMadeOn: "" };
     let backdateBy: string | null = null;
     if (billDay !== todayIst) {
-      const dateActor = await getActor();
-      const dateRole = String(dateActor?.role || "");
-      if (!dateActor || !["admin", "superadmin", "manager"].includes(dateRole)) {
-        return NextResponse.json(
-          { success: false, error: "Only the Admin or the Store Manager can enter a purchase bill with an earlier date." },
-          { status: 403 }
-        );
-      }
-      dateFlags.backdateMadeOn = todayIst;
-      if (dateRole === "manager") {
-        dateFlags.backdateStatus = "pending";
-        dateFlags.backdateRequestedBy = dateActor.name;
-        backdateBy = dateActor.name;
-      } else {
-        dateFlags.backdateStatus = "approved";
-      }
+      // Back-dating is not allowed for anyone.
+      return NextResponse.json(
+        { success: false, error: "A purchase bill can only be entered with today's date. Back-dated bills are not allowed." },
+        { status: 403 }
+      );
     }
 
     // Whose stock is this: Value Plus or Ashoka Enterprises? A purchase bill has to
@@ -354,7 +349,8 @@ export async function POST(req: Request) {
               code: itemCode,
               name: item.name.trim(),
               category: "Electronics",
-              brand: "ValuePlus",
+              // The brand the name spells out (a known brand, or "... - BRAND"); otherwise none, for the Admin to assign.
+              brand: await brandForNewProduct(item.name),
               unit: "PCS",
               hsnCode: "8471",
               gstRate: gstRate,
@@ -464,7 +460,7 @@ export async function PUT(req: Request) {
 
     // Soft-cancel: unlike DELETE, the bill record survives (for audit / payables tracking)
     if (body.action === "cancel") {
-      const gate = await authoriseDestructiveAction(req, "purchase.entry.cancel", body.pin, body.reason);
+      const gate = await authoriseDestructiveAction(req, "purchase.entry.cancel", body.pin, body.reason, body);
       if (!gate.ok) return gate.response;
 
       if (entry.status === "cancelled") {
@@ -617,7 +613,7 @@ export async function DELETE(req: Request) {
       return NextResponse.json({ success: false, error: "Entry not found" }, { status: 404 });
     }
 
-    const gate = await authoriseDestructiveAction(req, "purchase.entry.delete", body.pin, body.reason);
+    const gate = await authoriseDestructiveAction(req, "purchase.entry.delete", body.pin, body.reason, body);
     if (!gate.ok) return gate.response;
 
     // Reverse the balance impact

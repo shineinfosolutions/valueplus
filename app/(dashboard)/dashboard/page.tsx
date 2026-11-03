@@ -1,5 +1,7 @@
 "use client";
 
+import { ProductBrandDialog } from "@/components/dashboard/ProductBrandDialog";
+import { AssignBrandsDialog } from "@/components/dashboard/AssignBrandsDialog";
 import { useState, useEffect, useMemo, useRef, Children } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -51,6 +53,11 @@ import { useBranch } from "@/context/BranchContext";
 import { useSession } from "next-auth/react";
 import { SalesmanDashboardView } from "@/components/dashboard/SalesmanDashboardView";
 import { CashHandoverCard } from "@/components/dashboard/CashHandoverCard";
+import { AuditLauncher } from "@/components/dashboard/AuditLauncher";
+import { PendingBillsCard } from "@/components/dashboard/PendingBillsCard";
+import { StockOrdersCard } from "@/components/dashboard/StockOrdersCard";
+import { CashGivenCard } from "@/components/dashboard/CashGivenCard";
+import { CashToCollectSection } from "@/components/dashboard/CashToCollectSection";
 import { PurchaseDistributionCard, type PurchaseCardFilter } from "@/components/dashboard/PurchaseDistributionCard";
 import { LeadProductPicker, leadProductsLabel, leadProductsTotal, type LeadProduct } from "@/components/shared/LeadProductPicker";
 import { ProductLedgerModal } from "@/components/ProductLedgerModal";
@@ -358,6 +365,7 @@ export default function DashboardPage() {
     totalQuantity: number;
     totalStockValue: number;
     totalItemsCount?: number;
+    unbranded?: { count: number; quantity: number };
     warehouseFilterApplied?: boolean;
     warehouseRequested?: string;
     electronics: { quantity: number; value: number; count?: number; categories?: Array<{ name: string; quantity: number; value: number; itemCount: number }> };
@@ -374,6 +382,11 @@ export default function DashboardPage() {
   // Live product rows behind the category totals (the stock API returns these alongside `data`)
   const [stockItems, setStockItems] = useState<any[]>([]);
   const [stockCategoryFilter, setStockCategoryFilter] = useState<string>("all");
+  const [stockBrandFilter, setStockBrandFilter] = useState<string>("all");
+  const [assignBrandsOpen, setAssignBrandsOpen] = useState(false);
+  const [brandInfoId, setBrandInfoId] = useState<string | null>(null);
+  const stockListRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => { if (openStockModal) { setStockBrandFilter("all"); setStockCategoryFilter("all"); } }, [openStockModal]);
   // "Electronics" is an umbrella group (fridge, cooler, AC, TV, appliances…), not a single category
   const [stockGroupFilter, setStockGroupFilter] = useState<"all" | "electronics" | "mobile">("all");
   // Product whose full stock/sales ledger is open
@@ -1495,6 +1508,7 @@ export default function DashboardPage() {
   if (userRole === "salesman" || userRole === "sales" || userRole === "salesperson" || userRole === "sales_executive") {
     return (
       <div className="page-container pb-10">
+        <div className="mb-4"><AuditLauncher /></div>
         <SalesmanDashboardView session={session} />
       </div>
     );
@@ -1502,31 +1516,12 @@ export default function DashboardPage() {
 
   return (
     <div className="page-container space-y-5 pb-10">
+      {/* Check in / out for the Store Manager, Cashier and other staff (the Admin does not punch) */}
+      <AttendancePunchWidget />
+
       {/* ─── CASHIER-ONLY: TRANSFER CASH TO ADMIN ──────────────── */}
       {userRole === "cashier" && (
         <CashHandoverCard cashierName={session?.user?.name || "Cashier"} />
-      )}
-
-      {/* ─── PENDING INVENTORY AUDIT WARNING BANNER ──────────────── */}
-      {/* Not shown to the Super Admin or the branch Admin (manager): the daily audit
-          is the staff's job, and they were being reminded of it on every visit. */}
-      {isAuditPending && userRole !== "admin" && userRole !== "manager" && (
-        <div className="bg-gradient-to-r from-amber-500/20 via-orange-500/10 to-transparent border-l-4 border-amber-500 p-4 rounded-xl shadow-sm flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <AlertTriangle className="w-5 h-5 text-amber-600 animate-bounce flex-shrink-0" />
-            <div>
-              <p className="text-xs font-black text-amber-900 uppercase tracking-wide">Daily Inventory Audit Required</p>
-              <p className="text-[11px] text-amber-800">Physical stock count for today has not been conducted. Complete the showroom check to ensure zero leakage.</p>
-            </div>
-          </div>
-          <Button
-            size="sm"
-            onClick={() => router.push("/inventory/audit")}
-            className="h-8 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-sm flex-shrink-0"
-          >
-            Perform Daily Audit <ArrowRight className="w-3 h-3 ml-1" />
-          </Button>
-        </div>
       )}
 
       {/* ─── HEADER WITH PERIOD FILTER TABS ────────────────────────── */}
@@ -2576,6 +2571,16 @@ export default function DashboardPage() {
           )}
         </MasonryGrid>
 
+        {/* One Audit button: it asks Mobile or All products, then opens that audit */}
+        <AuditLauncher />
+
+        {/* Work waiting for the cashier / Admin: salesmen's bills, cash handed over, stock orders */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 items-start">
+          {["cashier", "admin", "superadmin", "manager"].includes(userRole) && <PendingBillsCard />}
+          {["admin", "superadmin"].includes(userRole) && <CashGivenCard />}
+          {["admin", "superadmin", "manager"].includes(userRole) && <StockOrdersCard mode="admin" />}
+        </div>
+
         {/* ═══════════════════════════════════════════════════════════════════════════════
             🤝 VENDOR & SUPPLIER LEDGER SUMMARY
 
@@ -2674,6 +2679,9 @@ export default function DashboardPage() {
             {canSeeProfit ? ", Total Expenses or Net Profit" : " or Total Expenses"} above: a supplier
             payout settles a bill the purchase already expensed.
           </p>
+
+          {/* Second section: cash the cashier still has to hand over (Admin) */}
+          {["admin", "superadmin"].includes(userRole) && <CashToCollectSection />}
         </div>
 
         {/* ═══════════════════════════════════════════════════════════════════════════════
@@ -2915,6 +2923,7 @@ export default function DashboardPage() {
                 </span>
                 {/* The three rows below are only the highest-value products; this
                     opens the full stock list they are taken from. */}
+                <div className="flex items-center gap-3">
                 <button
                   type="button"
                   onClick={() => { setStockGroupFilter("all"); setStockCategoryFilter("all"); setOpenStockModal(true); }}
@@ -2923,6 +2932,15 @@ export default function DashboardPage() {
                 >
                   View total stock ({stockBreakdown.totalItemsCount || stockItems.length} items) <ArrowRight className="w-3 h-3" />
                 </button>
+                <button
+                  type="button"
+                  onClick={() => router.push("/inventory/stock-report")}
+                  className="text-[11px] font-bold text-emerald-700 hover:underline flex items-center gap-0.5"
+                  title="Brand / product filter with price and VSP"
+                >
+                  Stock report <ArrowRight className="w-3 h-3" />
+                </button>
+                </div>
               </div>
 
               {stockItems.length === 0 ? (
@@ -3066,7 +3084,9 @@ export default function DashboardPage() {
 
             <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 font-medium">
               <span>Commission & target tracking</span>
-              <span className="font-bold text-slate-700">Active Staff</span>
+              <Link href="/staff/leaderboard" className="font-bold text-[#3F63AD] hover:underline">
+                View all{staffPerformance.length > 4 ? ` (${staffPerformance.length})` : ""} →
+              </Link>
             </div>
           </div>
 
@@ -5140,7 +5160,7 @@ export default function DashboardPage() {
             </div>
 
             {/* Summary Highlights */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-5">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3 mt-4 sm:mt-5">
               <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 border border-white/10">
                 <p className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider">Total Available Units</p>
                 <p className="text-2xl font-black text-white mt-0.5">
@@ -5164,6 +5184,24 @@ export default function DashboardPage() {
 
           {/* Body */}
           <div className="p-5 bg-slate-50 max-h-[60vh] overflow-y-auto space-y-4">
+            <ProductBrandDialog
+              itemId={brandInfoId}
+              onClose={() => setBrandInfoId(null)}
+              onSaved={(id, brand) => {
+                setStockItems((prev) => prev.map((it: any) => (String(it._id) === id ? { ...it, brand, unbranded: false } : it)));
+                setStockBreakdown((prev) => ({ ...prev, unbranded: { count: Math.max(0, (prev.unbranded?.count || 0) - 1), quantity: prev.unbranded?.quantity || 0 } }));
+              }}
+            />
+            <AssignBrandsDialog
+              open={assignBrandsOpen}
+              onClose={() => setAssignBrandsOpen(false)}
+              onApplied={(done) => {
+                const byId = new Map(done.map((d) => [d.id, d.brand]));
+                setStockItems((prev) => prev.map((it: any) => (byId.has(String(it._id)) ? { ...it, brand: byId.get(String(it._id)), unbranded: false } : it)));
+                setStockBreakdown((prev) => ({ ...prev, unbranded: { count: Math.max(0, (prev.unbranded?.count || 0) - done.length), quantity: prev.unbranded?.quantity || 0 } }));
+              }}
+            />
+
             {/* Search Filter */}
             <div className="flex items-center justify-between gap-3">
               <div className="relative flex-1">
@@ -5175,6 +5213,11 @@ export default function DashboardPage() {
                   className="pl-9 bg-white border-slate-200 text-xs h-9"
                 />
               </div>
+              {["admin", "superadmin"].includes(userRole) && (stockBreakdown.unbranded?.count || 0) > 0 && (
+                <Button variant="outline" size="sm" onClick={() => setAssignBrandsOpen(true)} className="text-xs font-bold text-amber-800 border-amber-300 bg-amber-50 hover:bg-amber-100 whitespace-nowrap h-9">
+                  Assign brands ({stockBreakdown.unbranded?.count})
+                </Button>
+              )}
               <Button
                 variant="outline"
                 size="sm"
@@ -5201,7 +5244,7 @@ export default function DashboardPage() {
                   <button
                     key={g.key}
                     type="button"
-                    onClick={() => { setStockGroupFilter(g.key as any); setStockCategoryFilter("all"); }}
+                    onClick={() => { setStockGroupFilter(g.key as any); setStockBrandFilter("all"); setStockCategoryFilter("all"); }}
                     className={cn(
                       "px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5",
                       isActive ? "bg-[#3F63AD] text-white shadow-sm" : "text-slate-600 hover:bg-slate-100"
@@ -5226,202 +5269,209 @@ export default function DashboardPage() {
               </p>
             )}
 
-            {/* Category Cards Grid — clicking a card filters the product list below */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 pt-1">
-              {(stockBreakdown.categories || [])
-                .filter((cat) => stockGroupFilter === "all" || (cat.group || "electronics") === stockGroupFilter)
-                .filter((cat) => cat.name.toLowerCase().includes(stockSearchQuery.toLowerCase()))
-                .map((cat, idx) => {
-                  const percentage = stockBreakdown.totalStockValue > 0 ? ((cat.value / stockBreakdown.totalStockValue) * 100).toFixed(1) : "0";
-                  const isActive = stockCategoryFilter.toLowerCase() === cat.name.toLowerCase();
-                  return (
-                    <div
-                      key={idx}
-                      onClick={() => setStockCategoryFilter(isActive ? "all" : cat.name)}
-                      className={cn(
-                        "bg-white p-4 rounded-xl border transition-all cursor-pointer flex flex-col justify-between group",
-                        isActive
-                          ? "border-[#3F63AD] ring-2 ring-[#3F63AD]/20 shadow-md"
-                          : "border-slate-200 hover:border-[#3F63AD] hover:shadow-md"
-                      )}
-                    >
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="w-2.5 h-2.5 rounded-full bg-[#3F63AD]"></span>
-                            <h4 className="font-bold text-slate-800 text-sm group-hover:text-[#3F63AD] transition-colors">
-                              {cat.name}
-                            </h4>
-                          </div>
-                          <p className="text-[11px] text-slate-400 mt-1 pl-4">
-                            {cat.itemCount || "Multiple"} Product Lines · {percentage}% of Total Inventory
-                          </p>
-                        </div>
-                        <Badge className="bg-blue-50 text-[#3F63AD] border-blue-200 font-mono font-bold text-xs">
-                          {cat.quantity.toLocaleString("en-IN")} Qty
-                        </Badge>
-                      </div>
-
-                      <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
-                        <div>
-                          <span className="text-[10px] text-slate-400 font-semibold uppercase">Stock Valuation</span>
-                          <p className="text-sm font-black text-slate-900">
-                            {formatCurrency(cat.value)}
-                          </p>
-                        </div>
-                        <Button
-                          size="sm"
-                          className={cn(
-                            "text-white text-xs h-8 px-3 font-semibold group-hover:shadow-sm",
-                            isActive ? "bg-[#2C3E5A] hover:bg-[#1B2537]" : "bg-[#3F63AD] hover:bg-[#2C3E5A]"
-                          )}
-                        >
-                          {isActive ? "Showing Items" : "View Stock Items"} <ArrowRight className="w-3.5 h-3.5 ml-1" />
-                        </Button>
-                      </div>
-                    </div>
-                  );
-                })}
-
-              {(stockBreakdown.categories || [])
-                .filter((cat) => stockGroupFilter === "all" || (cat.group || "electronics") === stockGroupFilter)
-                .filter((cat) => cat.name.toLowerCase().includes(stockSearchQuery.toLowerCase()))
-                .length === 0 && (
-                <div className="md:col-span-2 py-10 flex flex-col items-center justify-center text-center bg-white rounded-xl border border-dashed border-slate-200">
-                  <Package className="w-8 h-8 text-slate-300 mb-2" />
-                  <p className="text-sm font-bold text-slate-600">No stock categories found</p>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    {stockSearchQuery || stockGroupFilter !== "all"
-                      ? "Try clearing the search or switching group."
-                      : "Add products in Item Master to build your inventory catalog."}
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* PRODUCT LIST — actual items behind the category totals */}
+            {/* BRAND -> CATEGORY -> PRODUCTS: open a brand, then one of its categories, then its products */}
             {(() => {
               const q = stockSearchQuery.trim().toLowerCase();
-              const visibleItems = stockItems
-                .filter((it: any) =>
-                  stockGroupFilter === "all" || (it.group || "electronics") === stockGroupFilter
-                )
-                .filter((it: any) =>
-                  stockCategoryFilter === "all" ||
-                  (it.category || "").toLowerCase() === stockCategoryFilter.toLowerCase()
-                )
-                .filter((it: any) =>
-                  !q ||
-                  (it.name || "").toLowerCase().includes(q) ||
-                  (it.brand || "").toLowerCase().includes(q) ||
-                  (it.category || "").toLowerCase().includes(q) ||
-                  (it.vpCode || "").toLowerCase().includes(q)
-                )
-                .sort((a: any, b: any) => (b.stockValue || 0) - (a.stockValue || 0));
+              const inGroup = stockItems.filter((it: any) => stockGroupFilter === "all" || (it.group || "electronics") === stockGroupFilter);
+              const brandKeyOf = (it: any) => String(it.brand || "").trim().toLowerCase() || "unbranded";
+              // One card per brand (spelling differences in capitals are merged); a brand's name is its commonest spelling.
+              const brandMap = new Map<string, { key: string; name: string; spellings: Map<string, number>; qty: number; value: number; products: number; categories: Set<string> }>();
+              for (const it of inGroup) {
+                const k = brandKeyOf(it);
+                const b = brandMap.get(k) || { key: k, name: "", spellings: new Map(), qty: 0, value: 0, products: 0, categories: new Set<string>() };
+                const sp = String(it.brand || "").trim();
+                if (sp) b.spellings.set(sp, (b.spellings.get(sp) || 0) + 1);
+                b.qty += Number(it.availableQty) || 0;
+                b.value += Number(it.stockValue) || 0;
+                b.products += 1;
+                b.categories.add(String(it.category || "General"));
+                brandMap.set(k, b);
+              }
+              const brands = Array.from(brandMap.values())
+                .map((b) => ({ ...b, name: b.key === "unbranded" ? "Unbranded" : Array.from(b.spellings.entries()).sort((x, y) => y[1] - x[1])[0][0] }))
+                .sort((a, b) => b.value - a.value);
+              const totalValue = brands.reduce((t, b) => t + b.value, 0);
+
+              const brandSel = stockBrandFilter;
+              const catSel = stockCategoryFilter;
+              const brandItems = brandSel === "all" ? inGroup : inGroup.filter((it: any) => brandKeyOf(it) === brandSel);
+              const brandName = brands.find((b) => b.key === brandSel)?.name || "";
+              const catMap = new Map<string, { name: string; qty: number; value: number; products: number }>();
+              for (const it of brandItems) {
+                const name = String(it.category || "General");
+                const c = catMap.get(name.toLowerCase()) || { name, qty: 0, value: 0, products: 0 };
+                c.qty += Number(it.availableQty) || 0;
+                c.value += Number(it.stockValue) || 0;
+                c.products += 1;
+                catMap.set(name.toLowerCase(), c);
+              }
+              const cats = Array.from(catMap.values()).sort((a, b) => b.value - a.value);
+              const catName = cats.find((c) => c.name.toLowerCase() === catSel)?.name || "";
+
+              const matchesQ = (it: any) =>
+                !q ||
+                (it.name || "").toLowerCase().includes(q) ||
+                (it.brand || "").toLowerCase().includes(q) ||
+                (it.category || "").toLowerCase().includes(q) ||
+                (it.vpCode || "").toLowerCase().includes(q);
+
+              // Products to list: a search shows matches from everywhere; otherwise the opened brand / category.
+              const listItems =
+                q
+                  ? inGroup.filter(matchesQ)
+                  : brandSel !== "all" && catSel !== "all"
+                  ? brandItems.filter((it: any) => String(it.category || "General").toLowerCase() === catSel)
+                  : [];
+              const showProducts = listItems.length > 0 || !!q || (brandSel !== "all" && catSel !== "all");
+
+              const Card = ({ title, sub, qty, value, share, onClick, action }: { title: string; sub: string; qty: number; value: number; share: string; onClick: () => void; action: string }) => (
+                <div onClick={onClick} className="bg-white p-4 rounded-xl border border-slate-200 hover:border-[#3F63AD] hover:shadow-md transition-all cursor-pointer flex flex-col justify-between group">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-[#3F63AD] shrink-0"></span>
+                        <h4 className="font-bold text-slate-800 text-sm truncate group-hover:text-[#3F63AD] transition-colors">{title}</h4>
+                      </div>
+                      <p className="text-[11px] text-slate-400 mt-1 pl-4">{sub} · {share}% of stock value</p>
+                    </div>
+                    <Badge className="bg-blue-50 text-[#3F63AD] border-blue-200 font-mono font-bold text-xs shrink-0">{qty.toLocaleString("en-IN")} Qty</Badge>
+                  </div>
+                  <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                    <div>
+                      <span className="text-[10px] text-slate-400 font-semibold uppercase">Stock Valuation</span>
+                      <p className="text-sm font-black text-slate-900">{formatCurrency(value)}</p>
+                    </div>
+                    <Button size="sm" className="bg-[#3F63AD] hover:bg-[#2C3E5A] text-white text-xs h-8 px-3 font-semibold">
+                      {action} <ArrowRight className="w-3.5 h-3.5 ml-1" />
+                    </Button>
+                  </div>
+                </div>
+              );
+
+              const crumb = (
+                <div className="flex flex-wrap items-center gap-1.5 text-xs font-bold">
+                  <button type="button" onClick={() => { setStockBrandFilter("all"); setStockCategoryFilter("all"); }} className="text-[#3F63AD] hover:underline">All brands</button>
+                  {brandSel !== "all" && (
+                    <>
+                      <span className="text-slate-400">&gt;</span>
+                      <button type="button" onClick={() => setStockCategoryFilter("all")} className={catSel === "all" ? "text-slate-900" : "text-[#3F63AD] hover:underline"}>{brandName}</button>
+                    </>
+                  )}
+                  {catSel !== "all" && (
+                    <>
+                      <span className="text-slate-400">&gt;</span>
+                      <span className="text-slate-900">{catName}</span>
+                    </>
+                  )}
+                </div>
+              );
 
               return (
-                <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-                  <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100 bg-slate-50/70">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-black text-slate-700 uppercase tracking-wider">
-                        Stock Items
-                      </span>
-                      <Badge className="bg-slate-200 text-slate-700 border-slate-300 text-[10px] font-mono font-bold">
-                        {visibleItems.length}
-                      </Badge>
-                    </div>
-                    {stockCategoryFilter !== "all" && (
-                      <button
-                        type="button"
-                        onClick={() => setStockCategoryFilter("all")}
-                        className="text-[11px] font-bold text-[#3F63AD] hover:underline flex items-center gap-1"
-                      >
-                        <X className="w-3 h-3" /> Clear "{stockCategoryFilter}"
-                      </button>
-                    )}
-                  </div>
+                <div className="space-y-3">
+                  {!q && crumb}
 
-                  {visibleItems.length === 0 ? (
-                    <div className="py-10 flex flex-col items-center justify-center text-center">
-                      <Search className="w-7 h-7 text-slate-300 mb-2" />
-                      <p className="text-xs font-bold text-slate-500">No products match this filter</p>
+                  {/* Level 1: brands */}
+                  {!q && brandSel === "all" && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                      {brands.length === 0 ? (
+                        <div className="md:col-span-2 py-10 flex flex-col items-center text-center bg-white rounded-xl border border-dashed border-slate-200">
+                          <Package className="w-8 h-8 text-slate-300 mb-2" />
+                          <p className="text-sm font-bold text-slate-600">No stock found</p>
+                        </div>
+                      ) : (
+                        brands.map((b) => (
+                          <Card
+                            key={b.key}
+                            title={b.name}
+                            sub={`${b.categories.size} categor${b.categories.size === 1 ? "y" : "ies"} · ${b.products} products`}
+                            qty={b.qty}
+                            value={b.value}
+                            share={totalValue > 0 ? ((b.value / totalValue) * 100).toFixed(1) : "0"}
+                            onClick={() => { setStockBrandFilter(b.key); setStockCategoryFilter("all"); }}
+                            action="View Categories"
+                          />
+                        ))
+                      )}
                     </div>
-                  ) : (
-                    <div className="overflow-x-auto max-h-[300px] overflow-y-auto">
-                      <table className="w-full text-left text-xs">
-                        <thead className="bg-white sticky top-0 border-b border-slate-200 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                          <tr>
-                            <th className="px-4 py-2">Product</th>
-                            <th className="px-4 py-2">Category</th>
-                            <th className="px-4 py-2 text-right">Qty</th>
-                            <th className="px-4 py-2 text-right">Rate</th>
-                            <th className="px-4 py-2 text-right">Stock Value</th>
-                            <th className="px-4 py-2 text-right">Open</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {visibleItems.slice(0, 100).map((it: any) => (
-                            <tr
-                              key={it._id || it.code}
-                              onClick={() => openProductLedger(it)}
-                              title="Open product ledger"
-                              className="hover:bg-slate-50 cursor-pointer transition-colors"
-                            >
-                              <td className="px-4 py-2.5">
-                                <p className="font-bold text-slate-900 truncate max-w-[240px]">{it.name}</p>
-                                <span className="text-[10px] text-slate-400 font-mono">
-                                  {it.vpCode || it.code} • {it.brand}
-                                </span>
-                              </td>
-                              <td className="px-4 py-2.5 text-slate-600">{it.category}</td>
-                              <td className="px-4 py-2.5 text-right">
-                                <span
-                                  className={cn(
-                                    "font-mono font-bold",
-                                    (it.availableQty || 0) > 0 ? "text-emerald-700" : "text-rose-600"
-                                  )}
-                                >
-                                  {it.availableQty || 0}
-                                </span>
-                              </td>
-                              <td className="px-4 py-2.5 text-right font-mono text-slate-700">
-                                {formatCurrency(it.sellingPrice || 0)}
-                              </td>
-                              <td className="px-4 py-2.5 text-right font-mono font-black text-slate-900">
-                                {formatCurrency(it.stockValue || 0)}
-                              </td>
-                              <td className="px-4 py-2.5 text-right">
-                                <div className="flex items-center justify-end gap-1.5">
-                                  <button
-                                    type="button"
-                                    onClick={(e) => { e.stopPropagation(); openProductLedger(it); }}
-                                    title="Open product ledger"
-                                    className="h-7 px-2 rounded-lg border border-slate-200 bg-white text-[10px] font-bold text-slate-600 hover:text-[#3F63AD] hover:border-[#3F63AD] transition-colors"
-                                  >
-                                    Ledger
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setOpenStockModal(false);
-                                      openProductMaster(it);
-                                    }}
-                                    title="Open in Item Master"
-                                    className="h-7 px-2 rounded-lg border border-slate-200 bg-white text-[10px] font-bold text-slate-600 hover:text-purple-700 hover:border-purple-400 transition-colors"
-                                  >
-                                    Master
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                      {visibleItems.length > 100 && (
-                        <p className="text-[11px] text-slate-400 text-center py-2 border-t border-slate-100">
-                          Showing first 100 of {visibleItems.length} items — use search to narrow down.
-                        </p>
+                  )}
+
+                  {/* Level 2: the categories of the opened brand */}
+                  {!q && brandSel !== "all" && catSel === "all" && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                      {cats.map((c) => (
+                        <Card
+                          key={c.name}
+                          title={c.name}
+                          sub={`${c.products} product${c.products === 1 ? "" : "s"}`}
+                          qty={c.qty}
+                          value={c.value}
+                          share={brandItems.length ? ((c.value / Math.max(1, brandItems.reduce((t: number, it: any) => t + (Number(it.stockValue) || 0), 0))) * 100).toFixed(1) : "0"}
+                          onClick={() => {
+                            setStockCategoryFilter(c.name.toLowerCase());
+                            setTimeout(() => stockListRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
+                          }}
+                          action="View Products"
+                        />
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Level 3 (or a search): the products */}
+                  {showProducts && (
+                    <div ref={stockListRef} className="bg-white rounded-xl border border-slate-200 overflow-hidden scroll-mt-2">
+                      <div className="flex flex-wrap items-center gap-2 px-4 py-2.5 border-b border-slate-100 bg-slate-50/70">
+                        <span className="text-xs font-black text-slate-700 uppercase tracking-wider">
+                          {q ? `Search: ${stockSearchQuery.trim()}` : `${brandName} - ${catName}`}
+                        </span>
+                        <Badge className="bg-slate-200 text-slate-700 border-slate-300 text-[10px] font-mono font-bold">{listItems.length} products</Badge>
+                        <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 text-[10px] font-mono font-bold">
+                          {listItems.reduce((t: number, it: any) => t + (Number(it.availableQty) || 0), 0).toLocaleString("en-IN")} Qty
+                        </Badge>
+                      </div>
+                      {listItems.length === 0 ? (
+                        <div className="py-10 flex flex-col items-center justify-center text-center">
+                          <Search className="w-7 h-7 text-slate-300 mb-2" />
+                          <p className="text-xs font-bold text-slate-500">No products match</p>
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto max-h-[55vh] overflow-y-auto">
+                          <table className="w-full text-left text-xs">
+                            <thead className="bg-white sticky top-0 border-b border-slate-200 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                              <tr>
+                                <th className="px-4 py-2">Product</th>
+                                <th className="px-4 py-2">Category</th>
+                                <th className="px-4 py-2 text-right">Qty</th>
+                                <th className="px-4 py-2 text-right">Rate</th>
+                                <th className="px-4 py-2 text-right">Stock Value</th>
+                                <th className="px-4 py-2 text-right">Open</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {[...listItems].sort((a: any, b: any) => (b.stockValue || 0) - (a.stockValue || 0)).slice(0, 150).map((it: any) => (
+                                <tr key={it._id || it.code} onClick={() => (it.unbranded ? setBrandInfoId(String(it._id)) : openProductLedger(it))} title={it.unbranded ? "Open full details (no brand yet)" : "Open product ledger"} className={cn("hover:bg-slate-50 cursor-pointer transition-colors", it.unbranded && "bg-amber-50/40")}>
+                                  <td className="px-4 py-2.5">
+                                    <p className="font-bold text-slate-900 truncate max-w-[240px]">{it.name}</p>
+                                    <span className="text-[10px] text-slate-400 font-mono">{it.vpCode || it.code} • {it.brand || <span className="text-amber-600 font-bold">Unbranded</span>}</span>
+                                  </td>
+                                  <td className="px-4 py-2.5 text-slate-600">{it.category}</td>
+                                  <td className="px-4 py-2.5 text-right">
+                                    <span className={cn("font-mono font-bold", (it.availableQty || 0) > 0 ? "text-emerald-700" : "text-rose-600")}>{it.availableQty || 0}</span>
+                                  </td>
+                                  <td className="px-4 py-2.5 text-right font-mono text-slate-700">{formatCurrency(it.sellingPrice || 0)}</td>
+                                  <td className="px-4 py-2.5 text-right font-mono font-black text-slate-900">{formatCurrency(it.stockValue || 0)}</td>
+                                  <td className="px-4 py-2.5 text-right">
+                                    <div className="flex items-center justify-end gap-1.5">
+                                      <button type="button" onClick={(e) => { e.stopPropagation(); setBrandInfoId(String(it._id)); }} title="Full details of this product" className="h-7 px-2 rounded-lg border border-amber-300 bg-amber-50 text-[10px] font-bold text-amber-800 hover:bg-amber-100 transition-colors">Details</button>
+                                      <button type="button" onClick={(e) => { e.stopPropagation(); openProductLedger(it); }} title="Open product ledger" className="h-7 px-2 rounded-lg border border-slate-200 bg-white text-[10px] font-bold text-slate-600 hover:text-[#3F63AD] hover:border-[#3F63AD] transition-colors">Ledger</button>
+                                      <button type="button" onClick={(e) => { e.stopPropagation(); setOpenStockModal(false); openProductMaster(it); }} title="Open in Item Master" className="h-7 px-2 rounded-lg border border-slate-200 bg-white text-[10px] font-bold text-slate-600 hover:text-purple-700 hover:border-purple-400 transition-colors">Master</button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          {listItems.length > 150 && <p className="text-[11px] text-slate-400 text-center py-2 border-t border-slate-100">Showing first 150 of {listItems.length} products - use search to narrow down.</p>}
+                        </div>
                       )}
                     </div>
                   )}

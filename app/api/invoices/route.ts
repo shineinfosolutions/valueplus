@@ -1,3 +1,4 @@
+import { missingApprovals } from "@/lib/discount-approval";
 import { NextResponse } from "next/server";
 import mongoose from "mongoose";
 import { getServerSession } from "next-auth";
@@ -6,6 +7,8 @@ import Invoice from "@/models/Invoice";
 import Customer from "@/models/Customer";
 import Warehouse from "@/models/Warehouse";
 import Estimate from "@/models/Estimate";
+import { canApproveEstimate, effectiveApproval } from "@/lib/priceLock";
+import { notifyAssignee } from "@/lib/notify";
 import DeletedInvoice from "@/models/DeletedInvoice";
 import AuditLog from "@/models/AuditLog";
 import { derivePaymentModeLabel, isCollectedMode, isFinanceInvoice, classifyPaymentMode } from "@/lib/payment-modes";
@@ -83,6 +86,14 @@ export async function GET(req: Request) {
     
     await connectToDatabase();
     
+    // One bill by its number (opened from a product's history).
+    const oneNumber = searchParams.get("invoiceNumber");
+    if (oneNumber) {
+      const one = await Invoice.findOne({ invoiceNumber: oneNumber }).lean();
+      if (!one) return NextResponse.json({ success: false, error: "Invoice not found" }, { status: 404 });
+      return NextResponse.json({ success: true, data: one });
+    }
+
     // An estimate is saved beside invoices as type "proforma", but it is a
     // quotation, not a sale. Every sales screen and report reads this list, so
     // estimates are left out unless they are asked for by name: they used to show
@@ -136,6 +147,78 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     await connectToDatabase();
+
+    // An invoice made from an estimate needs the cashier's approval first. This is
+    // checked here, not only in the form, so it cannot be skipped by calling the API.
+    const postActor = await getActor();
+    // A salesman does not make the invoice: he sends a bill to the cashier (Estimates screen -> New Bill).
+    if (postActor && ["salesman", "sales"].includes(postActor.role) && body.type !== "proforma") {
+      return NextResponse.json(
+        { success: false, error: "Salesmen send a bill to the cashier, who confirms payment and delivery and makes the invoice." },
+        { status: 403 }
+      );
+    }
+    let linkedBillToApprove: any = null;
+    if (body.linkedEstimateNumber) {
+      const linked: any = await Estimate.findOne({ estimateNumber: body.linkedEstimateNumber }).lean();
+      if (linked && effectiveApproval(linked) === "rejected") {
+        return NextResponse.json(
+          { success: false, error: `${linked.estimateNumber} was rejected${linked.rejectReason ? ` (${linked.rejectReason})` : ""}. An invoice cannot be made from it.` },
+          { status: 403 }
+        );
+      }
+      if (linked && effectiveApproval(linked) === "pending") {
+        // A salesman's bill waits for the cashier; making the invoice is the cashier's approval.
+        if (!postActor || !canApproveEstimate(postActor.role)) {
+          return NextResponse.json(
+            { success: false, error: `${linked.estimateNumber} is waiting for the cashier. Only the cashier, manager or admin can make the invoice.` },
+            { status: 403 }
+          );
+        }
+        linkedBillToApprove = linked;
+      }
+      // The invoice carries the salesman who made the bill; the cashier cannot swap the name.
+      if (linked && (linked.salesperson || linked.salesExecutive)) {
+        body.salesExecutive = linked.salesperson || linked.salesExecutive;
+        body.salesperson = body.salesExecutive;
+      }
+    }
+    // A discount of 1% or more below the product's selling price needs the Store Manager's (up to 10%) or the
+    // Admin's (above 10%) approval. An estimate is checked by the Estimates API; a bill made from an approved
+    // bill is covered for the lines at the same price. An offline bill cannot wait for an answer.
+    if (postActor && body.type !== "proforma" && !body.offlineId && (!body.type || body.type === "tax-invoice")) {
+      const linkedForDiscount: any = body.linkedEstimateNumber ? await Estimate.findOne({ estimateNumber: body.linkedEstimateNumber }).lean() : null;
+      const needDiscount = await missingApprovals(postActor, body.customerName, body.items, linkedForDiscount?.items || []);
+      if (needDiscount.length > 0) {
+        return NextResponse.json(
+          {
+            success: false,
+            discountApproval: true,
+            lines: needDiscount,
+            error: `Discount approval needed: ${needDiscount.map((l) => `${l.itemName} (${l.percent}% off, ${l.tier === "admin" ? "Admin" : "Store Manager"})`).join(", ")}.`,
+          },
+          { status: 409 }
+        );
+      }
+    }
+    // A tax invoice must name its sales executive: the lead's salesman, the bill's salesman, or the one the cashier picked.
+    if ((body.type === "tax-invoice" || !body.type) && !String(body.salesExecutive || "").trim()) {
+      return NextResponse.json(
+        { success: false, error: "Choose the Sales Executive for this bill. A tax invoice cannot be saved without one." },
+        { status: 400 }
+      );
+    }
+    // An estimate copy is only accepted for an estimate that went through the Estimates
+    // API, which holds the approval and the locked-price checks.
+    if (body.type === "proforma") {
+      const known = await Estimate.exists({ estimateNumber: body.invoiceNumber });
+      if (!known) {
+        return NextResponse.json(
+          { success: false, error: "Estimates must be created from the Estimates screen." },
+          { status: 400 }
+        );
+      }
+    }
     
     // 0a. Bill date. Today (India time) for everyone; an earlier date only for the
     // Admin or the Store Manager — and a Store Manager's back-dated bill goes to
@@ -157,9 +240,11 @@ export async function POST(req: Request) {
       const dateActor = await getActor();
       const dateRole = String(dateActor?.role || "");
       const canBackdate = Boolean(dateActor) && ["admin", "superadmin", "manager"].includes(dateRole);
-      if (!dateActor || (!canBackdate && !body.offlineId)) {
+      // Back-dating is not allowed for anyone. The one exception is a bill that was made offline on an
+      // earlier day and is only now syncing: it keeps the day it was really made (and is still flagged).
+      if (!dateActor || !body.offlineId) {
         return NextResponse.json(
-          { success: false, error: "Only the Admin or the Store Manager can make a bill with an earlier date." },
+          { success: false, error: "A bill can only be made with today's date. Back-dated bills are not allowed." },
           { status: 403 }
         );
       }
@@ -275,6 +360,18 @@ export async function POST(req: Request) {
       );
       numberReassignedFrom = body.invoiceNumber;
       body.invoiceNumber = reassigned;
+    }
+
+    // A bill financed through Bajaj Finance must carry the delivery vehicle number.
+    if (
+      (body.type || "tax-invoice") === "tax-invoice" &&
+      /bajaj/i.test(String(body.financeProvider || "")) &&
+      !String(body.vehicleNumber || body.driverVehicleNo || "").trim()
+    ) {
+      return NextResponse.json(
+        { success: false, error: "Vehicle number is compulsory for a Bajaj Finance bill." },
+        { status: 400 }
+      );
     }
 
     // A tax invoice must be numbered in its own entity's series. If the number
@@ -561,6 +658,7 @@ export async function POST(req: Request) {
           driverPhone: body.driverPhone || "",
           deliveryOtp: invoice.deliveryOtp || "",
           status: body.dispatchType === "delayed_delivery" ? "in-transit" : "delivered",
+          autoFromBill: true,
         });
 
         invoice.deliveryChallanNo = challanNo;
@@ -628,7 +726,25 @@ export async function POST(req: Request) {
         if (matchedEst) {
           matchedEst.status = "Converted";
           matchedEst.convertedInvoiceNumber = invoice.invoiceNumber;
+          if (linkedBillToApprove) {
+            // The cashier making the invoice approves the bill; its total is the salesman's deal amount.
+            matchedEst.approvalStatus = "approved";
+            matchedEst.approvedBy = postActor?.name || "";
+            matchedEst.approvedAt = new Date();
+          }
+          matchedEst.dealAmount = Number(matchedEst.total) || Number(invoice.total) || 0;
+          matchedEst.dealSalesperson = matchedEst.salesperson || matchedEst.salesExecutive;
           await matchedEst.save();
+          // The salesman hears (bell + phone) that his bill was invoiced.
+          if (linkedBillToApprove) {
+            await notifyAssignee(matchedEst.salesperson || matchedEst.salesExecutive || "", undefined, {
+              type: "approval_result",
+              title: "Your bill was invoiced",
+              message: `${matchedEst.estimateNumber} → invoice ${invoice.invoiceNumber} (₹${Number(invoice.total || 0).toLocaleString("en-IN")}).`,
+              link: "/sales/estimates",
+              createdBy: postActor?.name || "",
+            });
+          }
 
           if ((!invoice.salesExecutive || invoice.salesExecutive === "Admin" || invoice.salesExecutive === "Store Staff") && (matchedEst.salesperson || matchedEst.salesExecutive)) {
             invoice.salesExecutive = matchedEst.salesperson || matchedEst.salesExecutive;
@@ -641,7 +757,8 @@ export async function POST(req: Request) {
         if (phoneDigits && phoneDigits.length >= 10) {
           const matchedEst = await Estimate.findOne({
             customerPhone: { $regex: phoneDigits.slice(-10) },
-            status: { $ne: "Converted" }
+            status: { $ne: "Converted" },
+            approvalStatus: { $nin: ["pending", "rejected"] },
           });
           if (matchedEst) {
             matchedEst.status = "Converted";
@@ -732,11 +849,15 @@ export async function POST(req: Request) {
             let matchesTarget = false;
             let qtyIncrement = 0;
             const invoiceTotal = Number(invoice.total || invoice.netAmount || 0);
+            // A target on a product counts only that product's lines (qty and ₹);
+            // a general revenue target counts the whole bill.
+            let amountIncrement = invoiceTotal;
 
             // Check if task targets a specific product or brand
             if (task.targetProduct || task.targetBrand) {
               const targetP = (task.targetProduct || "").toLowerCase().trim();
               const targetB = (task.targetBrand || "").toLowerCase().trim();
+              amountIncrement = 0;
 
               for (const lineItem of (invoice.items || [])) {
                 const itemN = (lineItem.itemName || "").toLowerCase();
@@ -747,6 +868,7 @@ export async function POST(req: Request) {
                     (targetB && (itemB.includes(targetB) || itemN.includes(targetB)))) {
                   matchesTarget = true;
                   qtyIncrement += Number(lineItem.quantity || lineItem.qty || 1);
+                  amountIncrement += Number(lineItem.amount) || (Number(lineItem.rate) || 0) * (Number(lineItem.quantity || lineItem.qty) || 1);
                 }
               }
             } else {
@@ -757,7 +879,7 @@ export async function POST(req: Request) {
 
             if (matchesTarget) {
               task.currentQty = (Number(task.currentQty) || 0) + (qtyIncrement || 1);
-              task.currentAmount = (Number(task.currentAmount) || 0) + invoiceTotal;
+              task.currentAmount = Math.round(((Number(task.currentAmount) || 0) + amountIncrement) * 100) / 100;
               task.status = "In Progress";
               task.linkedInvoiceNumber = invoice.invoiceNumber;
 
@@ -1100,7 +1222,8 @@ export async function PUT(req: Request) {
         actor: gate.actor,
         reason: gate.reason,
         before: summariseInvoice(existingInvoice),
-        after: summariseInvoice(incoming),
+        // What the form sends goes over the bill as it is, so a field the form leaves out reads as unchanged.
+        after: summariseInvoice({ ...(typeof existingInvoice.toObject === "function" ? existingInvoice.toObject() : existingInvoice), ...incoming }),
         data: { invoiceNumber: existingInvoice.invoiceNumber, invoice: incoming },
         baseVersion: versionOf(existingInvoice),
         meta,
@@ -1118,7 +1241,8 @@ export async function PUT(req: Request) {
         req,
         "invoice.cancel",
         body.pin,
-        body.reason
+        body.reason,
+        body
       );
       if (!gate.ok) return gate.response;
 
@@ -1297,7 +1421,7 @@ export async function DELETE(req: Request) {
     const pin = payload.pin ?? searchParams.get("pin") ?? "";
     const reason = payload.reason ?? searchParams.get("reason") ?? "";
 
-    const gate = await authoriseDestructiveAction(req, "invoice.delete", pin, reason);
+    const gate = await authoriseDestructiveAction(req, "invoice.delete", pin, reason, payload);
     if (!gate.ok) return gate.response;
 
     await connectToDatabase();

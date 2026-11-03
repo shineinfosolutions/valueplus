@@ -10,6 +10,10 @@ export interface IInventoryAuditItem {
   difference: number;
   condition: "Good" | "Damaged" | "Missing" | "Other";
   remarks?: string;
+  /** Live audit: set the moment someone enters this product's physical count. */
+  counted?: boolean;
+  countedBy?: string;
+  countedAt?: Date;
 }
 
 export interface IInventoryAudit extends Document {
@@ -20,7 +24,14 @@ export interface IInventoryAudit extends Document {
   totalExpected: number;
   totalPhysical: number;
   totalDiscrepancy: number;
-  status: "Completed" | "Discrepancy Found" | "Resolved";
+  status: "In Progress" | "Completed" | "Discrepancy Found" | "Resolved";
+  /** User who started / finished the audit (server-side, from the session). */
+  auditorId?: string;
+  completedBy?: string;
+  completedAt?: Date;
+  warehouse?: string;
+  /** "mobile" = the Mobile Live Audit (phones only); anything else is the full daily audit. */
+  kind?: string;
   completionTime?: string;
   notes?: string;
 }
@@ -31,14 +42,17 @@ const AuditItemSchema = new Schema({
   vpCode: { type: String, default: "" },
   category: { type: String, default: "Electronics" },
   expectedStock: { type: Number, required: true },
-  physicalStock: { type: Number, required: true },
-  difference: { type: Number, required: true },
+  physicalStock: { type: Number, default: 0 },
+  difference: { type: Number, default: 0 },
   condition: {
     type: String,
     enum: ["Good", "Damaged", "Missing", "Other"],
     default: "Good",
   },
   remarks: { type: String, default: "" },
+  counted: { type: Boolean, default: false },
+  countedBy: { type: String, default: "" },
+  countedAt: { type: Date },
 });
 
 const InventoryAuditSchema = new Schema<IInventoryAudit>(
@@ -52,10 +66,15 @@ const InventoryAuditSchema = new Schema<IInventoryAudit>(
     totalDiscrepancy: { type: Number, default: 0 },
     status: {
       type: String,
-      enum: ["Completed", "Discrepancy Found", "Resolved"],
+      enum: ["In Progress", "Completed", "Discrepancy Found", "Resolved"],
       default: "Completed",
       index: true,
     },
+    auditorId: { type: String, default: "" },
+    completedBy: { type: String, default: "" },
+    completedAt: { type: Date },
+    warehouse: { type: String, default: "" },
+    kind: { type: String, default: "all", index: true },
     completionTime: { type: String, default: () => new Date().toLocaleTimeString("en-IN") },
     notes: { type: String, default: "" },
   },

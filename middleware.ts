@@ -7,7 +7,8 @@ import { panelForSlug, panelPathForRole } from "@/lib/role-routes";
 //   never hands these to the function below, so the other routes under it
 //   (permissions, security-pin, seed) must check the session themselves.
 // - /api/track/* backs the public order-tracking page app/track/[id].
-const PUBLIC_API_PREFIXES = ["/api/auth/", "/api/track/"];
+// - /api/cron/* is called by the Worker's own cron and checks a secret header itself.
+const PUBLIC_API_PREFIXES = ["/api/auth/", "/api/track/", "/api/cron/"];
 
 function apiGate(pathname: string, token: any) {
   const path = pathname.replace(/\/+$/, "");

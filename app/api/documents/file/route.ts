@@ -17,7 +17,7 @@ import { getActor } from "@/lib/requirePermission";
 
 export const maxDuration = 60;
 
-const VIEW_ROLES = ["admin", "superadmin", "accounts"];
+const VIEW_ROLES = ["admin", "superadmin", "manager", "accounts"];
 
 export async function GET(req: Request) {
   try {
@@ -27,7 +27,7 @@ export async function GET(req: Request) {
     }
     if (!VIEW_ROLES.includes(actor.role)) {
       return NextResponse.json(
-        { success: false, error: "Only the admin and accounts can open the documents section." },
+        { success: false, error: "Only the admin, manager and accounts can open the documents section." },
         { status: 403 }
       );
     }

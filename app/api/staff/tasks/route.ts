@@ -115,6 +115,8 @@ export async function POST(req: Request) {
       ...note,
       link: "/staff/tasks",
       createdBy: actor?.name || String(body.createdBy || ""),
+      refType: "task",
+      refId: String(task._id),
     });
 
     return NextResponse.json({ success: true, data: task });

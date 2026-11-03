@@ -77,7 +77,7 @@ export function PurchaseCorrectionDialog({ entry, onClose }: { entry: any | null
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Bill date</Label>
-                <Input type="date" max={todayInIndia()} value={form.billDate} onChange={(e) => setForm({ ...form, billDate: e.target.value })} className="mt-1" />
+                <Input type="date" value={form.billDate} readOnly disabled title="A bill's date cannot be changed" className="mt-1 bg-slate-100" />
               </div>
               <div>
                 <Label>Due date</Label>

@@ -127,7 +127,7 @@ function SalesOutReportContent() {
     >
       <div className="space-y-4">
         {/* SUMMARY CARDS */}
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
             <span className="text-xs font-semibold text-slate-500 uppercase">Total Bills</span>
             <p className="text-2xl font-black text-slate-900 mt-1">{summary.totalInvoices}</p>

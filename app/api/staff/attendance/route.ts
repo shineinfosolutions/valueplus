@@ -3,6 +3,10 @@ import connectToDatabase from "@/lib/db";
 import Attendance from "@/models/Attendance";
 import User from "@/models/User";
 import ShiftSetting from "@/models/ShiftSetting";
+import { getActor } from "@/lib/requirePermission";
+import { checkAtStore } from "@/lib/store-location";
+import { notifyRoles } from "@/lib/notify";
+import { getShift } from "@/lib/shift-settings";
 
 // Helper: Get IST Date string (YYYY-MM-DD)
 function getISTDate(d = new Date()): string {
@@ -101,7 +105,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const {
+    let {
       action,
       staffName,
       staffId,
@@ -123,18 +127,7 @@ export async function POST(req: Request) {
     await connectToDatabase();
 
     // Fetch active shift settings or default
-    let shift = await ShiftSetting.findOne().sort({ updatedAt: -1 });
-    if (!shift) {
-      shift = await ShiftSetting.create({
-        shiftName: "Showroom Shift (10:00 AM - 06:00 PM)",
-        startTime: "10:00",
-        endTime: "18:00",
-        lateGraceMinutes: 15,
-        halfDayLateCutoff: "12:00",
-        minHoursForFullDay: 7.5,
-        minHoursForHalfDay: 4.0,
-      });
-    }
+    const shift = await getShift();
 
     const todayIST = getISTDate();
     const currentISTTime = getISTTime();
@@ -144,6 +137,26 @@ export async function POST(req: Request) {
     // 1. ACTION: CHECK-IN
     // ─────────────────────────────────────────────────────────────
     if (action === "check_in") {
+      // A check-in is always for the person who is logged in, and only from inside the store with a selfie
+      // (the Admin can check in from anywhere).
+      const me = await getActor();
+      if (!me) return NextResponse.json({ success: false, error: "You must be signed in to do this." }, { status: 401 });
+      staffName = me.name;
+      staffId = me.id;
+      userId = me.id;
+      staffEmail = me.email;
+      staffRole = me.role;
+      let atStore: { distance: number | null } = { distance: null };
+      let photoKey = "";
+      if (!["admin", "superadmin"].includes(me.role)) {
+        const at = checkAtStore(body);
+        if (!at.ok) return NextResponse.json({ success: false, error: at.error }, { status: 400 });
+        atStore = at;
+        photoKey = String(body.photoKey || "");
+        if (!photoKey.startsWith(`attendance/${me.id}/`)) {
+          return NextResponse.json({ success: false, error: "Take your photo first. A check-in needs a selfie." }, { status: 400 });
+        }
+      }
       if (!staffName) {
         return NextResponse.json({ success: false, error: "Staff name is required for Check-In" }, { status: 400 });
       }
@@ -164,6 +177,8 @@ export async function POST(req: Request) {
 
       let calculatedStatus: "Present" | "Late" | "Half-Day" = "Present";
       let isLate = false;
+      // Minutes after the 10:00 shift start (the Manager and Admin are told, even inside the grace time).
+      const lateMinutes = Math.max(0, checkInMinutes - shiftStartMinutes);
 
       if (checkInMinutes > halfDayCutoffMinutes) {
         calculatedStatus = "Half-Day";
@@ -185,6 +200,11 @@ export async function POST(req: Request) {
         record.isLate = isLate;
         record.notes = notes || statusRemark;
         record.shiftName = shift.shiftName;
+        record.lateMinutes = lateMinutes;
+        record.checkInPhotoKey = photoKey;
+        record.checkInLat = Number(body.lat) || undefined;
+        record.checkInLng = Number(body.lng) || undefined;
+        record.checkInDistanceM = atStore.distance ?? undefined;
         record.branchName = branchName || record.branchName;
         if (staffRole) record.staffRole = staffRole;
         if (staffEmail) record.staffEmail = staffEmail;
@@ -205,7 +225,26 @@ export async function POST(req: Request) {
           isLate,
           shiftName: shift.shiftName,
           notes: notes || statusRemark,
+          lateMinutes,
+          checkInPhotoKey: photoKey,
+          checkInLat: Number(body.lat) || undefined,
+          checkInLng: Number(body.lng) || undefined,
+          checkInDistanceM: atStore.distance ?? undefined,
         });
+      }
+
+      if (lateMinutes > 0) {
+        try {
+          await notifyRoles(["manager", "admin", "superadmin"], {
+            type: "general",
+            title: `${lateMinutes} min late: ${staffName}`,
+            message: `${staffName} checked in at ${currentISTTime}, ${lateMinutes} minute${lateMinutes === 1 ? "" : "s"} after the 10:00 start.`,
+            link: "/staff/directory",
+            createdBy: staffName,
+          }, me.id);
+        } catch (e) {
+          console.warn("Notice: late alert:", e);
+        }
       }
 
       return NextResponse.json({

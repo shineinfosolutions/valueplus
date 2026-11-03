@@ -5,6 +5,11 @@ import { MobileBottomNav } from "@/components/layout/mobile-bottom-nav";
 import { PWAInstallPrompt } from "@/components/shared/pwa-install-prompt";
 import { DayCloseGate } from "@/components/shared/DayCloseGate";
 import { FinancePayoutReminder } from "@/components/shared/FinancePayoutReminder";
+import { PendingEstimatePopup } from "@/components/shared/PendingEstimatePopup";
+import { PendingLeavePopup } from "@/components/shared/PendingLeavePopup";
+import { PendingDiscountPopup } from "@/components/shared/PendingDiscountPopup";
+import { UnreadNotificationPopup } from "@/components/shared/UnreadNotificationPopup";
+import { LeadsLoginPopup } from "@/components/shared/LeadsLoginPopup";
 import { Toaster } from "sonner";
 import { BranchProvider } from "@/context/BranchContext";
 
@@ -38,6 +43,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         {/* Keeps asking for the bank account / UTR of finance payouts that have none yet */}
         <FinancePayoutReminder />
+
+        {/* Tells the cashier when a salesman sends an estimate for approval */}
+        <PendingEstimatePopup />
+        <PendingLeavePopup />
+        <PendingDiscountPopup />
+
+        {/* Every unread notification, each time the app is opened, until it is read */}
+        <UnreadNotificationPopup />
+
+        {/* A salesman sees all his open leads at sign-in until he closes the list */}
+        <LeadsLoginPopup />
 
         {/* Offset below the top bar, so a pop-up never covers the bell or Logout. */}
         <Toaster position="top-right" richColors expand={false} offset={72} mobileOffset={{ top: 64 }} />

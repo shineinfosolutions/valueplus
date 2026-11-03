@@ -47,6 +47,7 @@ export function checkPurchaseCorrection(
 
   if (!isDay(next.billDate)) return { ok: false, error: "Enter a valid bill date." };
   if (next.billDate > todayIst()) return { ok: false, error: "A bill cannot be dated in the future." };
+  if (next.billDate !== String(entry.billDate || "").slice(0, 10)) return { ok: false, error: "A bill's date cannot be changed. Back-dating is not allowed." };
   if (next.dueDate && !isDay(next.dueDate)) return { ok: false, error: "Enter a valid due date." };
   if (next.dueDate && next.dueDate < next.billDate) return { ok: false, error: "The due date cannot be before the bill date." };
   if (next.supplierGST && !/^[0-9A-Z]{15}$/.test(next.supplierGST)) {

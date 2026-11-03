@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import Item from "@/models/Item";
+import { isMobileProduct } from "@/lib/mobile-product";
+import { needsBrand } from "@/lib/brand-names";
 
 export async function GET(req: Request) {
   try {
@@ -77,15 +79,12 @@ export async function GET(req: Request) {
       "pixel", "xiaomi", "poco", "tecno", "infinix", "lava", "nokia", "motorola",
     ];
 
+    // Mobile = phones (and tablets), by the one shared rule (lib/mobile-product.ts): a fridge or a heater filed under a
+    // "Mobiles" category, or an appliance maker's product, is Electronics.
     const isMobileItem = (item: any) => {
-      const cat = (item.category || "").toLowerCase();
-      const name = (item.name || "").toLowerCase();
-      const brand = (item.brand || "").toLowerCase();
-      // A category naming a mobile is decisive; otherwise fall back to the product name.
-      if (cat.includes("mob") || cat.includes("phone") || cat.includes("tablet")) return true;
-      // Guard against "Smart TV" / "Smart Watch" being read as "smartphone".
-      if (cat.includes("tv") || cat.includes("televis")) return false;
-      return MOBILE_HINTS.some((h) => name.includes(h) || brand.includes(h));
+      if (isMobileProduct(item)) return true;
+      const name = String(item.name || "").toLowerCase();
+      return /\b(tablet|ipad)\b/.test(name) && !/\b(tv|led)\b/.test(name);
     };
 
     // Stock is valued the same way everywhere: selling price, falling back to purchase
@@ -96,6 +95,7 @@ export async function GET(req: Request) {
     const stockValueOf = (item: any) => (item.currentStock || 0) * unitPrice(item);
 
     // Calculate category map dynamically
+    // Keyed by group + category, so a category card counts exactly the items of its own group that the list shows.
     const categoryMap: Record<string, { name: string; group: string; quantity: number; value: number; itemCount: number }> = {};
     let totalQty = 0;
     let totalVal = 0;
@@ -103,15 +103,16 @@ export async function GET(req: Request) {
     for (const item of allItems) {
       const catName = item.category?.trim() || "General Electronics";
       const group = isMobileItem(item) ? "mobile" : "electronics";
-      if (!categoryMap[catName]) {
-        categoryMap[catName] = { name: catName, group, quantity: 0, value: 0, itemCount: 0 };
+      const mapKey = `${group}|${catName}`;
+      if (!categoryMap[mapKey]) {
+        categoryMap[mapKey] = { name: catName, group, quantity: 0, value: 0, itemCount: 0 };
       }
       const qty = item.currentStock || 0;
       const itemVal = stockValueOf(item);
 
-      categoryMap[catName].quantity += qty;
-      categoryMap[catName].value += itemVal;
-      categoryMap[catName].itemCount += 1;
+      categoryMap[mapKey].quantity += qty;
+      categoryMap[mapKey].value += itemVal;
+      categoryMap[mapKey].itemCount += 1;
 
       totalQty += qty;
       totalVal += itemVal;
@@ -136,6 +137,10 @@ export async function GET(req: Request) {
         itemCount: c.itemCount,
       }));
 
+    // A product with no real brand: empty, or a placeholder such as "Brand", "No Brand", "Generic", "Showroom Partner".
+    const isUnbranded = (it: any) => needsBrand(it.brand);
+    const unbrandedItems = allItems.filter(isUnbranded);
+
     const formatItemList = (items: any[]) =>
       items.map((it) => ({
         _id: it._id,
@@ -144,7 +149,8 @@ export async function GET(req: Request) {
         name: it.name,
         category: it.category || "General",
         group: isMobileItem(it) ? "mobile" : "electronics",
-        brand: it.brand || "Brand",
+        brand: isUnbranded(it) ? "" : it.brand,
+        unbranded: isUnbranded(it),
         availableQty: it.currentStock,
         totalQty: it.currentStock,
         sellingPrice: it.sellingPrice,
@@ -176,6 +182,7 @@ export async function GET(req: Request) {
         totalQuantity: totalQty,
         totalStockValue: totalVal,
         totalItemsCount: allItems.length,
+        unbranded: { count: unbrandedItems.length, quantity: sumQty(unbrandedItems) },
         electronics: {
           quantity: sumQty(electronicsItems),
           value: sumValue(electronicsItems),

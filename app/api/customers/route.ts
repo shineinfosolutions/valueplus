@@ -1,3 +1,4 @@
+import { deferIfManager, diffFields } from "@/lib/deferred-actions";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import Customer from "@/models/Customer";
@@ -58,6 +59,12 @@ export async function PUT(request: Request) {
   try {
     await connectToDatabase();
     const body = await request.json();
+    const waiting = await deferIfManager(request, async () => {
+      const current: any = await Customer.findOne({ code: body.code }).lean();
+      const { before, after } = diffFields(current, body);
+      return { title: `Edit customer ${current?.name || body.code}`, description: `Change the customer ${current?.name || ""} (${body.code}).`, target: `customer.edit:${body.code}`, before, after, body };
+    });
+    if (waiting) return waiting;
 
     if (!body.code) {
       return NextResponse.json({ success: false, error: "Customer code is required for update" }, { status: 400 });
@@ -95,6 +102,8 @@ export async function DELETE(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const code = searchParams.get("code");
+    const waiting = await deferIfManager(request, { title: `Delete customer ${code || ""}`, description: `Delete the customer ${code || ""}.`, target: `customer.delete:${code}` });
+    if (waiting) return waiting;
     
     if (!code) {
       return NextResponse.json({ success: false, error: "Customer code is required" }, { status: 400 });

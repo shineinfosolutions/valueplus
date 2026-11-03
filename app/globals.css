@@ -62,7 +62,7 @@
   }
   
   .page-header {
-    @apply sticky top-0 z-30 flex flex-wrap items-center justify-between gap-3 px-4 sm:px-6 py-3 sm:py-3.5 bg-white/80 backdrop-blur-xl border-b border-black/[0.04] shadow-[0_1px_2px_rgba(0,0,0,0.02)];
+    @apply relative sm:sticky top-0 z-30 flex flex-wrap items-center justify-between gap-2 sm:gap-3 px-3 sm:px-6 py-2.5 sm:py-3.5 bg-white/80 backdrop-blur-xl border-b border-black/[0.04] shadow-[0_1px_2px_rgba(0,0,0,0.02)];
   }
 
   .page-content {
@@ -70,11 +70,11 @@
   }
 
   .metric-card {
-    @apply bg-white rounded-[18px] border border-slate-100 p-4 shadow-[0_4px_20px_rgb(0,0,0,0.03)] hover:shadow-[0_12px_40px_rgb(0,0,0,0.08)] hover:-translate-y-1 transition-all duration-300 relative overflow-hidden;
+    @apply bg-white rounded-[18px] border border-slate-100 p-3 sm:p-4 shadow-[0_4px_20px_rgb(0,0,0,0.03)] hover:shadow-[0_12px_40px_rgb(0,0,0,0.08)] hover:-translate-y-1 transition-all duration-300 relative overflow-hidden;
   }
 
   .data-table-container {
-    @apply bg-white rounded-[18px] border border-slate-100 shadow-[0_4px_20px_rgb(0,0,0,0.03)] overflow-hidden p-2;
+    @apply bg-white rounded-[18px] border border-slate-100 shadow-[0_4px_20px_rgb(0,0,0,0.03)] overflow-x-auto sm:overflow-hidden p-1.5 sm:p-2;
   }
 
   .btn-primary {
@@ -123,6 +123,50 @@
   .text-label {
     @apply text-[11px] font-bold text-slate-400 uppercase tracking-widest;
   }
+}
+
+/* Phones: the page header is not sticky (a tall header with a title, text and buttons would eat the screen),
+   its title is a little smaller, and a wide table scrolls sideways instead of being cut off. */
+@media (max-width: 639px) {
+  .page-header h1 { font-size: 1.125rem; line-height: 1.35rem; }
+  .page-header p { font-size: 0.78rem; line-height: 1.1rem; }
+  .page-content { padding-bottom: 6.5rem; }
+  /* tables: tighter cells and smaller text so more of each row fits */
+  .data-table-container th, .data-table-container td { padding: 0.5rem 0.625rem; }
+  .data-table-container table { font-size: 0.78rem; }
+  /* a table with five or more columns keeps a readable width and scrolls sideways, instead of squeezing every column
+     into a sliver and making each row very tall */
+  .overflow-x-auto > table:has(thead th:nth-child(5)),
+  .data-table-container table:has(thead th:nth-child(5)) { min-width: 40rem; }
+}
+
+/* A table with class m-card-table turns into a list of cards on a phone: one card per row, two cells per line.
+   Cells: data-m="full" = a whole line, "two" = the first two thirds of the first line, "span2" = two thirds of a line, "inline" = the last third of the second line, "end" = right-aligned, data-m="hide" = not shown, data-m="actions" = the buttons line; a cell with
+   data-label="Total" shows that small label above its value. */
+@media (max-width: 639px) {
+  table.m-card-table { min-width: 0 !important; display: block; width: 100%; }
+  table.m-card-table thead { display: none; }
+  table.m-card-table tbody { display: block; }
+  table.m-card-table tr {
+    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.4rem 0.6rem;
+    border: 1px solid #e2e8f0; border-radius: 0.9rem; padding: 0.7rem 0.8rem; margin: 0.5rem 0.25rem; background: #fff;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  }
+  table.m-card-table td { display: block; padding: 0 !important; border: 0 !important; min-width: 0; text-align: left !important; font-size: 0.8rem; }
+  table.m-card-table td[data-m="full"], table.m-card-table td[data-m="actions"] { grid-column: 1 / -1; }
+  table.m-card-table td[data-m="two"] { grid-column: 1 / span 2; grid-row: 1; }
+  table.m-card-table td[data-m="span2"] { grid-column: 1 / span 2; }
+  /* a small control (a delete icon) that sits in the last column of the line instead of getting a line of its own */
+  table.m-card-table td[data-m="inline"] { grid-column: 3; grid-row: 2; align-self: center; justify-self: end; }
+  table.m-card-table td[data-m="end"] { grid-column: 3; grid-row: 1; text-align: right !important; }
+  table.m-card-table td[data-m="hide"] { display: none; }
+  table.m-card-table td[data-label]::before {
+    content: attr(data-label); display: block; font-size: 0.6rem; font-weight: 700; letter-spacing: 0.05em;
+    text-transform: uppercase; color: #94a3b8; margin-bottom: 1px;
+  }
+  table.m-card-table td[data-m="actions"] { padding-top: 0.45rem !important; border-top: 1px solid #f1f5f9 !important; margin-top: 0.15rem; }
+  table.m-card-table td[data-m="actions"] > div { justify-content: flex-start; flex-wrap: wrap; gap: 0.4rem; }
+  table.m-card-table td[data-m="actions"] button { min-height: 2.5rem; min-width: 2.5rem; }
 }
 
 @media print {

@@ -3,9 +3,10 @@ import connectToDatabase from "@/lib/db";
 import Lead from "@/models/Lead";
 import { notifyWhatsApp } from "@/lib/whatsapp/notify";
 import { getActor } from "@/lib/requirePermission";
+import { notifyAssignee } from "@/lib/notify";
 
 /** Roles that see every lead; everyone else sees only their own. */
-const ALL_LEADS_ROLES = ["admin", "superadmin", "manager", "accounts"];
+const ALL_LEADS_ROLES = ["admin", "superadmin", "manager", "accounts", "cashier"];
 const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 export async function GET(req: Request) {
@@ -58,7 +59,11 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     await connectToDatabase();
-    
+    for (const k of ["calls", "callCount", "lastCalledAt", "followUps", "lastFollowUpDate"]) delete body[k];
+    // A salesman can only make a lead for himself, whatever the form says.
+    const creator = await getActor();
+    if (creator && ["salesman", "sales"].includes(creator.role)) body.assignedStaff = creator.name;
+
     if (!body.leadId) {
       const count = await Lead.countDocuments();
       body.leadId = `LEAD-2026-${String(count + 1).padStart(4, "0")}`;
@@ -78,6 +83,17 @@ export async function POST(req: Request) {
     const lead = await Lead.create(body);
 
     const actor = await getActor();
+    // The salesman a lead is given to hears about it (bell + phone), unless he made it himself.
+    const assigned = String(body.assignedStaff || "").trim();
+    if (assigned && !/^sales team$/i.test(assigned) && assigned.toLowerCase() !== String(actor?.name || "").toLowerCase()) {
+      await notifyAssignee(assigned, undefined, {
+        type: "general",
+        title: "New lead for you",
+        message: `${lead.customerName} · ${lead.interestedProduct || "enquiry"} · ${lead.mobile}`,
+        link: "/marketing/leads",
+        createdBy: actor?.name || "",
+      });
+    }
     await notifyWhatsApp({
       event: "lead.created",
       entity: lead.toObject(),
@@ -96,12 +112,19 @@ export async function PUT(req: Request) {
     await connectToDatabase();
     
     const { id, leadId, actionNote, followUp, logCall, ...updates } = body;
+    // Call and follow-up history is written only by the Call / Follow-up actions
+    // (attributed to the signed-in user); it can never be set or edited here.
+    for (const k of ["calls", "callCount", "lastCalledAt", "followUps", "lastFollowUpDate", "timeline", "_id", "createdAt", "updatedAt"]) {
+      delete (updates as any)[k];
+    }
     const identifier = id ? { _id: id } : { leadId };
 
     // The Call button: one more call to this customer, by whoever pressed it.
     if (logCall) {
       const actor = await getActor();
-      const staff = actor?.name || "Staff";
+      if (!actor) return NextResponse.json({ success: false, error: "Sign in to log calls." }, { status: 401 });
+      const staff = actor.name || "Staff";
+      const staffId = actor?.id || "";
       const now = new Date();
       const lead: any = await Lead.findOneAndUpdate(
         identifier,
@@ -109,7 +132,7 @@ export async function PUT(req: Request) {
           $inc: { callCount: 1 },
           $set: { lastCalledAt: now },
           $push: {
-            calls: { at: now, staff },
+            calls: { at: now, staff, staffId },
             timeline: { date: now, action: "Called customer", notes: "", staff },
           },
         },
@@ -134,7 +157,9 @@ export async function PUT(req: Request) {
         );
       }
       const actor = await getActor();
-      const staff = String(followUp.staff || actor?.name || "Staff");
+      // Always the signed-in user — never taken from the form.
+      const staff = actor?.name || "Staff";
+      const staffId = actor?.id || "";
       const notes = String(followUp.notes || "").trim();
 
       const lead: any = await Lead.findOne(identifier);
@@ -143,7 +168,7 @@ export async function PUT(req: Request) {
       }
       lead.lastFollowUpDate = date;
       lead.followUpDate = nextDate;
-      lead.followUps.push({ date, nextDate, notes, staff, loggedAt: new Date() });
+      lead.followUps.push({ date, nextDate, notes, staff, staffId, loggedAt: new Date() });
       lead.timeline.push({
         date: new Date(),
         action: nextDate ? `Follow-up done on ${date}, next on ${nextDate}` : `Follow-up done on ${date}`,

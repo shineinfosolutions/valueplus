@@ -55,6 +55,9 @@ import { formatCurrency } from "@/lib/utils";
 import { ExportMenu } from "@/components/shared/ExportMenu";
 import { todayInIndia } from "@/lib/today";
 
+/** Delivery staff: no company brand; they have a vehicle number instead (it fills in on the bill). */
+const isDeliveryRole = (role?: string) => ["driver", "courier", "delivery"].includes(String(role || "").toLowerCase());
+
 const ROLE_OPTIONS = [
   { value: "admin", label: "👑 Super Admin (Full Master Access)" },
   { value: "manager", label: "🏢 Store Manager / Incharge" },
@@ -108,6 +111,7 @@ export default function UsersAndStaffPage() {
     bankIfsc: "SBIN0001234",
     assignedWarehouseName: "Ashoka Enterprises (Kunraghat Showroom)",
     assignedBrand: "",
+    vehicleNumber: "",
     status: "active",
   });
 
@@ -145,6 +149,7 @@ export default function UsersAndStaffPage() {
       bankIfsc: u.bankIfsc || "",
       assignedWarehouseName: u.assignedWarehouseName || "Ashoka Enterprises (Kunraghat Showroom)",
       assignedBrand: u.assignedBrand || "",
+      vehicleNumber: u.vehicleNumber || "",
       status: u.status || "active",
     });
     setEditActiveTab("login");
@@ -177,6 +182,7 @@ export default function UsersAndStaffPage() {
     bankIfsc: "SBIN0001234",
     assignedWarehouseName: "Ashoka Enterprises (Kunraghat Showroom)",
     assignedBrand: "",
+    vehicleNumber: "",
   });
 
   // Fetch Brands Master
@@ -241,6 +247,7 @@ export default function UsersAndStaffPage() {
         bankIfsc: "SBIN0001234",
         assignedWarehouseName: "Ashoka Enterprises (Kunraghat Showroom)",
         assignedBrand: "",
+    vehicleNumber: "",
       });
     },
     onError: (err: any) => toast.error(err.message),
@@ -359,7 +366,7 @@ export default function UsersAndStaffPage() {
     >
       <div className="space-y-5">
         {/* KPI OVERVIEW CARDS */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
           <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm flex items-center justify-between">
             <div>
               <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Total Active Staff</p>
@@ -539,7 +546,12 @@ export default function UsersAndStaffPage() {
 
                         {/* Assigned Brand Column */}
                         <td className="p-3.5">
-                          {u.assignedBrand ? (
+                          {isDeliveryRole(u.role) ? (
+                            <div>
+                              <span className="font-mono text-[11px] font-bold text-slate-700">{u.vehicleNumber || "No vehicle"}</span>
+                              <p className="text-[10px] text-slate-400">Delivery vehicle</p>
+                            </div>
+                          ) : u.assignedBrand ? (
                             <div className="space-y-1">
                               <Badge className="bg-blue-50 text-[#30539C] border-blue-300 font-extrabold text-[11px] px-2 py-0.5 shadow-2xs flex items-center gap-1 w-fit">
                                 🏷️ {u.assignedBrand}
@@ -718,6 +730,7 @@ export default function UsersAndStaffPage() {
                   />
                 </div>
 
+                {!isDeliveryRole(formData.role) && (
                 <div className="space-y-1 sm:col-span-2">
                   <Label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
                     <Award className="w-3.5 h-3.5 text-[#30539C]" /> Assigned Brand (Sales Representative / Promoter)
@@ -745,6 +758,19 @@ export default function UsersAndStaffPage() {
                   </p>
                 </div>
 
+                )}
+                {isDeliveryRole(formData.role) && (
+                  <div className="space-y-1 sm:col-span-2">
+                    <Label className="text-xs font-bold text-slate-700">Vehicle Number</Label>
+                    <Input
+                      placeholder="e.g. UP53 BT 4589"
+                      value={formData.vehicleNumber || ""}
+                      onChange={(e) => setFormData({ ...formData, vehicleNumber: e.target.value.toUpperCase() })}
+                      className="h-9 text-xs font-mono font-bold uppercase"
+                    />
+                    <p className="text-[10px] text-slate-500">The driver's name, phone and this vehicle number fill in by themselves on a bill with a delivery.</p>
+                  </div>
+                )}
                 <div className="space-y-1">
                   <Label className="text-xs font-bold text-slate-700">Login Email *</Label>
                   <Input
@@ -773,7 +799,7 @@ export default function UsersAndStaffPage() {
                   <Label className="text-xs font-bold text-slate-700">Assigned User Role (Panel Access) *</Label>
                   <Select
                     value={formData.role}
-                    onValueChange={(val) => setFormData({ ...formData, role: val })}
+                    onValueChange={(val) => setFormData({ ...formData, role: val, ...(isDeliveryRole(val) ? { assignedBrand: "" } : { vehicleNumber: "" }) })}
                   >
                     <SelectTrigger className="h-9 text-xs font-bold">
                       <SelectValue />
@@ -1041,7 +1067,11 @@ export default function UsersAndStaffPage() {
                       <span className="px-2.5 py-0.5 rounded-full bg-white/15 text-[10px] font-extrabold uppercase tracking-wider text-slate-200 border border-white/10">
                         Role: {selectedUserForView.role}
                       </span>
-                      {selectedUserForView.assignedBrand ? (
+                      {isDeliveryRole(selectedUserForView.role) ? (
+                        <span className="px-2.5 py-0.5 rounded-full bg-white/10 text-slate-200 text-[10px] font-mono font-bold border border-white/10">
+                          Vehicle: {selectedUserForView.vehicleNumber || "not added"}
+                        </span>
+                      ) : selectedUserForView.assignedBrand ? (
                         <span className="px-2.5 py-0.5 rounded-full bg-blue-500/30 border border-blue-400/40 text-blue-200 text-[10px] font-black flex items-center gap-1">
                           🏷️ {selectedUserForView.assignedBrand} (Company Sales Rep)
                         </span>
@@ -1253,6 +1283,7 @@ export default function UsersAndStaffPage() {
                   />
                 </div>
 
+                {!isDeliveryRole(editFormData.role) && (
                 <div className="space-y-1 sm:col-span-2">
                   <Label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
                     <Award className="w-3.5 h-3.5 text-[#30539C]" /> Assigned Brand (Sales Representative / Promoter)
@@ -1275,6 +1306,19 @@ export default function UsersAndStaffPage() {
                   </Select>
                 </div>
 
+                )}
+                {isDeliveryRole(editFormData.role) && (
+                  <div className="space-y-1 sm:col-span-2">
+                    <Label className="text-xs font-bold text-slate-700">Vehicle Number</Label>
+                    <Input
+                      placeholder="e.g. UP53 BT 4589"
+                      value={editFormData.vehicleNumber || ""}
+                      onChange={(e) => setEditFormData({ ...editFormData, vehicleNumber: e.target.value.toUpperCase() })}
+                      className="h-9 text-xs font-mono font-bold uppercase"
+                    />
+                    <p className="text-[10px] text-slate-500">The driver's name, phone and this vehicle number fill in by themselves on a bill with a delivery.</p>
+                  </div>
+                )}
                 <div className="space-y-1">
                   <Label className="text-xs font-bold text-slate-700">Designation / Title</Label>
                   <Input
@@ -1289,7 +1333,7 @@ export default function UsersAndStaffPage() {
                   <Label className="text-xs font-bold text-slate-700">System Role *</Label>
                   <Select
                     value={editFormData.role}
-                    onValueChange={(val) => setEditFormData({ ...editFormData, role: val })}
+                    onValueChange={(val) => setEditFormData({ ...editFormData, role: val, ...(isDeliveryRole(val) ? { assignedBrand: "" } : { vehicleNumber: "" }) })}
                   >
                     <SelectTrigger className="h-9 text-xs font-bold">
                       <SelectValue />

@@ -1,5 +1,7 @@
 "use client";
 
+import { useSession } from "next-auth/react";
+import { DeliveryPhotos } from "@/components/shared/DeliveryPhotos";
 import { PageShell } from "@/components/shared/page-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,7 +34,12 @@ import Link from "next/link";
 import { TableShimmer } from "@/components/shared/shimmer-skeleton";
 import { ExportMenu } from "@/components/shared/ExportMenu";
 
+/** A bill financed through Bajaj Finance: its delivery must carry a vehicle number. */
+const isBajajBill = (inv: any) => /bajaj/i.test(String(inv?.financeProvider || ""));
+
 export default function OrderDispatchHubPage() {
+  const { data: dispatchSession } = useSession();
+  const viewerRole = String((dispatchSession?.user as any)?.role || "").toLowerCase();
   const [invoices, setInvoices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -131,7 +138,8 @@ export default function OrderDispatchHubPage() {
     setActiveDispatchItem(inv);
     setDriverName(inv.driverName || "Ramesh Yadav");
     setDriverPhone(inv.driverPhone || "9876543210");
-    setVehicleNo(inv.driverVehicleNo || inv.vehicleNumber || "UP53 BT 4589");
+    // A Bajaj Finance bill needs the real vehicle number, so no sample number is filled in.
+    setVehicleNo(inv.driverVehicleNo || inv.vehicleNumber || (isBajajBill(inv) ? "" : "UP53 BT 4589"));
     setDispatchModalOpen(true);
   };
 
@@ -144,6 +152,11 @@ export default function OrderDispatchHubPage() {
     }
     if (!driverPhone.trim() || driverPhone.replace(/\D/g, '').length !== 10) {
       toast.error("Please enter a valid 10-digit driver mobile number");
+      return;
+    }
+
+    if (isBajajBill(activeDispatchItem) && !vehicleNo.trim()) {
+      toast.error("Vehicle number is compulsory for a Bajaj Finance delivery.");
       return;
     }
 
@@ -240,6 +253,17 @@ export default function OrderDispatchHubPage() {
       window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, "_blank");
     }
   };
+
+  // The dispatch and delivery screen is for the cashier, Store Manager, Admin (and the godown); not the salesman.
+  if (["salesman", "sales"].includes(viewerRole)) {
+    return (
+      <PageShell title="Order Dispatch & Deliveries">
+        <div className="max-w-xl rounded-xl border border-amber-200 bg-amber-50/70 p-4 text-xs text-amber-900">
+          Order dispatch and deliveries are handled by the cashier, Store Manager and Admin.
+        </div>
+      </PageShell>
+    );
+  }
 
   return (
     <PageShell>
@@ -498,9 +522,14 @@ export default function OrderDispatchHubPage() {
                         {/* 6. Dispatch Status */}
                         <td className="px-4 py-3 text-center">
                           {isDelivered ? (
-                            <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 font-bold text-[10px] py-1">
-                              ✅ Delivered
-                            </Badge>
+                            <div className="space-y-1">
+                              <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 font-bold text-[10px] py-1">
+                                ✅ Delivered
+                              </Badge>
+                              {(inv.deliveryProofKeys?.length > 0 || inv.deliveryProofKey) && ["admin", "superadmin", "manager"].includes(viewerRole) && (
+                                <div><DeliveryPhotos invoiceNumber={inv.invoiceNumber} count={inv.deliveryProofKeys?.length || 1} by={inv.deliveryProofBy} /></div>
+                              )}
+                            </div>
                           ) : isOut ? (
                             <div className="space-y-1">
                               <Badge className="bg-blue-600 text-white font-bold text-[10px] py-1 animate-pulse">
@@ -644,7 +673,7 @@ export default function OrderDispatchHubPage() {
               </div>
 
               <div className="space-y-1">
-                <Label className="text-xs font-semibold text-slate-700">Vehicle / Van Number</Label>
+                <Label className="text-xs font-semibold text-slate-700">Vehicle / Van Number{activeDispatchItem && isBajajBill(activeDispatchItem) ? <span className="text-rose-600"> * (compulsory for Bajaj Finance)</span> : null}</Label>
                 <Input 
                   value={vehicleNo} 
                   onChange={(e) => setVehicleNo(e.target.value)} 

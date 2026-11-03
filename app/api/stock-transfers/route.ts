@@ -1,3 +1,4 @@
+import { deferIfManager } from "@/lib/deferred-actions";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import StockTransfer from "@/models/StockTransfer";
@@ -30,6 +31,13 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     await connectToDatabase();
+    const waiting = await deferIfManager(req, {
+      title: "Stock transfer",
+      description: `Move ${(body.items || []).length} product(s) from ${body.fromWarehouse || "one godown"} to ${body.toWarehouse || "another"}.`,
+      target: `stock.transfer:${body.transferNo || JSON.stringify(body.items || []).slice(0, 200)}`,
+      body,
+    });
+    if (waiting) return waiting;
 
     const fromWarehouseId = body.fromWarehouseId || (await resolveWarehouseId(body.fromWarehouse));
     const toWarehouseId = body.toWarehouseId || (await resolveWarehouseId(body.toWarehouse));
@@ -121,6 +129,10 @@ export async function DELETE(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const transferNo = searchParams.get("transferNo");
+    if (transferNo) {
+      const waiting = await deferIfManager(req, { title: `Delete stock transfer ${transferNo}`, description: `Delete the stock transfer ${transferNo}.`, target: `stock.transfer.delete:${transferNo}` });
+      if (waiting) return waiting;
+    }
 
     if (!transferNo) {
       return NextResponse.json({ success: false, error: "transferNo is required" }, { status: 400 });

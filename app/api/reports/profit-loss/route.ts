@@ -4,7 +4,7 @@ import Invoice from "@/models/Invoice";
 import Item from "@/models/Item";
 import Expense from "@/models/Expense";
 import PurchaseEntry from "@/models/PurchaseEntry";
-import { buildCatalogLookup, lineUnitCost } from "@/lib/sale-cost";
+import { buildCatalogLookup, costWithGst, lineUnitCost } from "@/lib/sale-cost";
 import { getActor } from "@/lib/requirePermission";
 
 export async function GET(req: Request) {
@@ -104,14 +104,19 @@ export async function GET(req: Request) {
 
         const matched = findCatalogItem(line);
         // The cost the line was billed at; older bills fall back to the catalog's.
-        const purchaseRate = lineUnitCost(line, matched);
-        const lineTaxable = Number(line.taxableAmount) || Number(line.amount) || (Number(line.rate || 0) * qty);
+        // Purchase prices are before GST; the bill is GST included, so the cost gets the product's GST too.
+        const purchaseRate = costWithGst(lineUnitCost(line, matched), line, matched);
+        const taxablePart = Number(line.taxableAmount) || Number(line.amount) || (Number(line.rate || 0) * qty);
+        const lineGst = (Number(line.cgst) || 0) + (Number(line.sgst) || 0) + (Number(line.igst) || 0);
+        // The amount the customer was billed for the product, GST included — the same
+        // basis as the purchase rate (purchases are entered with GST included).
+        const lineTaxable = taxablePart + lineGst;
         const lineCost = purchaseRate * qty;
         const lineProfit = lineTaxable - lineCost;
 
         invRevenue += lineTaxable;
         invCost += lineCost;
-        salesGst += (Number(line.cgst) || 0) + (Number(line.sgst) || 0) + (Number(line.igst) || 0);
+        salesGst += lineGst;
 
         // Aggregate Product metrics
         const prodKey = matched?.code || matched?.vpCode || line.itemCode || line.vpCode || line.itemName || "UNKNOWN";
@@ -201,12 +206,10 @@ export async function GET(req: Request) {
     // subtracts from the period's net purchase value rather than adding to
     // it, the same way it already reverses inventory on save.
     //
-    // Purchases are shown at their ACTUAL amount, before GST — the same basis
-    // as sales (line taxable amounts). A purchase entry's total includes GST,
-    // but the bill stores the taxable `subtotal` and the `gst` apart, so the
-    // actual amount is read, not worked out. A bill with no subtotal saved
-    // falls back to total − gst. The GST on purchases is kept apart as input
-    // GST (purchaseGst) for the GST box on the report.
+    // Purchases are shown at the bill total, GST included — the same basis as
+    // sales (the amount on the invoice, GST included) and as the purchase rate
+    // used for the cost of goods sold. The GST on purchases is also kept apart
+    // (purchaseGst) for the GST box on the report.
     let totalPurchases = 0;
     let purchaseGst = 0;
     const supplierPurchaseMap = new Map<string, { name: string; amount: number; bills: number }>();
@@ -214,7 +217,7 @@ export async function GET(req: Request) {
     for (const pur of purchaseEntries) {
       const gstPart = Number(pur.gst) || 0;
       const totalAmt = Number(pur.total) || 0;
-      const amt = Number(pur.subtotal) > 0 ? Number(pur.subtotal) : Math.max(0, totalAmt - gstPart);
+      const amt = totalAmt > 0 ? totalAmt : Math.max(0, (Number(pur.subtotal) || 0) + gstPart);
       const sign = pur.type === "debit-note" ? -1 : 1;
       const signedAmt = sign * amt;
       totalPurchases += signedAmt;
@@ -300,7 +303,7 @@ export async function GET(req: Request) {
           totalInvoices: invoices.length,
           totalTaxCollected: Math.round(totalTaxCollected),
           totalDiscountGiven: Math.round(totalDiscountGiven),
-          // Before GST (actual amount), like totalRevenue.
+          // GST included, like totalRevenue.
           totalPurchases: Math.round(totalPurchases),
           totalPurchaseBills: purchaseEntries.length,
           // GST apart from profit: charged on sales, paid on purchases.
