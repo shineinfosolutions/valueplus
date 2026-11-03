@@ -25,7 +25,8 @@ import { useSession } from "next-auth/react";
 import { useBranch } from "@/context/BranchContext";
 import { useLive } from "@/components/providers/RealtimeProvider";
 import { fileViewUrl } from "@/lib/file-link";
-import { ONSITEGO_INCENTIVE_RATE, isOnsitego, plansFor, type OnsitegoPlanRow } from "@/lib/onsitego";
+import { ONSITEGO_INCENTIVE_RATE, isOnsitego, plansFor, slabLabel, type OnsitegoPlanRow } from "@/lib/onsitego";
+import { hsnCategoryName } from "@/lib/purchase-import/hsn-category";
 
 function formatCurrency(val: number) {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(val || 0);
@@ -1048,8 +1049,9 @@ export function InvoiceCreationModal({
     }));
   };
 
-  // Onsitego plans (price list the Admin uploads to the On Site Go documents folder): each product line
-  // shows the plans that fit its price, ready to add with one tap. Refreshed when a new list is uploaded.
+  // Onsitego plans (the price list PDF the Admin uploads to the On Site Go documents folder): each product
+  // line shows every plan whose product group and price slab fit it, ready to add with one tap. Refreshed
+  // when a new PDF is uploaded.
   const { data: onsitegoPlans = [] } = useQuery({
     queryKey: ["onsitego-plans"],
     staleTime: 10 * 60 * 1000,
@@ -1063,21 +1065,24 @@ export function InvoiceCreationModal({
     if (!onsitegoPlans.length) return [];
     const cat: any = catalogItems.find((x: any) => (item.itemId && x._id === item.itemId) || (item.name && x.name === item.name));
     const price = (Number(item.rate) || 0) - (Number(item.discount) || 0);
-    return plansFor(onsitegoPlans, { category: cat?.category || "", name: item.name, price });
+    const hsn = item.hsn || item.hsnCode || cat?.hsnCode || "";
+    return plansFor(onsitegoPlans, { category: cat?.category || "", hsnCategory: hsnCategoryName(hsn), name: item.name, price });
   };
+  /** The plan as written on the bill: SKU name with its VP Code, so the counter can enter it in SAP. */
+  const onsitegoPlanLabel = (plan: OnsitegoPlanRow) => (plan.vpCode ? `${plan.planName} (${plan.vpCode})` : plan.planName);
   const applyOnsitegoPlan = (idx: number, plan: OnsitegoPlanRow) => {
     setBillingForm((prev) => {
       const lineItems = [...prev.lineItems];
       lineItems[idx] = {
         ...lineItems[idx],
         extendedWarrantyProvider: "Onsitego",
-        extendedWarrantyPlan: plan.planName,
+        extendedWarrantyPlan: onsitegoPlanLabel(plan),
         extendedWarrantyAmount: plan.price,
         extendedWarrantyDuration: plan.years || 1,
       };
       return { ...prev, lineItems };
     });
-    toast.success(`${plan.planName} added (₹${plan.price.toLocaleString("en-IN")}).`);
+    toast.success(`Onsitego ${plan.planName} added (₹${plan.price.toLocaleString("en-IN")}, ${plan.vpCode}).`);
   };
 
   const handleLineItemChange = (idx: number, field: string, value: any) => {
@@ -2777,37 +2782,48 @@ export function InvoiceCreationModal({
                             </div>
                           </div>
 
-                          {/* Onsitego plans that fit this product, shown automatically */}
+                          {/* Onsitego plans that fit this product (product group + price slab), shown automatically */}
                           {(() => {
                             const fits = onsitegoPlansForLine(item);
                             if (fits.length === 0) return null;
                             const chosenOnsitego = isOnsitego(item.extendedWarrantyProvider) && Number(item.extendedWarrantyAmount) > 0;
+                            // One row per section of the price list (EW, ADLD, AMC, replacement plan ...).
+                            const sections = Array.from(new Set(fits.map((p) => p.category || p.kind)));
                             return (
-                              <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-2">
+                              <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-2 space-y-1.5">
                                 <p className="text-[11px] font-bold text-emerald-900">
                                   Onsitego plans for this product
-                                  <span className="font-semibold text-emerald-700"> · salesman earns {Math.round(ONSITEGO_INCENTIVE_RATE * 100)}%</span>
+                                  <span className="font-semibold text-emerald-700"> · price slab {slabLabel(fits[0])} · salesman earns {Math.round(ONSITEGO_INCENTIVE_RATE * 100)}%</span>
                                 </p>
-                                <div className="mt-1.5 flex flex-wrap gap-1.5">
-                                  {fits.map((p, pi) => {
-                                    const on = chosenOnsitego && item.extendedWarrantyPlan === p.planName && Number(item.extendedWarrantyAmount) === p.price;
-                                    return (
-                                      <button
-                                        key={pi}
-                                        type="button"
-                                        onClick={() => applyOnsitegoPlan(idx, p)}
-                                        title={`${p.planName}${p.category ? ` · ${p.category}` : ""} · for products ₹${p.minPrice.toLocaleString("en-IN")}${p.maxPrice ? ` – ₹${p.maxPrice.toLocaleString("en-IN")}` : "+"}`}
-                                        className={cn(
-                                          "h-7 px-2.5 rounded-md border text-[11px] font-bold",
-                                          on ? "bg-emerald-600 border-emerald-600 text-white" : "bg-white border-emerald-300 text-emerald-900 hover:bg-emerald-100"
-                                        )}
-                                      >
-                                        {p.years ? `${p.years} Yr` : p.planName} · ₹{p.price.toLocaleString("en-IN")}
-                                        <span className={on ? "text-emerald-100" : "text-emerald-600"}> (+₹{Math.round(p.price * ONSITEGO_INCENTIVE_RATE)})</span>
-                                      </button>
-                                    );
-                                  })}
-                                </div>
+                                {sections.map((sec) => (
+                                  <div key={sec}>
+                                    <p className="text-[10px] font-semibold text-emerald-800">{sec}</p>
+                                    <div className="mt-0.5 flex flex-wrap gap-1.5">
+                                      {fits
+                                        .filter((p) => (p.category || p.kind) === sec)
+                                        .map((p) => {
+                                          const on = chosenOnsitego && item.extendedWarrantyPlan === onsitegoPlanLabel(p) && Number(item.extendedWarrantyAmount) === p.price;
+                                          return (
+                                            <button
+                                              key={p.vpCode || p.planName}
+                                              type="button"
+                                              onClick={() => applyOnsitegoPlan(idx, p)}
+                                              title={`${p.planName} · ${p.vpCode} · for products ${slabLabel(p)}`}
+                                              className={cn(
+                                                "px-2.5 py-1 rounded-md border text-[11px] font-bold text-left leading-tight",
+                                                on ? "bg-emerald-600 border-emerald-600 text-white" : "bg-white border-emerald-300 text-emerald-900 hover:bg-emerald-100"
+                                              )}
+                                            >
+                                              {p.years} Yr {p.kind} · ₹{p.price.toLocaleString("en-IN")}
+                                              <span className={cn("block text-[9px] font-mono font-semibold", on ? "text-emerald-100" : "text-emerald-600")}>
+                                                {p.vpCode} · +₹{Math.round(p.price * ONSITEGO_INCENTIVE_RATE)}
+                                              </span>
+                                            </button>
+                                          );
+                                        })}
+                                    </div>
+                                  </div>
+                                ))}
                               </div>
                             );
                           })()}

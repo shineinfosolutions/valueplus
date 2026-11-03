@@ -342,16 +342,20 @@
 - **Numbers** are in `lib/store-location.ts` (`GEOFENCE_*`, `AWAY_ALERT_MINUTES`, `GEOFENCE_ROLES`).
 - **Tested**: the away-time logic with a fake record (door jitter, vague fix, jump, break split, app closed, check-out). **Not tested** on real phones yet.
 
-## 33. Onsitego: On Site Go folder, plan suggestions on the bill, 10% incentive
+## 33. Onsitego: On Site Go folder, plans on the bill, 10% incentive
 - **Folder**: Documents always has an **On Site Go** folder (`getOnsitegoFolder` in `lib/onsitego-server.ts`; created the first time anyone asks; it cannot be renamed or deleted).
   - Admin and Manager upload to it.
-  - **Salesman and Cashier** see only this folder: the Documents page, list and file download are limited to it, and they cannot upload. Their menu has "On Site Go (Plans)" under sales.
-  - Excel / CSV uploads are now allowed in Documents.
-- **Price list**: an Excel put in the On Site Go folder is read by `parseOnsitegoPlans` into `onsitego_plans` (model `OnsitegoPlan`). Each upload replaces the whole list, and the upload message says how many plans were read.
-  - Columns are found by heading: category; a price band (Min/Max, or one range column like "10,001 - 20,000" / "Up to 15000" / "Above 25000"); plan name; years; plan price.
-  - A "wide" sheet with one price column per duration ("1 Year", "2 Years") also works.
-  - Tested with both layouts on made-up sheets. **The real Onsitego sheet has not been seen yet**: if it reads 0 plans, the upload message says so, and the reader needs adjusting to it.
-- **Bill form** (`components/InvoiceCreationModal.tsx`): each product line shows "Onsitego plans for this product" (`plansFor` in `lib/onsitego.ts`: the price after discount is inside the band, and the category matches the product's category or name; cheapest first). One tap fills the line's extended warranty: provider Onsitego, plan, amount, years. API: `GET /api/onsitego/plans`.
+  - **Every other staff role** (salesman, cashier, godown, HR, delivery) sees only this folder and cannot upload. Their menu has "On Site Go (Plans)" under sales.
+- **Price list = Onsitego's PDF**, e.g. `docs/OnsiteGo_EW_PriceList_VPCode_07Aug2026.pdf`: 153 plans; each line reads "SKU name · VP Code · Price (VSP)", e.g. "2 Yr EW for AC - 30K - 40K VP0013773 ₹ 5,299".
+  - A PDF uploaded to the On Site Go folder is read (`parseOnsitegoPdf`: pdf-parse text, `parsePlanLines` in `lib/onsitego.ts`) and **replaces** `onsitego_plans` (model `OnsitegoPlan`: category = price-list section, device, kind EW/ADLD/AMC/LTC, years, slab min/max, planName, vpCode, price).
+  - A PDF with no plan lines (a brochure) leaves the list as it was. The upload message says how many plans were read.
+  - Slab ends that are missing or mistyped ("25 to305K") end where the next slab starts; "150K to Above" has no upper limit.
+  - Tested on the real PDF: 153 of 153 read.
+  - The first idea (an Excel price list) was dropped. Documents accepts PDF / images only again.
+- **Bill form** (`components/InvoiceCreationModal.tsx`): each product line shows **every plan that fits**, grouped by price-list section (e.g. TV: EW and ADLD; AC: EW and 4 Yr AMC). The button shows years, kind, price, VP Code and the 10%.
+  - Fit (`plansFor`): the product group is recognised from the product's category, the category of its HSN (`hsnCategoryName`) or its name; the price (rate minus discount) is inside the slab (from is exclusive, to is inclusive).
+  - One tap fills the line's extended warranty: provider Onsitego, plan "SKU name (VP Code)", amount, years. The PDF says to confirm the slab against the device MRP, so the slab is shown.
+  - API: `GET /api/onsitego/plans`.
 - **Incentive**: the server stores `Invoice.onsitegoIncentive` = 10% of the Onsitego plan amounts on the bill (`onsitegoIncentiveOf`, on create and on full edit; never taken from the form). `lib/staff-incentive.ts` adds it to the salesman's earned amount, and the Incentives page and salesman dashboard include it. Bills from before 2026-11-03 have no value, so they earn nothing extra.
 
 ## 34. Salesman dashboard "Incentive" card
@@ -548,3 +552,4 @@
 - **2026-11-03** — Onsitego (On Site Go folder for Admin uploads, visible to salesman / cashier / manager; Excel price list read into plans; plans suggested on each bill line; 10% of Onsitego plans as incentive), salesman dashboard Incentive card with details, one task for several people, DO PDF attachment opens through `/api/upload/view`. See sections 33-36. Built, not deployed.
 - **2026-11-03** — Customer advance: reason asked and shown (list, receipt, WhatsApp, export); Print Receipt prints only the receipt; Received by from the login; India time on the receipt. See section 37. Built, not deployed.
 - **2026-11-03** — Receive Payment: reason required for customer payments, receipt opens after saving (print / WhatsApp, shows the advance left for the next bill), Receipt button and reason on the payments list. See section 38. Built, not deployed.
+- **2026-11-03** — Onsitego price list is now the PDF (153 plans with VP Codes read on upload to On Site Go; replaces the Excel reader); bill shows every fitting plan by section with VP Code; On Site Go folder open to every staff role. See section 33. Built, not deployed.

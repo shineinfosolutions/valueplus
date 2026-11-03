@@ -1,0 +1,40 @@
+*ValuePlus ERP – Today's Update (3 Nov 2026)* ✅
+All changes are LIVE on valuplus.shineinfosolutions.in
+
+*🌐 Whole App*
+• Screens now update instantly (live updates) – app is faster and lighter on the server
+
+*📊 Dashboard (Admin / Manager)*
+• Lead Pipeline: new *Staff filter* – see leads salesperson-wise
+• New card *"Outside the store now"* – who left the store, since when, how far
+
+*👔 Dashboard (Salesman)*
+• New *Incentive* card – tap to see Earned / Received / To receive, bills and payouts
+
+*🧾 Sales & Billing*
+• *Tax Invoice:* matching *Onsitego plans* show automatically for each product – one tap to add
+• *Receive Payment:* reason is now compulsory + *receipt opens after saving* (Print / WhatsApp) with advance left for next bill. *Receipt* button on every payment
+• *Advance Booking:* reason compulsory, shown on receipt; Print gives only the receipt
+• *Sales Leads:* Staff filter added
+• New menu *"On Site Go (Plans)"* for Salesman & Cashier
+
+*👥 Staff & Attendance*
+• *Staff Tasks:* Staff filter + *one task can be given to many people together*
+• *Leave & Breaks, Leaderboard, Salary, Staff Directory:* Staff filter added
+• *Geofencing:* records when staff go out of the store and for how long (while the app is open). Alert to Manager & Admin after 15 min outside
+• Away time shown in Staff Directory, staff member page and Attendance
+
+*💰 Finance*
+• *DO PDF attachment* now opens (was not opening before)
+
+*📁 Documents*
+• New *On Site Go* folder – Admin/Manager upload, Salesman/Cashier/Manager can see
+• Excel upload allowed – Onsitego price list Excel here = plans shown on the bill
+
+*🏆 Incentive*
+• *10% on every Onsitego plan sold* – added to the salesman's incentive (from today's bills)
+
+*📌 Please check & tell:*
+1. Upload Onsitego price list Excel in On Site Go folder
+2. Geofencing on staff phones (keep app open)
+3. New payment / advance receipts

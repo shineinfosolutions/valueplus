@@ -11,8 +11,8 @@ import { FileText, UploadCloud, ExternalLink, Trash2, Search, ShieldAlert, Folde
 import { toast } from "sonner";
 
 const ALLOWED_ROLES = ["admin", "superadmin", "manager", "accounts"];
-/** Salesmen and cashiers see only the On Site Go folder (Onsitego plans and material), and cannot upload. */
-const ONSITEGO_ONLY_ROLES = ["salesman", "sales", "cashier"];
+/** Every other staff role sees only the On Site Go folder (Onsitego plans and material), and cannot upload. */
+const ONSITEGO_ONLY_ROLES = ["salesman", "sales", "cashier", "warehouse", "hr", "driver"];
 
 function todayInIndia(): string {
   return new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -143,7 +143,7 @@ export default function DocumentsPage() {
     onSuccess: (json: any) => {
       // An Onsitego price list says how many plans were read (or why none could be).
       const msg = String(json?.message || "Document saved.");
-      if (/no Onsitego plans|could not be read/i.test(msg)) toast.warning(msg, { duration: 10000 });
+      if (/No Onsitego plan lines|could not be read/i.test(msg)) toast.warning(msg, { duration: 10000 });
       else toast.success(msg, { duration: 6000 });
       setFile(null);
       setNarration("");
@@ -275,7 +275,7 @@ export default function DocumentsPage() {
             </div>
             <div>
               <h3 className="text-sm font-bold text-slate-900">Upload a document</h3>
-              <p className="text-xs text-slate-500">PDF, JPG, PNG, WEBP or Excel, up to 10 MB.</p>
+              <p className="text-xs text-slate-500">PDF, JPG, PNG or WEBP, up to 10 MB.</p>
             </div>
           </div>
 
@@ -308,7 +308,7 @@ export default function DocumentsPage() {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".pdf,.jpg,.jpeg,.png,.webp,.xlsx,.xls,.csv,application/pdf,image/*"
+              accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*"
               onChange={(e) => setFile(e.target.files?.[0] || null)}
               className="hidden"
             />
@@ -344,8 +344,8 @@ export default function DocumentsPage() {
           </div>
           {folders.find((f) => String(f._id) === uploadFolder)?.fixed && (
             <p className="text-[11px] text-slate-500">
-              On Site Go: an Excel price list put here (price range + plan price columns) becomes the Onsitego plans the bill form suggests.
-              Salesmen, cashiers and the manager can open everything in this folder.
+              On Site Go: the Onsitego price list PDF put here becomes the plans the bill shows (a newer PDF replaces them).
+              Every staff member can open everything in this folder.
             </p>
           )}
         </form>
