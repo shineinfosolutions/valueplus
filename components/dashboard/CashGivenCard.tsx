@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatCurrency } from "@/lib/utils";
 import { todayInIndia } from "@/lib/today";
+import { CASH_LIVE_PATHS } from "@/components/providers/RealtimeProvider";
 
 type Period = "today" | "week" | "month" | "all";
 const PERIOD_LABEL: Record<Period, string> = { today: "Today", week: "Last 7 days", month: "This month", all: "All time" };
@@ -31,7 +32,7 @@ export function CashGivenCard() {
   const [refuseReason, setRefuseReason] = useState("");
   const { data: adminBook } = useQuery({
     queryKey: ["dashboard-admin-cash"],
-    refetchInterval: 60000,
+    meta: { live: CASH_LIVE_PATHS },
     queryFn: async () => {
       const json = await (await fetch("/api/admin-cash")).json();
       return json.success ? json.data.totals : null;
@@ -39,7 +40,7 @@ export function CashGivenCard() {
   });
   const { data } = useQuery({
     queryKey: ["dashboard-cash-handover"],
-    refetchInterval: 60000,
+    meta: { live: CASH_LIVE_PATHS },
     queryFn: async () => {
       const json = await (await fetch("/api/cash-register")).json();
       return json.success ? json.data : null;

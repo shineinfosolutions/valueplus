@@ -42,6 +42,7 @@ import {
 import { toast } from "sonner";
 import { useBranch } from "@/context/BranchContext";
 import { todayInIndia } from "@/lib/today";
+import { ATTENDANCE_LIVE_PATHS } from "@/components/providers/RealtimeProvider";
 
 function getISTDateString() {
   try {
@@ -108,8 +109,9 @@ function AttendancePunchWidgetBody() {
       }
     };
     check();
-    const t = setInterval(check, 60000);
-    return () => clearInterval(t);
+    // Looked at again when the app comes back to the front (st.onchange covers a change while it is open).
+    document.addEventListener("visibilitychange", check);
+    return () => document.removeEventListener("visibilitychange", check);
   }, [askLocation]);
 
   // Fetch active shift configuration
@@ -131,7 +133,7 @@ function AttendancePunchWidgetBody() {
       const json = await res.json();
       return json.success ? json.data : [];
     },
-    refetchInterval: 15000,
+    meta: { live: ATTENDANCE_LIVE_PATHS },
   });
 
   const todayRecord = attendanceList.length > 0 ? attendanceList[0] : null;

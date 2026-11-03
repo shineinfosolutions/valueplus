@@ -70,8 +70,9 @@ export default function StaffTasksPage() {
   const { data: rawTasks = [], isLoading, refetch } = useQuery({
     queryKey: ["staffTasks", isIndividualStaff ? currentUserName : "all"],
     enabled: sessionStatus === "authenticated" && Boolean(userRole),
-    // The Admin / Manager see "Read by" appear within seconds of the person opening the task.
-    refetchInterval: 8000,
+    // The Admin / Manager see "Read by" appear as soon as the person opens the task (reading its
+    // notification is announced as "notification-read"); a bill moves sales-target progress.
+    meta: { live: ["/api/staff/tasks", "notification-read", "/api/invoices"] },
     queryFn: async () => {
       let url = "/api/staff/tasks";
       if (isIndividualStaff) {

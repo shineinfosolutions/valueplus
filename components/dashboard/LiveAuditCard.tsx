@@ -9,14 +9,14 @@ import { ClipboardCheck, ArrowRight, Radio, CheckCircle2, AlertTriangle, Smartph
 /**
  * Dashboard entry to the daily Live Audit. Shown to Admin / Store Manager /
  * Cashier and to any employee the Admin has switched it on for; everyone else
- * gets nothing. Refreshes every 20 seconds so the Admin sees the count move.
+ * gets nothing. Refreshes over the live-update socket so the Admin sees the count move.
  */
 export function LiveAuditCard() {
   const router = useRouter();
   const { data } = useQuery({
     queryKey: ["auditPending"],
     queryFn: async () => (await fetch("/api/inventory/audit?checkPending=true")).json(),
-    refetchInterval: 20000,
+    meta: { live: ["/api/inventory/audit"] },
   });
   if (!data?.success || !data.canAudit) return null;
 

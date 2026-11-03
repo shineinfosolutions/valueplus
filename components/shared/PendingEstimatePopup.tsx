@@ -1,6 +1,7 @@
 "use client";
 
 import { useExclusivePopup } from "@/lib/popup-queue";
+import { useLive } from "@/components/providers/RealtimeProvider";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -11,7 +12,7 @@ import { playNotificationSound } from "@/lib/notification-sound";
 
 /**
  * Pops up on the cashier's (and manager's / admin's) screen when a salesman
- * sends an estimate for approval, showing who made it. Checks every 20 seconds.
+ * sends an estimate for approval, showing who made it. Checked when estimates change (live-update socket).
  */
 export function PendingEstimatePopup() {
   const { data: session } = useSession();
@@ -21,36 +22,33 @@ export function PendingEstimatePopup() {
   const [fresh, setFresh] = useState<any[]>([]);
   const seen = useRef<Set<string> | null>(null);
 
-  useEffect(() => {
-    if (!isReviewer) return;
-    let stop = false;
-    const check = async () => {
-      try {
-        const res = await fetch("/api/estimates?approval=pending");
-        const json = await res.json();
-        if (stop || !json.success) return;
-        const pending: any[] = json.data;
-        if (seen.current === null) {
-          // First look after the page opens: show what is already waiting.
-          seen.current = new Set();
-        }
-        const news = pending.filter((e) => !seen.current!.has(String(e._id)));
-        news.forEach((e) => seen.current!.add(String(e._id)));
-        if (news.length > 0) {
-          setFresh((prev) => [...prev, ...news]);
-          playNotificationSound();
-        }
-      } catch {
-        /* try again on the next round */
+  const check = async () => {
+    try {
+      const res = await fetch("/api/estimates?approval=pending");
+      const json = await res.json();
+      if (!json.success) return;
+      const pending: any[] = json.data;
+      if (seen.current === null) {
+        // First look after the page opens: show what is already waiting.
+        seen.current = new Set();
       }
-    };
-    check();
-    const timer = setInterval(check, 20000);
-    return () => {
-      stop = true;
-      clearInterval(timer);
-    };
+      const news = pending.filter((e) => !seen.current!.has(String(e._id)));
+      news.forEach((e) => seen.current!.add(String(e._id)));
+      if (news.length > 0) {
+        setFresh((prev) => [...prev, ...news]);
+        playNotificationSound();
+      }
+    } catch {
+      /* checked again on the next change */
+    }
+  };
+
+  useEffect(() => {
+    if (isReviewer) check();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isReviewer]);
+  // Checked again only when the server announces a change (live-update socket), not on a timer.
+  useLive(["/api/estimates"], () => check(), isReviewer);
 
   const showPopup = useExclusivePopup("pending-estimates", fresh.length > 0);
   if (!isReviewer) return null;

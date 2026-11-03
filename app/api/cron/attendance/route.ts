@@ -4,7 +4,7 @@ import { runAttendanceChecks } from "@/lib/attendance-alerts";
 export const dynamic = "force-dynamic";
 
 /**
- * Called every minute by the Cloudflare cron (worker.ts): "not checked in" alerts from 10:00 and
+ * Called every 5 minutes by the Cloudflare cron (worker.ts): "not checked in" alerts from 10:00 and
  * "break over, not at the store" alerts. Outside the sign-in check, it proves itself with the server's own secret.
  */
 export async function GET(req: Request) {

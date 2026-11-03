@@ -49,7 +49,7 @@ export function DayCloseGate() {
       if (!json.success) throw new Error(json.error);
       return json.data as { pendingDate: string | null };
     },
-    refetchInterval: 5 * 60 * 1000,
+    meta: { live: ["/api/day-close"] },
     enabled: !!session && isAuditRole,
   });
 

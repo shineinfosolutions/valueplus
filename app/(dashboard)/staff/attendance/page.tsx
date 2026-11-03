@@ -34,6 +34,7 @@ import { useSession } from "next-auth/react";
 import { useBranch } from "@/context/BranchContext";
 import { ExportMenu } from "@/components/shared/ExportMenu";
 import { todayInIndia } from "@/lib/today";
+import { ATTENDANCE_LIVE_PATHS } from "@/components/providers/RealtimeProvider";
 
 function getISTDateString() {
   try {
@@ -136,7 +137,7 @@ export default function StaffAttendancePage() {
       const json = await res.json();
       return json.success ? json.data : [];
     },
-    refetchInterval: 15000,
+    meta: { live: ATTENDANCE_LIVE_PATHS },
   });
 
   // Shift Settings Mutation

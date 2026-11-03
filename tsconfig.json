@@ -39,6 +39,7 @@
   "exclude": [
     "node_modules",
     "worker.ts",
+    "realtime-hub.ts",
     ".open-next"
   ]
 }

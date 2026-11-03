@@ -8,6 +8,7 @@ import { stampLineCosts } from "@/lib/sale-cost";
 import { derivePaymentModeLabel, isCollectedMode, classifyPaymentMode } from "@/lib/payment-modes";
 import { derivePanFromGstin } from "@/lib/gst";
 import { entityOf, entityLabel } from "@/lib/billing-entity";
+import { publishChange } from "@/lib/realtime";
 
 /**
  * Full edit of a saved tax invoice from the billing form: products, rates,
@@ -537,6 +538,7 @@ export async function fullEditInvoice(
         payload: { kind: "backdated_invoice", invoiceNumber: existing.invoiceNumber, date: billDate, madeOn: oldDate },
         status: "pending",
       });
+      publishChange(["/api/approvals"]);
       await notifyAdmins({
         type: "approval_request",
         title: `🔔 Approve back-dated bill ${existing.invoiceNumber}`,

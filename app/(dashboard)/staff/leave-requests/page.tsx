@@ -198,13 +198,14 @@ export default function LeaveRequestsPage() {
 
   const mine = useQuery({
     queryKey: ["leave-requests", "mine"],
+    meta: { live: ["/api/staff/leave-requests", "/api/staff/break"] },
     queryFn: async () => (await (await fetch("/api/staff/leave-requests?mine=1")).json()).data || [],
   });
   const all = useQuery({
     queryKey: ["leave-requests", "all", scope],
     enabled: isViewer,
     queryFn: async () => (await (await fetch(`/api/staff/leave-requests${scope === "pending" ? "?status=pending" : ""}`)).json()).data || [],
-    refetchInterval: 20000,
+    meta: { live: ["/api/staff/leave-requests", "/api/staff/break"] },
   });
 
   const act = useMutation({

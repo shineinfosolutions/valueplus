@@ -285,6 +285,25 @@
 - **Dashboard**: the Admin / Manager dashboard has a **Stock order requests** card (waiting requests with the salesman's name and units, `components/dashboard/StockOrdersCard.tsx`); the salesman dashboard has a **Stock orders** card (waiting / approved / rejected counts).
 - **Status**: staging only (2026-10-30).
 
+## 30. Live updates over WebSocket (no more polling)
+- **Why**: about 25 screens asked the server on a timer (every 4 s to 5 min: bell, approval / estimate / leave / discount pop-ups, tasks, attendance, cash cards, audit ...). Every open app made these requests all day, each one a Worker run plus a new MongoDB connection, which drove the Cloudflare CPU use.
+- **How it works now**: one WebSocket per open app at `/realtime`. `worker.ts` checks the login (NextAuth `/api/auth/session`, same-origin only) and hands the socket to the `RealtimeHub` Durable Object (`realtime-hub.ts`, binding `REALTIME`, migration `v2`). It uses the **WebSocket Hibernation API**: an idle socket costs no CPU, and `ping` is answered by the runtime without waking it. After **every successful non-GET `/api/*` call** the Worker sends the path (e.g. `/api/estimates`) to the hub. The hub passes it on to the apps. No data goes over the socket; screens fetch again through the normal signed-in API.
+- **Extra announcements** (`publishChange` in `lib/realtime.ts`): new notification → `/api/notifications`, sent only to its recipients (`lib/notify.ts`); approval request created → `/api/approvals` (`lib/change-requests.ts`, back-dated bills in `app/api/invoices/route.ts` and `lib/invoice-full-edit.ts`); WhatsApp outbox row → `/api/whatsapp`; cron auto check-out → `/api/staff/attendance`. Marking a notification read (`PATCH /api/notifications`) is announced as `notification-read`, which is what the tasks page watches for "Read by".
+- **In the app** (`components/providers/RealtimeProvider.tsx`, mounted in `app/layout.tsx`):
+  - A React Query screen says what it watches with `meta: { live: ["/api/..."] }`; any other code uses `useLive(paths, fn)`.
+  - A path also matches everything under it.
+  - Changes arriving together are grouped (300 ms), so one save means one refetch.
+  - After a dropped connection (phone asleep, network lost) every watcher refreshes once, then the app reconnects with backoff (1 s → 30 s). A hidden or offline app waits until it is back. After 6 failed tries it waits for the app to come back to the front.
+  - Shared lists: `CASH_LIVE_PATHS`, `ATTENDANCE_LIVE_PATHS`.
+- **New screen that should stay current**: add `meta: { live: [...] }` with the API paths whose writes change its data. **Never add `refetchInterval` / `setInterval` fetches again.**
+- **Cron**: was every minute; now `*/5 * * * *`. The 10:00 office-start run and the 15-minute late check still land on time, because India time is UTC+5:30 and the cron fires every 5 minutes. A break-over alert can now come up to 5 minutes after the break ends (was 1).
+- **Left on timers on purpose**: these never call the server.
+  - The break countdown clock (1 s).
+  - The day-close / finance-payout reminder toasts.
+  - Waiting for another dialog to close.
+  - Asking again for location while the check-in dialog is open.
+- **Local `next dev`**: there is no hub, so nothing is pushed. Screens still refresh on focus and mount.
+
 ## Change Log
 - **2026-10-24** — Upgraded Next.js 15.3.6 → 15.5.28; added OpenNext Cloudflare setup (`wrangler.jsonc`, `open-next.config.ts`, `worker.ts`, deploy/preview scripts).
 - **2026-10-24** — `lib/db.ts`: per-request MongoDB client on Cloudflare Workers.
@@ -447,3 +466,4 @@
 - **2026-11-03** — Deployed to production (version 7a153693): the six requests (manager check-in at the top of the dashboard, cash handover confirmed by the Admin, deposit arrow, one late alert per person, GIDA order merge, salesman without purchase rate, driver without attendance), the 10:00 AM - 09:00 PM shift with automatic check-out at 09:00 PM, repeated location-permission asking, plus the profit cost-with-GST fix. Tested on staging: handover pending/confirm/reject, deposit, merge, shift upgrade and auto check-out (Present 11 hrs, Half-Day 6 hrs).
 - **2026-11-03** — Admin approval of a bill edit now says exactly what changes: `summariseInvoice` (`lib/invoice-full-edit.ts`) also covers delivery date, customer GSTIN/address, place of supply, shipping address, vehicle no., due date, discount, amount before GST, GST, payments, notes, and each product line with discount / GST % / serial / warranty; the 'after' picture is the form's data laid over the bill as it is, so a field the form leaves out is not shown as a change. The approval card has an 'Open the bill' link (`/sales/invoices?q=<number>`; the invoices page now reads `?q=` as the search). Earlier approvals keep the short picture they were saved with. Staging first.
 - **2026-11-03** — Deployed to production (version 71868403): the bill-edit approval now lists every real change (delivery date, address, notes, GSTIN, lines, payments...) with an 'Open the bill' link.
+- **2026-11-03** — Polling removed: live updates over a WebSocket (Durable Object `RealtimeHub`, hibernating) replace every screen timer that called the server; the Worker announces each successful API write; cron every 5 minutes instead of every minute. See section 30. Needs a deploy (new Durable Object migration `v2`).

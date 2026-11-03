@@ -1,6 +1,7 @@
 import connectToDatabase from "@/lib/db";
 import WhatsAppSetting from "@/models/WhatsAppSetting";
 import WhatsAppMessage from "@/models/WhatsAppMessage";
+import { publishChange } from "@/lib/realtime";
 import {
   WhatsAppEvent,
   DEFAULT_EVENT_STATE,
@@ -145,7 +146,9 @@ async function queueMessage(params: {
     }
   }
 
-  return WhatsAppMessage.create(row);
+  const saved = await WhatsAppMessage.create(row);
+  publishChange(["/api/whatsapp"]);
+  return saved;
 }
 
 /**

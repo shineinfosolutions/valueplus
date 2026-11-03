@@ -23,7 +23,7 @@ export function usePendingChanges() {
   const query = useQuery({
     queryKey: ["pending-changes"],
     enabled: canChange,
-    refetchInterval: 60_000,
+    meta: { live: ["/api/approvals"] },
     queryFn: async () => {
       const res = await fetch("/api/approvals?status=pending", { cache: "no-store" });
       const json = await res.json();

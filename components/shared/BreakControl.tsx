@@ -30,7 +30,7 @@ export function BreakControl() {
 
   const { data: breaks = [] } = useQuery({
     queryKey: ["my-break"],
-    refetchInterval: 15000,
+    meta: { live: ["/api/staff/leave-requests", "/api/staff/break"] },
     queryFn: async () => {
       const json = await (await fetch("/api/staff/leave-requests?mine=1&status=approved")).json();
       return ((json.data || []) as any[]).filter((r) => r.kind === "break" && r.fromDate === todayIst() && !r.breakReturnedAt);

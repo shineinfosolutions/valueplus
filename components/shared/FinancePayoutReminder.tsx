@@ -38,7 +38,7 @@ export function FinancePayoutReminder() {
         missingUtr: boolean;
       }>;
     },
-    refetchInterval: 5 * 60 * 1000,
+    meta: { live: ["/api/finance", "/api/invoices"] },
     enabled: !!session && isReminded,
   });
 

@@ -23,6 +23,7 @@ import { saveOfflineInvoice, getCachedCatalogItems, getCachedCustomers, cacheCus
 import ValueplusInvoice from "@/app/invoice/page";
 import { useSession } from "next-auth/react";
 import { useBranch } from "@/context/BranchContext";
+import { useLive } from "@/components/providers/RealtimeProvider";
 
 function formatCurrency(val: number) {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(val || 0);
@@ -1342,34 +1343,35 @@ export function InvoiceCreationModal({
       toast.error(e.message);
     }
   };
-  useEffect(() => {
-    if (!discountWait) return;
-    let stop = false;
-    const poll = async () => {
-      try {
-        const json = await (await fetch(`/api/discount-approvals?ids=${discountWait.ids.join(",")}`)).json();
-        if (stop || !json.success) return;
-        const rows: any[] = json.data;
-        if (rows.some((r) => r.status === "rejected")) {
-          const r = rows.find((x) => x.status === "rejected");
-          toast.error(`Discount on ${r.itemName} was rejected${r.reviewNote ? `: ${r.reviewNote}` : ""}. Change the price and try again.`, { duration: 8000 });
-          setDiscountWait(null);
-        } else if (rows.length > 0 && rows.every((r) => r.status === "approved")) {
-          const payload = discountWait.payload;
-          setDiscountWait(null);
-          toast.success("Discount approved. Saving...");
-          createInvoiceMutation.mutate(payload);
-        } else {
-          setDiscountWait((w) => (w ? { ...w, rows } : w));
-        }
-      } catch {
-        /* try again */
+  // Waiting for the Manager / Admin to decide a discount: checked the moment a decision is saved
+  // (live-update socket), not on a timer. `discountHandled` stops two quick checks both saving the bill.
+  const discountHandled = useRef("");
+  const checkDiscountWait = async () => {
+    const wait = discountWait;
+    if (!wait) return;
+    const key = wait.ids.join(",");
+    try {
+      const json = await (await fetch(`/api/discount-approvals?ids=${key}`)).json();
+      if (!json.success || discountHandled.current === key) return;
+      const rows: any[] = json.data;
+      if (rows.some((r) => r.status === "rejected")) {
+        discountHandled.current = key;
+        const r = rows.find((x) => x.status === "rejected");
+        toast.error(`Discount on ${r.itemName} was rejected${r.reviewNote ? `: ${r.reviewNote}` : ""}. Change the price and try again.`, { duration: 8000 });
+        setDiscountWait(null);
+      } else if (rows.length > 0 && rows.every((r) => r.status === "approved")) {
+        discountHandled.current = key;
+        setDiscountWait(null);
+        toast.success("Discount approved. Saving...");
+        createInvoiceMutation.mutate(wait.payload);
+      } else {
+        setDiscountWait((w) => (w && w.ids.join(",") === key ? { ...w, rows } : w));
       }
-    };
-    const t = setInterval(poll, 4000);
-    return () => { stop = true; clearInterval(t); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [discountWait?.ids.join(",")]);
+    } catch {
+      /* checked again on the next change, or when the app reconnects */
+    }
+  };
+  useLive(["/api/discount-approvals"], checkDiscountWait, !!discountWait);
 
   // Saving an edited invoice: the payload waits here until the PIN and reason
   // are given, then goes to PUT /api/invoices (action "full-edit").

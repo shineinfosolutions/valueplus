@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { formatCurrency } from "@/lib/utils";
 import { HandCoins, CheckCircle2 } from "lucide-react";
+import { CASH_LIVE_PATHS } from "@/components/providers/RealtimeProvider";
 
 function todayStr() {
   // India date — toISOString() is UTC, which is still "yesterday" before 5:30 am.
@@ -41,7 +42,7 @@ export function CashHandoverCard({ cashierName }: { cashierName: string }) {
       const json = await res.json();
       return json.success ? json.data : null;
     },
-    refetchInterval: 2 * 60 * 1000,
+    meta: { live: CASH_LIVE_PATHS },
   });
 
   const todaysHandover = useMemo(() => {

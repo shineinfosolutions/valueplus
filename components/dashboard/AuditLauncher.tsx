@@ -17,7 +17,7 @@ export function AuditLauncher() {
   const { data } = useQuery({
     queryKey: ["auditPending"],
     queryFn: async () => (await fetch("/api/inventory/audit?checkPending=true")).json(),
-    refetchInterval: 30000,
+    meta: { live: ["/api/inventory/audit"] },
   });
   if (!data?.success || !data.canAudit) return null;
 

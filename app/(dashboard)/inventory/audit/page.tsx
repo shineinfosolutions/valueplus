@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { useBranch } from "@/context/BranchContext";
 import { ExportMenu } from "@/components/shared/ExportMenu";
 import { ProductLedgerModal } from "@/components/ProductLedgerModal";
+import { useLive } from "@/components/providers/RealtimeProvider";
 
 const PAGE_SIZE = 100;
 
@@ -24,7 +25,7 @@ export default function InventoryAuditPage() {
   const { data: state } = useQuery({
     queryKey: ["auditPending"],
     queryFn: async () => (await fetch("/api/inventory/audit?checkPending=true")).json(),
-    refetchInterval: 20000,
+    meta: { live: ["/api/inventory/audit"] },
   });
   const canAudit = !!state?.canAudit;
   const isAdmin = !!state?.isAdmin;
@@ -87,11 +88,13 @@ export default function InventoryAuditPage() {
     }
   };
 
-  // Others auditing at the same time: pull their counts in every few seconds,
-  // keeping whatever this user is still typing.
-  useEffect(() => {
-    if (!open || !audit?._id || audit.status !== "In Progress") return;
-    const t = setInterval(async () => {
+  // Others auditing at the same time: their counts are pulled in the moment one is saved (live-update
+  // socket), keeping whatever this user is still typing.
+  const auditLive = !!open && !!audit?._id && audit?.status === "In Progress";
+  useLive(
+    ["/api/inventory/audit"],
+    async () => {
+      if (!audit?._id) return;
       const json = await (await fetch(`/api/inventory/audit?id=${audit._id}`)).json().catch(() => null);
       if (!json?.success) return;
       setAudit((cur: any) => {
@@ -99,9 +102,9 @@ export default function InventoryAuditPage() {
         const dirty = draftRef.current;
         return { ...json.data, items: json.data.items.map((i: any) => (dirty[i.productId] ? cur.items.find((c: any) => c.productId === i.productId) || i : i)) };
       });
-    }, 15000);
-    return () => clearInterval(t);
-  }, [open, audit?._id, audit?.status]);
+    },
+    auditLive
+  );
 
   const saveCount = async (pid: string, physicalStr: string | undefined, condition: string | undefined) => {
     const item = audit.items.find((i: any) => i.productId === pid);

@@ -159,7 +159,7 @@ export default function SuperAdminApprovalsPage() {
       const json = await res.json();
       return json.success ? json : { data: [], pendingCount: 0 };
     },
-    refetchInterval: 10000, // Live poll every 10s
+    meta: { live: ["/api/approvals"] }, // refreshed over the live-update socket
   });
 
   const approvals = approvalsData?.data || [];

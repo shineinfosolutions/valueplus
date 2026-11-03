@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { Wallet } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
+import { CASH_LIVE_PATHS } from "@/components/providers/RealtimeProvider";
 
 /**
  * Second section of the dashboard's ledger card (Admin): the cash from cash bills (invoices) made after the last
@@ -12,7 +13,7 @@ import { formatCurrency } from "@/lib/utils";
 export function CashToCollectSection() {
   const { data } = useQuery({
     queryKey: ["dashboard-cash-to-collect"],
-    refetchInterval: 60000,
+    meta: { live: CASH_LIVE_PATHS },
     queryFn: async () => {
       const json = await (await fetch("/api/cash-register")).json();
       return json.success ? json.data : null;

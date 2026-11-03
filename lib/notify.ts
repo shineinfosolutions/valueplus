@@ -1,6 +1,7 @@
 import User from "@/models/User";
 import Notification, { INotification } from "@/models/Notification";
 import { pushToUsers } from "@/lib/push";
+import { publishChange } from "@/lib/realtime";
 
 /**
  * Send a notification to the bell of one or more users. Best-effort: a failure
@@ -37,6 +38,8 @@ async function send(recipients: Recipient[], input: NotifyInput): Promise<number
       refId: input.refId || "",
     }))
   );
+  // An open app shows it at once (bell, pop-up) over the live-update socket.
+  publishChange(["/api/notifications"], { users: Array.from(unique.keys()) });
   // The same message goes to their phones, so they see it with the app closed. Each phone is told which
   // notification it is, so tapping it marks that notification read.
   await Promise.all(docs.map((d) => pushToUsers([String(d.recipientId)], { title: input.title, body: input.message, link: input.link, nid: String(d._id) })));

@@ -9,7 +9,7 @@ import { formatCurrency } from "@/lib/utils";
 export function PendingBillsCard() {
   const { data: bills = [] } = useQuery({
     queryKey: ["pending-bills"],
-    refetchInterval: 20000,
+    meta: { live: ["/api/estimates", "/api/invoices"] },
     queryFn: async () => {
       const res = await fetch("/api/estimates?approval=pending");
       const json = await res.json();

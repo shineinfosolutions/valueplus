@@ -1,6 +1,7 @@
 "use client";
 
 import { useExclusivePopup } from "@/lib/popup-queue";
+import { useLive } from "@/components/providers/RealtimeProvider";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -36,7 +37,7 @@ export function UnreadNotificationPopup() {
   const userId = String((session?.user as any)?.id || "");
   const [items, setItems] = useState<any[]>([]);
   const [open, setOpen] = useState(false);
-  // Read by this person in this session: never put back by a poll that was already on its way.
+  // Read by this person in this session: never put back by a check that was already on its way.
   const readIds = useRef<Set<string>>(new Set());
 
   const check = useCallback(async (reshowAll: boolean) => {
@@ -58,16 +59,16 @@ export function UnreadNotificationPopup() {
       }
       if (unread.length === 0) setOpen(false);
     } catch {
-      /* try again on the next round */
+      /* checked again on the next change */
     }
   }, []);
 
   useEffect(() => {
     if (!userId) return;
     check(true);
-    const timer = setInterval(() => check(false), 20000);
-    return () => clearInterval(timer);
   }, [userId, check]);
+  // A new notification for this user is announced over the live-update socket.
+  useLive(["/api/notifications"], () => check(false), !!userId);
 
   const markRead = async (body: { id?: string; all?: boolean }) => {
     if (body.all) items.forEach((n) => readIds.current.add(String(n._id)));

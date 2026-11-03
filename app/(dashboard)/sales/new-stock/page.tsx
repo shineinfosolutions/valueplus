@@ -60,6 +60,7 @@ export default function NewStockPage() {
 
   const { data: stock, isLoading } = useQuery({
     queryKey: ["supplier-stock"],
+    meta: { live: ["/api/supplier-stock"] },
     queryFn: async () => {
       const json = await (await fetch("/api/supplier-stock")).json();
       if (!json.success) throw new Error(json.error);
@@ -72,7 +73,7 @@ export default function NewStockPage() {
 
   const { data: requests = [] } = useQuery({
     queryKey: ["stock-orders"],
-    refetchInterval: 30000,
+    meta: { live: ["/api/stock-orders"] },
     queryFn: async () => {
       const json = await (await fetch("/api/stock-orders")).json();
       return json.success ? (json.data as any[]) : [];

@@ -1,6 +1,7 @@
 "use client";
 
 import { useExclusivePopup } from "@/lib/popup-queue";
+import { useLive } from "@/components/providers/RealtimeProvider";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -14,7 +15,7 @@ const KIND_LABEL: Record<string, string> = { leave: "Leave", break: "Break", eme
 
 /**
  * Pops up for the Admin (leave, emergency leave, break) and the Store Manager (break) when a staff member
- * sends a request, with all the details and Approve / Reject. Checks every 20 seconds.
+ * sends a request, with all the details and Approve / Reject. Checked when requests change (live-update socket).
  */
 export function PendingLeavePopup() {
   const { data: session } = useSession();
@@ -25,30 +26,27 @@ export function PendingLeavePopup() {
   const [fresh, setFresh] = useState<any[]>([]);
   const seen = useRef<Set<string>>(new Set());
 
-  useEffect(() => {
-    if (!isReviewer) return;
-    let stop = false;
-    const check = async () => {
-      try {
-        const json = await (await fetch("/api/staff/leave-requests?status=pending&decidable=1")).json();
-        if (stop || !json.success) return;
-        const news = (json.data as any[]).filter((r) => !seen.current.has(String(r._id)));
-        news.forEach((r) => seen.current.add(String(r._id)));
-        if (news.length > 0) {
-          setFresh((prev) => [...prev, ...news]);
-          playNotificationSound();
-        }
-      } catch {
-        /* try again on the next round */
+  const check = async () => {
+    try {
+      const json = await (await fetch("/api/staff/leave-requests?status=pending&decidable=1")).json();
+      if (!json.success) return;
+      const news = (json.data as any[]).filter((r) => !seen.current.has(String(r._id)));
+      news.forEach((r) => seen.current.add(String(r._id)));
+      if (news.length > 0) {
+        setFresh((prev) => [...prev, ...news]);
+        playNotificationSound();
       }
-    };
-    check();
-    const timer = setInterval(check, 20000);
-    return () => {
-      stop = true;
-      clearInterval(timer);
-    };
+    } catch {
+      /* checked again on the next change */
+    }
+  };
+
+  useEffect(() => {
+    if (isReviewer) check();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isReviewer]);
+  // Checked again only when the server announces a change (live-update socket), not on a timer.
+  useLive(["/api/staff/leave-requests"], () => check(), isReviewer);
 
   const showPopup = useExclusivePopup("pending-leave", fresh.length > 0);
   if (!isReviewer) return null;

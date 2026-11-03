@@ -22,16 +22,24 @@
   "vars": {
     "NEXTAUTH_URL": "https://valuplus.shineinfosolutions.in"
   },
-  // Every minute (worker.ts picks the job): office-time reminder at 10:00 India time, late / break alerts.
-  "triggers": { "crons": ["* * * * *"] },
+  // Every 5 minutes (worker.ts picks the job): office-time reminder at 10:00 India time, late / break alerts,
+  // automatic check-out at the shift end. Was every minute — 1,440 runs a day, each opening a database connection.
+  "triggers": { "crons": ["*/5 * * * *"] },
   "routes": [
     { "pattern": "valuplus.shineinfosolutions.in", "custom_domain": true }
   ],
-  // See AppServer in worker.ts — kept only for the earlier deployment's namespace.
+  // AppServer: see worker.ts — kept only for the earlier deployment's namespace.
+  // REALTIME: the WebSocket hub for live updates (realtime-hub.ts).
   "durable_objects": {
-    "bindings": [{ "name": "APP_SERVER", "class_name": "AppServer" }]
+    "bindings": [
+      { "name": "APP_SERVER", "class_name": "AppServer" },
+      { "name": "REALTIME", "class_name": "RealtimeHub" }
+    ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["AppServer"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["AppServer"] },
+    { "tag": "v2", "new_sqlite_classes": ["RealtimeHub"] }
+  ],
   "env": {
     // Test copy on workers.dev — deploy with `npx opennextjs-cloudflare deploy --env staging`.
     "staging": {
@@ -40,7 +48,10 @@
       "routes": [],
       "workers_dev": true,
       "durable_objects": {
-        "bindings": [{ "name": "APP_SERVER", "class_name": "AppServer" }]
+        "bindings": [
+          { "name": "APP_SERVER", "class_name": "AppServer" },
+          { "name": "REALTIME", "class_name": "RealtimeHub" }
+        ]
       },
       "services": [
         {
@@ -48,7 +59,7 @@
           "service": "valueplus-erp-staging"
         }
       ],
-      "triggers": { "crons": ["* * * * *"] },
+      "triggers": { "crons": ["*/5 * * * *"] },
       "r2_buckets": [{ "binding": "DELIVERY_PROOFS", "bucket_name": "valueplus-delivery-proofs-staging" }],
       "vars": {
         "NEXTAUTH_URL": "https://valueplus-erp-staging.shineinfosolutions1.workers.dev"

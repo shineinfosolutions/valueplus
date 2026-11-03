@@ -22,6 +22,7 @@ import { BILLING_ENTITIES, entityOf, entityLabel, invoiceSeriesOf } from "@/lib/
 import { stampLineCosts } from "@/lib/sale-cost";
 import { fullEditInvoice, summariseInvoice } from "@/lib/invoice-full-edit";
 import { authoriseChange, auditChange, createChangeRequest, versionOf } from "@/lib/change-requests";
+import { publishChange } from "@/lib/realtime";
 
 /**
  * What a plain update may change on a sales bill: contact and delivery details only.
@@ -496,6 +497,7 @@ export async function POST(req: Request) {
           payload: { kind: "backdated_invoice", invoiceNumber: invoice.invoiceNumber, date: invoice.date, madeOn: body.backdateMadeOn },
           status: "pending",
         });
+        publishChange(["/api/approvals"]);
         await notifyAdmins({
           type: "approval_request",
           title: `🔔 Approve back-dated bill ${invoice.invoiceNumber}`,

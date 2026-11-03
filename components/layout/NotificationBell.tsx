@@ -10,19 +10,19 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { pushSupported, registerThisDevice, sendTestPush } from "@/lib/push-client";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { useLive } from "@/components/providers/RealtimeProvider";
 
 /**
  * The bell at the top of every page: the signed-in user's own notifications —
  * a task or sales target given to them, an approval answered, and for admins a
  * new approval request — plus, for admins, the count of approvals waiting.
  *
- * Checked every 10 seconds while the page is open, and at once when the tab
- * comes back into view or the connection returns. Anything new since the last
- * check pops up on screen, and as a phone/desktop notification once the user
- * has turned those on from the bell.
+ * Loaded when the page opens, again the moment the server announces a new
+ * notification for this user (live-update socket, see RealtimeProvider), and when
+ * the tab comes back into view or the connection returns - never on a timer.
+ * Anything new since the last check pops up on screen, and as a phone/desktop
+ * notification once the user has turned those on from the bell.
  */
-
-const POLL_MS = 10_000;
 
 function timeAgo(iso: string) {
   const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
@@ -125,20 +125,19 @@ export function NotificationBell() {
     if (!session?.user) return;
     const controller = new AbortController();
     load(controller.signal);
-    const interval = setInterval(() => load(controller.signal), POLL_MS);
     const onBack = () => load(controller.signal);
     const onVisible = () => document.visibilityState === "visible" && load(controller.signal);
     window.addEventListener("online", onBack);
-    window.addEventListener("focus", onBack);
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       controller.abort();
-      clearInterval(interval);
       window.removeEventListener("online", onBack);
-      window.removeEventListener("focus", onBack);
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [session?.user, load]);
+
+  // New notifications for this user; for an Admin also the approvals count.
+  useLive(isAdmin ? ["/api/notifications", "/api/approvals"] : ["/api/notifications"], () => load(), !!session?.user);
 
   const markRead = async (body: { id?: string; all?: boolean }) => {
     setItems((list) => list.map((n) => (body.all || n._id === body.id ? { ...n, readAt: n.readAt || new Date().toISOString() } : n)));

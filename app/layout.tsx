@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import AuthProvider from "@/components/providers/AuthProvider";
 import QueryProvider from "@/components/providers/QueryProvider";
+import RealtimeProvider from "@/components/providers/RealtimeProvider";
 import { OfflineSyncProvider } from "@/components/shared/offline-sync-provider";
 import { NotificationPermissionPrompt } from "@/components/shared/NotificationPermissionPrompt";
 
@@ -45,11 +46,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="antialiased" suppressHydrationWarning>
         <QueryProvider>
           <AuthProvider>
-            <OfflineSyncProvider>
-              {children}
-              {/* Asks first thing (login screen included) to allow notifications, so alerts reach a closed app */}
-              <NotificationPermissionPrompt />
-            </OfflineSyncProvider>
+            {/* Live updates over WebSocket: screens refresh when their data changes, no timers */}
+            <RealtimeProvider>
+              <OfflineSyncProvider>
+                {children}
+                {/* Asks first thing (login screen included) to allow notifications, so alerts reach a closed app */}
+                <NotificationPermissionPrompt />
+              </OfflineSyncProvider>
+            </RealtimeProvider>
           </AuthProvider>
         </QueryProvider>
       </body>

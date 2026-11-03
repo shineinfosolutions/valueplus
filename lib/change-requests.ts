@@ -4,6 +4,7 @@ import AuditLog from "@/models/AuditLog";
 import { getActor, SessionActor } from "@/lib/requirePermission";
 import { verifySecurityPin } from "@/lib/securityPin";
 import { notifyAdmins } from "@/lib/notify";
+import { publishChange } from "@/lib/realtime";
 
 /**
  * Changing a saved payment or bill after the fact.
@@ -158,6 +159,7 @@ export async function createChangeRequest(input: {
     },
     status: "pending",
   });
+  publishChange(["/api/approvals"]);
 
   await auditChange({
     action: "change.requested",

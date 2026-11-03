@@ -6,6 +6,7 @@ import LeaveRequest from "@/models/LeaveRequest";
 import { notifyRoles } from "@/lib/notify";
 import { normName } from "@/lib/staff-incentive";
 import { getShift } from "@/lib/shift-settings";
+import { publishChange } from "@/lib/realtime";
 
 /** Everyone who works at the store (not the Admin, not outside suppliers). */
 const STAFF_ROLES = ["salesman", "sales", "cashier", "manager", "warehouse", "accounts", "hr", "driver"];
@@ -109,7 +110,7 @@ const label12 = (mins: number): string => {
 /**
  * When the shift ends (09:00 PM) everyone still checked in is checked out at the shift end time: the hours worked are
  * counted up to then, a short day becomes a Half-Day, and a Late mark stays. Anyone left open from an earlier day is closed the
- * same way. Runs every minute, so a missed run is picked up on the next one.
+ * same way. Runs every 5 minutes, so a missed run is picked up on the next one.
  */
 async function autoCheckOut(now: ReturnType<typeof istNow>): Promise<number> {
   const shift: any = await getShift();
@@ -139,7 +140,7 @@ async function autoCheckOut(now: ReturnType<typeof istNow>): Promise<number> {
   return closed;
 }
 
-/** Called every minute by the Cloudflare cron (worker.ts). */
+/** Called every 5 minutes by the Cloudflare cron (worker.ts). */
 export async function runAttendanceChecks(): Promise<{ late: number; breaks: number; autoCheckedOut: number }> {
   await connectToDatabase();
   const now = istNow();
@@ -147,5 +148,7 @@ export async function runAttendanceChecks(): Promise<{ late: number; breaks: num
   // Breaks only matter in working hours.
   const breaks = now.hour >= 9 && now.hour < 22 ? await breakOverAlerts() : 0;
   const autoCheckedOut = await autoCheckOut(now);
+  // The cron is not a write through the API, so worker.ts does not announce it.
+  if (autoCheckedOut > 0) publishChange(["/api/staff/attendance"]);
   return { late, breaks, autoCheckedOut };
 }

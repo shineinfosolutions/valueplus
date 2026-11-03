@@ -12,7 +12,7 @@ import { PackagePlus } from "lucide-react";
 export function StockOrdersCard({ mode }: { mode: "admin" | "salesman" }) {
   const { data: orders = [] } = useQuery({
     queryKey: ["dashboard-stock-orders"],
-    refetchInterval: 30000,
+    meta: { live: ["/api/stock-orders"] },
     queryFn: async () => {
       const json = await (await fetch("/api/stock-orders")).json();
       return json.success ? (json.data as any[]) : [];

@@ -1,6 +1,7 @@
 "use client";
 
 import { useExclusivePopup } from "@/lib/popup-queue";
+import { useLive } from "@/components/providers/RealtimeProvider";
 import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
@@ -12,7 +13,7 @@ import { playNotificationSound } from "@/lib/notification-sound";
 /**
  * Pops up for the Store Manager (discount up to 10%) and the Admin (all) when someone asks for a discount of
  * 1% or more below a product's selling price: who asked, the product and brand, the percent and the amount.
- * Checks every 8 seconds, since the person at the counter is waiting.
+ * Checked the moment a discount request is sent or decided (live-update socket), since the person at the counter is waiting.
  */
 export function PendingDiscountPopup() {
   const { data: session } = useSession();
@@ -22,32 +23,29 @@ export function PendingDiscountPopup() {
   const seen = useRef<Set<string>>(new Set());
   const [dismissed, setDismissed] = useState(false);
 
-  useEffect(() => {
-    if (!isReviewer) return;
-    let stop = false;
-    const check = async () => {
-      try {
-        const json = await (await fetch("/api/discount-approvals?status=pending")).json();
-        if (stop || !json.success) return;
-        const rows: any[] = json.data;
-        const fresh = rows.filter((r) => !seen.current.has(String(r._id)));
-        fresh.forEach((r) => seen.current.add(String(r._id)));
-        setOpen(rows);
-        if (fresh.length > 0) {
-          setDismissed(false);
-          playNotificationSound();
-        }
-      } catch {
-        /* try again on the next round */
+  const check = async () => {
+    try {
+      const json = await (await fetch("/api/discount-approvals?status=pending")).json();
+      if (!json.success) return;
+      const rows: any[] = json.data;
+      const fresh = rows.filter((r) => !seen.current.has(String(r._id)));
+      fresh.forEach((r) => seen.current.add(String(r._id)));
+      setOpen(rows);
+      if (fresh.length > 0) {
+        setDismissed(false);
+        playNotificationSound();
       }
-    };
-    check();
-    const timer = setInterval(check, 8000);
-    return () => {
-      stop = true;
-      clearInterval(timer);
-    };
+    } catch {
+      /* checked again on the next change */
+    }
+  };
+
+  useEffect(() => {
+    if (isReviewer) check();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isReviewer]);
+  // Checked again only when the server announces a change (live-update socket), not on a timer.
+  useLive(["/api/discount-approvals"], () => check(), isReviewer);
 
   const showPopup = useExclusivePopup("pending-discount", open.length > 0 && !dismissed);
   if (!isReviewer) return null;

@@ -62,7 +62,7 @@ export default function WhatsAppPage() {
       if (!json.success) throw new Error(json.error);
       return json.data;
     },
-    refetchInterval: 30_000,
+    meta: { live: ["/api/whatsapp"] },
   });
 
   const rows = outbox?.rows || [];
