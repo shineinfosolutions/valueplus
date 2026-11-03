@@ -14,6 +14,9 @@ export interface INotification extends Document {
   /** Page the notification opens, e.g. "/staff/tasks". */
   link: string;
   readAt?: Date | null;
+  /** What it is about (a task), so reading it can mark that task as seen by this person. */
+  refType?: string;
+  refId?: string;
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
@@ -32,6 +35,8 @@ const NotificationSchema = new Schema<INotification>(
     message: { type: String, default: "" },
     link: { type: String, default: "" },
     readAt: { type: Date, default: null },
+    refType: { type: String, default: "" },
+    refId: { type: String, default: "" },
     createdBy: { type: String, default: "" },
   },
   { timestamps: true, collection: "notifications" }

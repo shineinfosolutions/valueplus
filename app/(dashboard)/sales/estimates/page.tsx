@@ -6,7 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Plus, Search, FileText, Send, CheckCircle, Clock, Trash2, AlertTriangle, Eye, User, CalendarDays, WalletCards, Printer, MessageCircle, Pencil } from "lucide-react";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { AuthorizePinDialog, PinAuthResult } from "@/components/AuthorizePinDialog";
 import { formatCurrency, formatDate } from "@/lib/utils";
@@ -36,18 +37,84 @@ export default function EstimatesPage() {
   const currentUserName = session?.user?.name || "Staff Member";
   const isSuperAdminOrAdmin = userRole === "admin" || userRole === "superadmin" || userRole === "manager";
   const isIndividualStaff = !isSuperAdminOrAdmin;
+  // The cashier, manager and admin approve estimates and make the bill from them.
+  const canReview = ["admin", "superadmin", "manager", "cashier"].includes(userRole);
 
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [dateFilter, setDateFilter] = useState("This Month");
   const [dateRange, setDateRange] = useState(() => resolveDateRange("This Month"));
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [isBillFormOpen, setIsBillFormOpen] = useState(false);
+  const router = useRouter();
+
+  // "/sales/estimates?new=true" (dashboard, quick actions) opens the new-estimate form at once.
+  useEffect(() => {
+    const wanted = new URLSearchParams(window.location.search).get("new");
+    if (wanted === "bill") {
+      setIsBillFormOpen(true);
+      router.replace("/sales/estimates");
+    } else if (wanted === "true") {
+      setIsFormOpen(true);
+      router.replace("/sales/estimates");
+    }
+  }, [router]);
   const [estimateToDelete, setEstimateToDelete] = useState<string | null>(null);
   const [activePrintEstimate, setActivePrintEstimate] = useState<any>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [selectedEstimate, setSelectedEstimate] = useState<any | null>(null);
   const [convertingEstimate, setConvertingEstimate] = useState<any | null>(null);
   const [editingEstimate, setEditingEstimate] = useState<any | null>(null);
+
+  // Cashier approval / rejection of a salesman's estimate (the server decides; this only asks).
+  const [reviewTarget, setReviewTarget] = useState<{ est: any; decision: "approve" | "reject" } | null>(null);
+  const [reviewReason, setReviewReason] = useState("");
+  const [reviewPin, setReviewPin] = useState("");
+  const [reviewNeedsPin, setReviewNeedsPin] = useState<{ itemName: string; rate: number; lockedMin: number }[] | null>(null);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const closeReview = () => {
+    setReviewTarget(null);
+    setReviewReason("");
+    setReviewPin("");
+    setReviewNeedsPin(null);
+    setReviewError(null);
+  };
+  const reviewMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/estimates/review", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          estimateNumber: reviewTarget?.est.estimateNumber,
+          decision: reviewTarget?.decision,
+          reason: reviewReason,
+          unlockPin: reviewPin || undefined,
+        }),
+      });
+      const json = await res.json();
+      if (!json.success) {
+        const err: any = new Error(json.error || "Could not save the decision");
+        err.belowFloor = Boolean(json.belowFloor);
+        err.lines = json.lines || [];
+        throw err;
+      }
+      return json.data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["estimates"] });
+      queryClient.invalidateQueries({ queryKey: ["salesman-estimates"] });
+      toast.success(data.approvalStatus === "approved" ? `Estimate ${data.estimateNumber} approved. It can now be billed.` : `Estimate ${data.estimateNumber} rejected.`);
+      closeReview();
+    },
+    onError: (error: any) => {
+      if (error.belowFloor) {
+        setReviewNeedsPin(error.lines);
+        setReviewPin("");
+      }
+      setReviewError(error.message);
+    },
+  });
+  const approvalOf = (e: any): "pending" | "approved" | "rejected" => e.approvalStatus || "approved";
 
   const { data: estimates = [], isLoading } = useQuery({
     queryKey: ["estimates"],
@@ -148,8 +215,8 @@ export default function EstimatesPage() {
       customerName: formData.customerName,
       expiryDate: formData.expiryDate || new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString(),
       total: Number(formData.totalAmount) || 0,
-      salesperson: isIndividualStaff ? currentUserName : "AMIT SINGH",
-      salesExecutive: isIndividualStaff ? currentUserName : "AMIT SINGH",
+      salesperson: currentUserName,
+      salesExecutive: currentUserName,
       createdBy: currentUserName,
       status: "Sent",
     };
@@ -178,14 +245,17 @@ export default function EstimatesPage() {
             }))}
             filename="estimates"
           />
-          <Button size="sm" onClick={() => setIsFormOpen(true)}>
+          <Button size="sm" variant="outline" onClick={() => setIsFormOpen(true)}>
             <Plus className="w-4 h-4 mr-1.5" /> New Estimate
+          </Button>
+          <Button size="sm" onClick={() => setIsBillFormOpen(true)}>
+            <Plus className="w-4 h-4 mr-1.5" /> New Bill
           </Button>
         </div>
       }
     >
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[{ label: "Total Estimates", value: estimates.length }, { label: "Accepted", value: estimates.filter((e: any) => e.status === "accepted").length }, { label: "Pending", value: estimates.filter((e: any) => e.status === "sent").length }, { label: "Total Value", value: formatCurrency(estimates.reduce((a: any, b: any) => a + (b.total || b.totalAmount || 0), 0)) }].map((s) => (
+        {[{ label: "Total Estimates", value: estimates.length }, { label: "Bills waiting for cashier", value: estimates.filter((e: any) => approvalOf(e) === "pending").length }, { label: "Billed", value: estimates.filter((e: any) => e.status === "Converted").length }, { label: "Total Value", value: formatCurrency(estimates.reduce((a: any, b: any) => a + (b.total || b.totalAmount || 0), 0)) }].map((s) => (
           <div key={s.label} className="metric-card">
             <p className="text-2xl font-bold">{s.value}</p>
             <p className="text-xs text-muted-foreground mt-1">{s.label}</p>
@@ -244,13 +314,49 @@ export default function EstimatesPage() {
                   </td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">{formatDate(e.date)}</td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">{formatDate(e.expiryDate)}</td>
-                  <td className="px-4 py-3 text-right font-semibold">{formatCurrency(e.total || e.totalAmount)}</td>
+                  <td className="px-4 py-3 text-right font-semibold">
+                    {formatCurrency(e.total || e.totalAmount)}
+                    {e.status === "Converted" && e.dealAmount > 0 && <p className="text-[10px] font-normal text-emerald-700">Deal amount</p>}
+                  </td>
                   <td className="px-4 py-3 text-center">
-                    <Badge variant={e.status === "Accepted" ? "success" : e.status === "Sent" ? "info" : e.status === "Converted" ? "default" : "secondary"}>{e.status}</Badge>
+                    {e.status === "Converted" ? (
+                      <Badge variant="default">Billed</Badge>
+                    ) : approvalOf(e) === "pending" ? (
+                      <Badge variant="outline" className="text-amber-700 bg-amber-50 border-amber-300">Waiting for cashier</Badge>
+                    ) : approvalOf(e) === "rejected" ? (
+                      <Badge variant="outline" className="text-red-700 bg-red-50 border-red-300" title={e.rejectReason || ""}>Rejected</Badge>
+                    ) : e.kind === "bill" ? (
+                      <Badge variant="success">Approved</Badge>
+                    ) : (
+                      <Badge variant="info">Quotation</Badge>
+                    )}
+                    {e.kind === "bill" && e.status !== "Converted" && <p className="text-[10px] font-semibold text-[#3F63AD] mt-0.5">BILL</p>}
+                    {approvalOf(e) === "rejected" && e.rejectReason && <p className="text-[10px] text-red-700 mt-0.5 max-w-[160px] mx-auto">{e.rejectReason}</p>}
+                    
                   </td>
                   <td className="px-4 py-3 text-right flex items-center justify-end gap-1.5">
-                    {e.status !== "Converted" && (
-                      !isIndividualStaff ? (
+                    {e.status !== "Converted" && approvalOf(e) === "pending" && canReview && (
+                      <>
+                        <Button
+                          size="sm"
+                          className="h-7 px-2.5 text-[11px] font-bold bg-[#76C043] hover:bg-[#60a82c] text-white shadow-xs"
+                          onClick={() => setConvertingEstimate(e)}
+                          title="Confirm payment mode and delivery, and make the invoice"
+                        >
+                          ⚡ Make Invoice
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-2.5 text-[11px] font-bold border-red-400 text-red-700 hover:bg-red-50"
+                          onClick={() => setReviewTarget({ est: e, decision: "reject" })}
+                        >
+                          Reject
+                        </Button>
+                      </>
+                    )}
+                    {e.status !== "Converted" && approvalOf(e) === "approved" && (
+                      canReview ? (
                         <Button
                           size="sm"
                           className="h-7 px-2.5 text-[11px] font-bold bg-[#76C043] hover:bg-[#60a82c] text-white shadow-xs"
@@ -259,11 +365,7 @@ export default function EstimatesPage() {
                         >
                           ⚡ Make Bill
                         </Button>
-                      ) : (
-                        <Badge variant="outline" className="text-[10px] text-amber-700 bg-amber-50 border-amber-200">
-                          Active Estimate
-                        </Badge>
-                      )
+                      ) : null
                     )}
                     <Button 
                       variant="outline" 
@@ -334,6 +436,17 @@ export default function EstimatesPage() {
           queryClient.invalidateQueries({ queryKey: ["estimates"] });
           setIsFormOpen(false);
         }} 
+      />
+
+      <InvoiceCreationModal
+        isOpen={isBillFormOpen}
+        onClose={() => setIsBillFormOpen(false)}
+        mode="estimate"
+        billRequest
+        onSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ["estimates"] });
+          setIsBillFormOpen(false);
+        }}
       />
 
       <InvoiceCreationModal
@@ -453,6 +566,49 @@ export default function EstimatesPage() {
           </DialogContent>
         </Dialog>
       )}
+
+      <Dialog open={!!reviewTarget} onOpenChange={(open) => { if (!open) closeReview(); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {reviewTarget?.decision === "approve" ? "Approve" : "Reject"} bill {reviewTarget?.est.estimateNumber}
+            </DialogTitle>
+            <DialogDescription>
+              {reviewTarget?.decision === "approve"
+                ? `${formatCurrency(reviewTarget?.est.total || 0)} will be recorded as the deal amount of ${reviewTarget?.est.salesperson || reviewTarget?.est.salesExecutive || "the salesman"}, and an invoice can then be made from this estimate.`
+                : "The salesman sees the reason and can correct and send the bill again. No invoice can be made from it."}
+            </DialogDescription>
+          </DialogHeader>
+          {reviewTarget?.decision === "reject" && (
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold">Reason *</label>
+              <Input value={reviewReason} onChange={(ev) => setReviewReason(ev.target.value)} placeholder="Why is this estimate rejected?" autoFocus />
+            </div>
+          )}
+          {reviewNeedsPin && (
+            <div className="space-y-2 rounded-lg border border-red-200 bg-red-50 p-3">
+              {reviewNeedsPin.map((l, i) => (
+                <p key={i} className="text-xs text-red-900">
+                  <b>{l.itemName}</b>: {formatCurrency(l.rate)} is below the locked minimum {formatCurrency(l.lockedMin)}.
+                </p>
+              ))}
+              <label className="text-xs font-semibold">Price unlock PIN *</label>
+              <Input type="password" inputMode="numeric" maxLength={6} value={reviewPin} onChange={(ev) => setReviewPin(ev.target.value.replace(/\D/g, ""))} placeholder="Enter the price unlock PIN" autoFocus />
+            </div>
+          )}
+          {reviewError && <p className="text-xs font-semibold text-red-600">{reviewError}</p>}
+          <DialogFooter>
+            <Button variant="outline" onClick={closeReview}>Cancel</Button>
+            <Button
+              disabled={reviewMutation.isPending || (reviewTarget?.decision === "reject" && reviewReason.trim().length < 3) || (!!reviewNeedsPin && reviewPin.length < 4)}
+              className={reviewTarget?.decision === "approve" ? "bg-emerald-600 hover:bg-emerald-700 text-white" : "bg-red-600 hover:bg-red-700 text-white"}
+              onClick={() => { setReviewError(null); reviewMutation.mutate(); }}
+            >
+              {reviewTarget?.decision === "approve" ? "Approve estimate" : "Reject estimate"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Deleting an estimate goes through the same PIN + reason as an invoice, so
           it shows up in the dashboard's Payment Leakage audit too. */}

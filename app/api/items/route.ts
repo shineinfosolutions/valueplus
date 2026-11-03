@@ -1,8 +1,10 @@
+import { deferIfManager, diffFields } from "@/lib/deferred-actions";
 import { NextResponse } from "next/server";
 import mongoose from "mongoose";
 import connectToDatabase from "@/lib/db";
 import Item from "@/models/Item";
 import Invoice from "@/models/Invoice";
+import { getActor } from "@/lib/requirePermission";
 
 export async function GET(req: Request) {
   try {
@@ -81,7 +83,18 @@ export async function GET(req: Request) {
       return p ? { ...it, awaitingDeliveryQty: p.qty, awaitingDeliveryBills: p.bills } : it;
     });
 
-    return NextResponse.json({ success: true, data: withAwaiting });
+    // A salesman never gets the purchase rate. The bill form still needs a floor, so where no minimum selling price
+    // is set it is filled in from the purchase rate here, on the server.
+    const actor = await getActor().catch(() => null);
+    const hidePurchase = !!actor && ["salesman", "sales"].includes(actor.role);
+    const out = hidePurchase
+      ? withAwaiting.map((it: any) => {
+          const { purchasePrice, ...rest } = it;
+          return { ...rest, minSellingPrice: it.minSellingPrice || purchasePrice || 0 };
+        })
+      : withAwaiting;
+
+    return NextResponse.json({ success: true, data: out });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
@@ -93,10 +106,14 @@ export async function POST(req: Request) {
     const body = await req.json();
     await connectToDatabase();
     
-    const payload = {
+    const payload: any = {
       ...body,
       hsnCode: body.hsn || body.hsnCode,
     };
+    // The locked minimum price is only set from the Price Locks screen (Admin / Manager).
+    delete payload.lockedMinPrice;
+    delete payload.priceLockedBy;
+    delete payload.priceLockedAt;
 
     // Check if item exists by exact name (case-insensitive)
     // Escape regex characters in payload.name just in case
@@ -128,6 +145,9 @@ export async function DELETE(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const code = searchParams.get("code");
+    // A Store Manager's delete goes to the Admin first.
+    const waiting = await deferIfManager(req, { title: `Delete item ${code || ""}`, description: `Delete the item ${code || ""} from the Item Master.`, target: `item.delete:${code}` });
+    if (waiting) return waiting;
     
     if (!code) {
       return NextResponse.json({ success: false, error: "Item code is required" }, { status: 400 });
@@ -146,6 +166,13 @@ export async function PUT(req: Request) {
   try {
     const body = await req.json();
     await connectToDatabase();
+    // A Store Manager's edit goes to the Admin first: nothing changes until it is approved.
+    const waiting = await deferIfManager(req, async () => {
+      const current: any = await Item.findOne({ code: body.code }).lean();
+      const { before, after } = diffFields(current, body);
+      return { title: `Edit item ${current?.name || body.code}`, description: `Change the item ${current?.name || ""} (${body.code}) in the Item Master.`, target: `item.edit:${body.code}`, before, after, body };
+    });
+    if (waiting) return waiting;
     const payload: any = {
       ...body,
       hsnCode: body.hsn || body.hsnCode,
@@ -160,6 +187,10 @@ export async function PUT(req: Request) {
     delete payload.currentStock;
     delete payload.showroomStock;
     delete payload.godownStock;
+    // The locked minimum price is only set from the Price Locks screen (Admin / Manager).
+    delete payload.lockedMinPrice;
+    delete payload.priceLockedBy;
+    delete payload.priceLockedAt;
 
     if (!payload.code) {
       return NextResponse.json({ success: false, error: "Item code is required for update" }, { status: 400 });

@@ -25,11 +25,11 @@ export interface ILead extends Document {
   /** When this lead was last actually followed up. */
   lastFollowUpDate?: string;
   /** Every follow-up logged against the lead, oldest first. */
-  followUps?: { date: string; nextDate?: string; notes?: string; staff?: string; loggedAt?: Date }[];
+  followUps?: { date: string; nextDate?: string; notes?: string; staff?: string; staffId?: string; loggedAt?: Date }[];
   /** Times the customer was called from the ERP's Call button. */
   callCount?: number;
   lastCalledAt?: Date;
-  calls?: { at: Date; staff?: string }[];
+  calls?: { at: Date; staff?: string; staffId?: string }[];
   notes?: string;
   convertedInvoiceNumber?: string;
   timeline: ILeadTimeline[];
@@ -75,6 +75,7 @@ const LeadSchema = new Schema<ILead>(
           nextDate: { type: String, default: "" },
           notes: { type: String, default: "" },
           staff: { type: String, default: "" },
+          staffId: { type: String, default: "" },
           loggedAt: { type: Date, default: Date.now },
         },
       ],
@@ -83,7 +84,7 @@ const LeadSchema = new Schema<ILead>(
     callCount: { type: Number, default: 0 },
     lastCalledAt: { type: Date },
     calls: {
-      type: [{ _id: false, at: { type: Date, default: Date.now }, staff: { type: String, default: "" } }],
+      type: [{ _id: false, at: { type: Date, default: Date.now }, staff: { type: String, default: "" }, staffId: { type: String, default: "" } }],
       default: [],
     },
     notes: { type: String, default: "" },

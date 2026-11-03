@@ -1,5 +1,5 @@
 import Invoice from "@/models/Invoice";
-import { notifyAdmins, notifyAssignee } from "@/lib/notify";
+import { notifyAdmins, notifyAssignee, notifyRoles } from "@/lib/notify";
 
 /**
  * "Delivery due soon" reminders for bills whose goods are handed over later.
@@ -56,7 +56,9 @@ export async function sendDueDeliveryReminders(): Promise<number> {
         createdBy: "Delivery reminder",
       };
       await notifyAdmins(note);
-      if (inv.salesExecutive) await notifyAssignee(inv.salesExecutive, undefined, note);
+      await notifyRoles(["manager", "cashier"], note);
+      // The salesman is told too, but the dispatch screen is not his: the note opens his dashboard.
+      if (inv.salesExecutive) await notifyAssignee(inv.salesExecutive, undefined, { ...note, link: "/dashboard" });
       sent++;
     }
     return sent;

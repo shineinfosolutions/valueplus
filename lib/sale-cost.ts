@@ -52,6 +52,22 @@ export function lineUnitCost(line: any, matched: any | null): number {
 }
 
 /**
+ * A unit cost with the product's GST added. Purchase prices are kept as the supplier's rate before GST, while a bill
+ * is reported GST included, so profit compares the two on the same basis. The product's own rate is used (an old bill
+ * line may carry 0%), falling back to the line's rate, then 18%.
+ */
+export function costWithGst(unitCost: number, line: any, matched: any | null): number {
+  // A product whose purchase price already includes GST is left as it is.
+  if (matched?.purchaseIncludesGst) return unitCost;
+  // Only a price that is clearly the supplier's rate before GST gets GST added: it has paise, and with GST it comes to
+  // whole rupees (24745.76 -> 29200). A whole-rupee price (16060) is what was paid with GST, so it stays as it is.
+  const catalogGst = Number(matched?.gstRate) > 0 ? Number(matched.gstRate) : Number(line?.gstRate) > 0 ? Number(line.gstRate) : 18;
+  const withGst = unitCost * (1 + catalogGst / 100);
+  if (Number.isInteger(Math.round(unitCost * 100) / 100) || Math.abs(withGst - Math.round(withGst)) > 0.03) return unitCost;
+  return Math.round(withGst);
+}
+
+/**
  * Put the unit cost on each line of a bill being saved. The value always comes
  * from the server, never from the form. On an edit, a line for a product that
  * was already on the bill keeps the cost it was first sold at.

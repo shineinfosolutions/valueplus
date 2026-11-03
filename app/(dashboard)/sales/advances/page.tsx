@@ -239,7 +239,7 @@ export default function CustomerAdvancesPage() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
           <div>
             <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Available Advance Pool</p>

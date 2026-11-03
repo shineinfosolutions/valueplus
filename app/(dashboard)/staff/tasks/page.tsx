@@ -1,5 +1,6 @@
 "use client";
 
+import { TargetProgress } from "@/components/staff/TargetProgress";
 import React, { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageShell } from "@/components/shared/page-shell";
@@ -50,7 +51,7 @@ export default function StaffTasksPage() {
     taskType: "general" as "general" | "sales_target" | "follow_up" | "product_demo",
     targetProduct: "",
     targetBrand: "",
-    targetQty: 1,
+    targetQty: 0,
     targetAmount: 0,
     createdBy: currentUserName,
   });
@@ -69,6 +70,8 @@ export default function StaffTasksPage() {
   const { data: rawTasks = [], isLoading, refetch } = useQuery({
     queryKey: ["staffTasks", isIndividualStaff ? currentUserName : "all"],
     enabled: sessionStatus === "authenticated" && Boolean(userRole),
+    // The Admin / Manager see "Read by" appear within seconds of the person opening the task.
+    refetchInterval: 8000,
     queryFn: async () => {
       let url = "/api/staff/tasks";
       if (isIndividualStaff) {
@@ -129,7 +132,7 @@ export default function StaffTasksPage() {
         taskType: "general",
         targetProduct: "",
         targetBrand: "",
-        targetQty: 1,
+        targetQty: 0,
         targetAmount: 0,
         createdBy: currentUserName,
       });
@@ -245,7 +248,7 @@ export default function StaffTasksPage() {
       }
     >
       {/* ─── KPI METRIC CARDS ──────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4 mb-6">
         <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between">
           <div>
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Tasks</p>
@@ -411,19 +414,11 @@ export default function StaffTasksPage() {
 
                         {t.description && <p className="text-[11px] text-slate-500 line-clamp-2">{t.description}</p>}
 
-                        {/* Sales Target Progress Bar */}
+                        {/* Sales Target: by product and by amount */}
                         {isSalesTarget && (
-                          <div className="mt-1.5 p-2 rounded-lg bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800/50 space-y-1 text-[11px]">
-                            <div className="flex justify-between font-bold text-purple-900 dark:text-purple-200">
-                              <span>
-                                Target: {t.targetProduct || t.targetBrand || "Sales"}
-                                {t.targetQty > 0 ? ` (${t.currentQty || 0}/${t.targetQty} Qty)` : ""}
-                              </span>
-                              <span>
-                                {t.targetAmount > 0 ? `₹${(t.currentAmount || 0).toLocaleString("en-IN")} / ₹${t.targetAmount.toLocaleString("en-IN")}` : ""}
-                              </span>
-                            </div>
-
+                          <div>
+                            <TargetProgress task={t} />
+                            <div className="px-1 space-y-1">
                             {t.linkedInvoiceNumber && (
                               <p className="text-[10px] text-emerald-700 dark:text-emerald-400 font-mono font-bold flex items-center gap-1">
                                 <Sparkles className="w-3 h-3" /> Linked Invoice: {t.linkedInvoiceNumber}
@@ -435,6 +430,7 @@ export default function StaffTasksPage() {
                                 Note: {t.completionRemarks}
                               </p>
                             )}
+                            </div>
                           </div>
                         )}
                       </div>
@@ -496,6 +492,14 @@ export default function StaffTasksPage() {
                       >
                         {isOverdue ? "Overdue" : t.status}
                       </Badge>
+                      {/* Has the person opened the notification? (shown to whoever gave the task) */}
+                      {!isIndividualStaff && (
+                        <p className={`mt-1 text-[10px] font-bold ${t.seenBy?.length ? "text-emerald-700" : "text-slate-400"}`}>
+                          {t.seenBy?.length
+                            ? `✓✓ Read by ${t.seenBy.map((s: any) => String(s.name).replace(/\s*\(.*\)\s*$/, "")).join(", ")}${t.seenBy[0]?.at ? ` · ${new Date(t.seenBy[0].at).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" })}` : ""}`
+                            : "✓ Delivered, not read yet"}
+                        </p>
+                      )}
                     </td>
 
                     {/* Actions */}
@@ -551,6 +555,10 @@ export default function StaffTasksPage() {
           <form
             onSubmit={(e) => {
               e.preventDefault();
+              if (form.taskType === "sales_target" && !form.targetProduct.trim() && !form.targetBrand.trim() && !(form.targetQty > 0) && !(form.targetAmount > 0)) {
+                toast.error("Set a target: a product / brand with units, or an amount.");
+                return;
+              }
               createTaskMutation.mutate(form);
             }}
             className="space-y-3.5 pt-2 text-xs"
@@ -628,17 +636,17 @@ export default function StaffTasksPage() {
                     />
                   </div>
                   <div>
-                    <Label className="text-xs text-purple-950 font-semibold">Target Quantity (Units)</Label>
+                    <Label className="text-xs text-purple-950 font-semibold">Target Quantity (Units, 0 = none)</Label>
                     <Input
                       type="number"
-                      min={1}
+                      min={0}
                       value={form.targetQty}
                       onChange={(e) => setForm({ ...form, targetQty: Number(e.target.value) })}
                       className="mt-1 h-8 text-xs bg-white"
                     />
                   </div>
                   <div>
-                    <Label className="text-xs text-purple-950 font-semibold">Target Revenue (₹ Optional)</Label>
+                    <Label className="text-xs text-purple-950 font-semibold">Target Amount (₹, optional)</Label>
                     <Input
                       type="number"
                       placeholder="e.g. 50000"

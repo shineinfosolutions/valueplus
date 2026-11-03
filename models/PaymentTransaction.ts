@@ -15,6 +15,10 @@ export interface IPaymentTransaction extends Document {
   bankAccountId?: string;
   bankAccountRef?: string;
   bankTxnRef?: string; // UTR / bank reference
+  /** Set when an approved edit changed this payment. */
+  lastEditedAt?: Date;
+  lastEditedBy?: string;
+  editCount?: number;
 }
 
 const PaymentTransactionSchema = new Schema<IPaymentTransaction>(
@@ -32,6 +36,9 @@ const PaymentTransactionSchema = new Schema<IPaymentTransaction>(
     bankAccountId: { type: String, default: "" },
     bankAccountRef: { type: String, default: "" },
     bankTxnRef: { type: String, default: "" },
+    lastEditedAt: { type: Date },
+    lastEditedBy: { type: String, default: "" },
+    editCount: { type: Number, default: 0 },
   },
   { timestamps: true, collection: "payment_transactions" }
 );

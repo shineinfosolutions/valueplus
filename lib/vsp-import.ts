@@ -23,6 +23,8 @@ export interface VspSheetRow {
   sheet: string;
   rowNumber: number;
   sapCode: string;
+  /** Every code the row carries (Sap code, VP CODE, Material code) that a product may be stored under. */
+  codes: string[];
   /** Model as written in the sheet (the fullest form available). */
   model: string;
   /** Every base model this row can be recognised by. */
@@ -70,7 +72,29 @@ const formatPrice = (n: number | null) => (n === null ? "-" : String(n));
 // are used when it has any, the other names only when it has none.
 const MODEL_HEADER = /^model$/i;
 const MODEL_HEADER_FALLBACK = /^(model\s*(no\.?|number|code)|product|product\s*(code|model)|item\s*code)$/i;
-const isModelHeader = (c: string) => MODEL_HEADER.test(c) || MODEL_HEADER_FALLBACK.test(c);
+// Some sheets (e.g. Voltas) have no model column at all, only the brand's own
+// description ("VOLTAS CVF191SA3-P-GE"); the model is read out of that text.
+const DESCRIPTION_HEADER = /^(material\s*)?desc(ription)?$/i;
+const isModelHeader = (c: string) => MODEL_HEADER.test(c) || MODEL_HEADER_FALLBACK.test(c) || DESCRIPTION_HEADER.test(c);
+
+/**
+ * Model numbers found in free text: every word that has both letters and digits and
+ * is long enough to be a model ("VOLTAS CVF191SA3-P-GE" -> CVF191SA3PGE). A leading
+ * "VOLTAS-" is dropped, and a word is never cut short, so two variants of one model
+ * ("-P-GE" and "-A") are never taken for each other.
+ */
+export function modelKeysFromText(value: any): string[] {
+  const keys = new Set<string>();
+  for (const word of clean(value).toUpperCase().split(/[\s()/,]+/)) {
+    const beforeDot = word.split(".")[0].replace(/^[A-Z]+-(?=[A-Z0-9]*\d)/, (m) => (/^(VOLTAS|AISEN|LG)-$/.test(m) ? "" : m));
+    // A catalog name often ends with the brand's material code ("CVF320DA4-P2-PL-5211307-"): the model is also known without it.
+    for (const candidate of [beforeDot, beforeDot.replace(/-\d{6,8}-?$/, "")]) {
+      const key = candidate.replace(/[^A-Z0-9]/g, "");
+      if (key.length >= 5 && /[A-Z]/.test(key) && /\d/.test(key)) keys.add(key);
+    }
+  }
+  return Array.from(keys);
+}
 
 export function parseVspWorkbook(data: Buffer | ArrayBuffer | Uint8Array): { rows: VspSheetRow[]; notes: VspSheetNote[] } {
   const workbook = XLSX.read(data, { type: "buffer" });
@@ -104,31 +128,41 @@ export function parseVspWorkbook(data: Buffer | ArrayBuffer | Uint8Array): { row
     if (modelIndexes.length === 0) {
       modelIndexes = header.map((c, i) => (MODEL_HEADER_FALLBACK.test(c) ? i : -1)).filter((i) => i >= 0);
     }
-    const sapIndex = header.findIndex((c) => /sap\s*code/i.test(c));
+    const descIndexes = header.map((c, i) => (DESCRIPTION_HEADER.test(c) ? i : -1)).filter((i) => i >= 0);
+    const sapIndex = header.findIndex((c) => /sap\s*code/i.test(c) || /^vp\s*code$/i.test(c));
+    const codeIndexes = header
+      .map((c, i) => (/sap\s*code|^vp\s*code$|^material\s*code$/i.test(c) ? i : -1))
+      .filter((i) => i >= 0);
 
     for (let i = headerIndex + 1; i < grid.length; i++) {
       const row = grid[i];
       const models = modelIndexes.map((idx) => clean(row[idx])).filter(Boolean);
-      if (models.length === 0) continue;
+      const descriptions = descIndexes.map((idx) => clean(row[idx])).filter(Boolean);
+      if (models.length === 0 && descriptions.length === 0) continue;
       // A header repeated further down the tab is not a product.
-      if (models.every((m) => isModelHeader(m))) continue;
+      if ([...models, ...descriptions].every((m) => isModelHeader(m))) continue;
 
       const vsp = vspIndex >= 0 ? toPrice(row[vspIndex]) : null;
       const cost = costIndex >= 0 ? toPrice(row[costIndex]) : null;
-      const model = models.slice().sort((a, b) => b.length - a.length)[0];
+      const model = [...models, ...descriptions].sort((a, b) => b.length - a.length)[0];
       if (vsp === null && cost === null) {
         notes.push({ sheet, message: `${model} (sheet "${sheet}", row ${i + 1}) was skipped: it has no V+NLC or VSP value.` });
         continue;
       }
 
-      const modelKeys = Array.from(new Set(models.map(baseModelKey).filter((k) => k.length >= 3)));
-      if (modelKeys.length === 0) continue;
+      // A bare model like "15/15" or "50" says little; it is only used when the row has no description to read a model from.
+      const fromModels = models.map(baseModelKey).filter((k) => k.length >= 3 && (descriptions.length === 0 || (/[A-Z]/.test(k) && /\d/.test(k) && k.length >= 5)));
+      const fromDescriptions = descriptions.flatMap(modelKeysFromText);
+      const modelKeys = Array.from(new Set([...fromModels, ...fromDescriptions]));
+      const codes = codeIndexes.map((idx) => clean(row[idx])).filter((c) => !/^[-–]?$/.test(c));
+      if (modelKeys.length === 0 && codes.length === 0) continue;
 
       const sapCode = sapIndex >= 0 ? clean(row[sapIndex]) : "";
       rows.push({
         sheet,
         rowNumber: i + 1,
         sapCode: /^[-–]?$/.test(sapCode) ? "" : sapCode,
+        codes,
         model,
         modelKeys,
         vsp,
@@ -177,6 +211,7 @@ function itemModelKeys(name: any): string[] {
   const keys = new Set<string>();
   const first = baseModelKey(name);
   if (first) keys.add(first);
+  for (const k of modelKeysFromText(name)) keys.add(k);
   for (const word of clean(name).toUpperCase().split(/[\s()/,]+/)) {
     const beforeDot = word.split(".")[0];
     // "A32HDS623-AISEN" → also "A32HDS623": a trailing "-BRAND" (letters only).
@@ -197,7 +232,9 @@ export function matchVspRows(rows: VspSheetRow[], items: any[]): VspMatchResult 
       const list = itemsByModel.get(key) || [];
       if (!list.includes(item)) itemsByModel.set(key, [...list, item]);
     }
-    for (const code of [item.code, item.vpCode, ...(Array.isArray(item.supplierCodes) ? item.supplierCodes : [])]) {
+    // The brand's 7-digit material code is often part of the catalog name ("...-5211307- VOLTAS").
+    const nameCodes = String(item.name || "").match(/(?<!\d)\d{7}(?!\d)/g) || [];
+    for (const code of [item.code, item.vpCode, ...(Array.isArray(item.supplierCodes) ? item.supplierCodes : []), ...nameCodes]) {
       const c = clean(code).toUpperCase();
       if (c) itemsByCode.set(c, item);
     }
@@ -208,8 +245,10 @@ export function matchVspRows(rows: VspSheetRow[], items: any[]): VspMatchResult 
 
   for (const row of rows) {
     const matched = new Map<string, any>();
-    const byCode = row.sapCode ? itemsByCode.get(row.sapCode.toUpperCase()) : null;
-    if (byCode) matched.set(String(byCode._id), byCode);
+    for (const code of row.codes.length > 0 ? row.codes : row.sapCode ? [row.sapCode] : []) {
+      const byCode = itemsByCode.get(code.toUpperCase());
+      if (byCode) matched.set(String(byCode._id), byCode);
+    }
     for (const key of row.modelKeys) {
       for (const item of itemsByModel.get(key) || []) matched.set(String(item._id), item);
     }

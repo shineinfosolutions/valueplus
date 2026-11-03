@@ -1,7 +1,11 @@
 "use client";
 
-import React, { useState } from "react";
+import { AttendanceCheckInDialog } from "@/components/shared/AttendanceCheckInDialog";
+import { BreakControl } from "@/components/shared/BreakControl";
+import { LeaveRequestDialog } from "@/components/shared/LeaveRequestDialog";
+import React, { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +27,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  MapPin,
   Clock,
   LogIn,
   LogOut,
@@ -32,6 +37,7 @@ import {
   CheckCircle2,
   AlertCircle,
   ShieldAlert,
+  UserPlus,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useBranch } from "@/context/BranchContext";
@@ -60,6 +66,7 @@ export function AttendancePunchWidget() {
 
 function AttendancePunchWidgetBody() {
   const queryClient = useQueryClient();
+  const router = useRouter();
   const { data: session } = useSession();
   const { activeLocation } = useBranch();
 
@@ -68,12 +75,42 @@ function AttendancePunchWidgetBody() {
   const userRole = ((session?.user as any)?.role || "salesman").toUpperCase();
 
   const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
+  const [isCheckInOpen, setIsCheckInOpen] = useState(false);
   const [isAdvanceModalOpen, setIsAdvanceModalOpen] = useState(false);
   const [leaveType, setLeaveType] = useState<"Casual" | "Sick" | "Paid">("Casual");
   const [leaveReason, setLeaveReason] = useState("");
   const [advanceAmount, setAdvanceAmount] = useState("");
 
   const today = getISTDateString();
+
+  // Location is needed to check in, so a person who has not allowed it is asked again and again (every minute while
+  // the app is open) until they do. A phone that has blocked it for good cannot be prompted, so a banner says what to do.
+  const [locState, setLocState] = useState<string>("unknown");
+  const askLocation = useCallback(() => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      () => setLocState("granted"),
+      (e) => { if (e.code === 1) setLocState("denied"); },
+      { timeout: 15000, maximumAge: 60000 }
+    );
+  }, []);
+  useEffect(() => {
+    const check = async () => {
+      if (document.visibilityState !== "visible") return;
+      try {
+        const st = await (navigator as any).permissions.query({ name: "geolocation" });
+        setLocState(st.state);
+        st.onchange = () => setLocState(st.state);
+        if (st.state !== "granted") askLocation();
+      } catch {
+        // No Permissions API on this phone: asking directly still shows the prompt.
+        askLocation();
+      }
+    };
+    check();
+    const t = setInterval(check, 60000);
+    return () => clearInterval(t);
+  }, [askLocation]);
 
   // Fetch active shift configuration
   const { data: shiftConfig } = useQuery({
@@ -139,29 +176,29 @@ function AttendancePunchWidgetBody() {
 
   const shiftDisplay = shiftConfig
     ? `${shiftConfig.startTime} - ${shiftConfig.endTime}`
-    : "10:00 AM - 06:00 PM";
+    : "10:00 AM - 09:00 PM";
 
   return (
-    <div className="p-4 bg-gradient-to-r from-[#1B2537] via-[#243753] to-[#1B2537] text-white rounded-2xl shadow-md border border-slate-700/80 flex flex-col md:flex-row md:items-center justify-between gap-4">
-      {/* User Info & Status */}
-      <div className="flex items-center gap-3 min-w-0">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-[#76C043] to-emerald-400 text-white flex items-center justify-center font-black text-sm shadow-md shrink-0">
-          <Clock className="w-5 h-5" />
+    <div className="p-4 bg-gradient-to-br from-[#1B2537] via-[#243753] to-[#1B2537] text-white rounded-2xl shadow-md border border-slate-700/80 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+      {/* Who, shift and today's status */}
+      <div className="flex items-start gap-3 min-w-0">
+        <div className="w-11 h-11 rounded-xl bg-gradient-to-tr from-[#76C043] to-emerald-400 text-white flex items-center justify-center shadow-md shrink-0">
+          <Clock className="w-5 h-5" aria-hidden="true" />
         </div>
-        <div className="min-w-0 space-y-1">
-          <div className="flex items-center gap-2 flex-wrap">
-            <p className="text-sm font-black text-white tracking-tight leading-none">{userName}</p>
-            <span className="px-2 py-0.5 rounded text-[9.5px] font-mono font-extrabold bg-white/15 text-[#76C043] border border-white/10 shrink-0">
-              {userRole}
+        <div className="min-w-0 space-y-1.5">
+          <p className="text-base font-bold text-white leading-tight truncate" title={userName}>{String(userName).replace(/\s*\(.*\)\s*$/, "")}</p>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold capitalize bg-white/15 text-[#9BDB6B] border border-white/10">
+              {String(userRole || "").toLowerCase()}
             </span>
-            <span className="px-2 py-0.5 rounded text-[9.5px] font-mono bg-blue-500/20 text-blue-300 border border-blue-400/20 shrink-0">
-              🕒 Shift: {shiftDisplay}
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-blue-500/20 text-blue-200 border border-blue-400/20">
+              <Clock className="w-3 h-3" aria-hidden="true" /> Shift {shiftDisplay}
             </span>
           </div>
-          <div className="flex items-center gap-2 text-xs text-slate-300 flex-wrap">
+          <div className="flex items-center gap-x-3 gap-y-1 text-xs text-slate-300 flex-wrap">
             {isOnLeave ? (
-              <span className="text-amber-400 font-bold flex items-center gap-1">
-                🌴 On Leave ({todayRecord?.leaveType || "Casual"})
+              <span className="text-amber-300 font-semibold flex items-center gap-1">
+                <Calendar className="w-3.5 h-3.5" aria-hidden="true" /> On leave ({todayRecord?.leaveType || "Casual"})
               </span>
             ) : isCheckedOut ? (
               (() => {
@@ -170,124 +207,78 @@ function AttendancePunchWidgetBody() {
                 const m = durationMins % 60;
                 const display = h > 0 ? `${h}h ${m}m` : `${m} mins`;
                 return (
-                  <span className={isHalfDay ? "text-amber-400 font-bold flex items-center gap-1" : "text-emerald-400 font-bold flex items-center gap-1"}>
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    {isHalfDay ? `⚠️ Half-Day Shift (${display})` : `Shift Completed (${display})`}
+                  <span className={isHalfDay ? "text-amber-300 font-semibold flex items-center gap-1" : "text-emerald-300 font-semibold flex items-center gap-1"}>
+                    <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />
+                    {isHalfDay ? `Half-day shift (${display})` : `Shift completed (${display})`}
                   </span>
                 );
               })()
             ) : isCheckedIn ? (
-              <span className="text-[#76C043] font-bold flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-[#76C043] animate-ping" />
-                In Shift (Since {todayRecord?.checkInTime})
-                {isLate && <Badge className="bg-amber-500/30 text-amber-300 border-amber-400/40 text-[9px] px-1 py-0">Late</Badge>}
-                {isHalfDay && <Badge className="bg-orange-500/30 text-orange-300 border-orange-400/40 text-[9px] px-1 py-0">Half-Day Cutoff</Badge>}
+              <span className="text-[#9BDB6B] font-semibold flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-[#76C043] animate-pulse" aria-hidden="true" />
+                On shift since {todayRecord?.checkInTime}
+                {isLate && <Badge className="bg-amber-500/30 text-amber-200 border-amber-400/40 text-[11px] px-1.5 py-0">Late</Badge>}
+                {isHalfDay && <Badge className="bg-orange-500/30 text-orange-200 border-orange-400/40 text-[11px] px-1.5 py-0">Half-day cutoff</Badge>}
               </span>
             ) : (
-              <span className="text-slate-400 font-medium">Shift Not Started Today</span>
+              <span className="text-slate-300 font-medium">Shift not started today</span>
             )}
-            <span className="text-white/40">•</span>
-            <span className="text-slate-300 font-medium text-[11px] truncate max-w-[220px]">
-              📍 {activeLocation.name.split("(")[0]}
+            <span className="inline-flex items-center gap-1 text-slate-300 min-w-0">
+              <MapPin className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+              <span className="truncate max-w-[210px]">{activeLocation.name.split("(")[0].trim()}</span>
             </span>
           </div>
+          {locState === "denied" && (
+            <div className="rounded-lg border border-amber-400/50 bg-amber-500/20 px-2.5 py-1.5 text-[11px] text-amber-100">
+              Location is off, so you cannot check in.{" "}
+              <button type="button" onClick={askLocation} className="font-bold underline">Allow location</button>
+              <span className="block text-amber-200/90">If no question appears: phone Settings → this app / site → Location → Allow.</span>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Action Buttons */}
-      <div className="flex items-center gap-2.5 flex-wrap shrink-0">
+      {/* Check in / out first, then the two secondary actions */}
+      <div className="grid grid-cols-2 gap-2 md:flex md:items-center md:gap-2.5 shrink-0">
         {!isCheckedIn && !isOnLeave ? (
           <Button
-            size="sm"
-            onClick={() => punchMutation.mutate({ action: "check_in" })}
+            onClick={() => setIsCheckInOpen(true)}
             disabled={punchMutation.isPending}
-            className="bg-[#76C043] hover:bg-[#68ac3b] text-slate-950 font-black text-xs h-9 px-4 rounded-xl shadow-md gap-1.5"
+            className="col-span-2 md:col-span-1 h-12 md:h-10 px-5 bg-[#76C043] hover:bg-[#68ac3b] text-slate-950 font-bold text-sm rounded-xl shadow-md gap-2 cursor-pointer"
           >
-            <LogIn className="w-4 h-4" /> Check In
+            <LogIn className="w-5 h-5" aria-hidden="true" /> Check In
           </Button>
         ) : isCheckedIn && !isCheckedOut ? (
           <Button
-            size="sm"
             onClick={() => punchMutation.mutate({ action: "check_out" })}
             disabled={punchMutation.isPending}
-            className="bg-red-500 hover:bg-red-600 text-white font-bold text-xs h-9 px-4 rounded-xl shadow-md gap-1.5"
+            className="col-span-2 md:col-span-1 h-12 md:h-10 px-5 bg-red-500 hover:bg-red-600 text-white font-bold text-sm rounded-xl shadow-md gap-2 cursor-pointer"
           >
-            <LogOut className="w-4 h-4" /> Check Out
+            <LogOut className="w-5 h-5" aria-hidden="true" /> {punchMutation.isPending ? "Checking out..." : "Check Out"}
           </Button>
         ) : null}
 
+        {isCheckedIn && !isCheckedOut && <BreakControl />}
+
         <Button
-          size="sm"
           variant="outline"
           onClick={() => setIsLeaveModalOpen(true)}
-          className="bg-white/10 hover:bg-white/20 text-white border-white/20 text-xs font-bold h-9 px-3 rounded-xl gap-1.5"
+          className="h-11 md:h-10 px-3 bg-white/10 hover:bg-white/20 text-white border-white/20 text-sm font-semibold rounded-xl gap-1.5 cursor-pointer"
         >
-          <Calendar className="w-3.5 h-3.5 text-amber-400" /> Apply Leave
+          <Calendar className="w-4 h-4 text-amber-300" aria-hidden="true" /> Leave / Break
         </Button>
 
         <Button
-          size="sm"
           variant="outline"
-          onClick={() => setIsAdvanceModalOpen(true)}
-          className="bg-white/10 hover:bg-white/20 text-white border-white/20 text-xs font-bold h-9 px-3 rounded-xl gap-1.5"
+          onClick={() => router.push("/marketing/leads?new=true")}
+          className="h-11 md:h-10 px-3 bg-white/10 hover:bg-white/20 text-white border-white/20 text-sm font-semibold rounded-xl gap-1.5 cursor-pointer"
         >
-          <Coins className="w-3.5 h-3.5 text-emerald-400" /> Request Advance
+          <UserPlus className="w-4 h-4 text-emerald-300" aria-hidden="true" /> New Lead
         </Button>
       </div>
 
-      {/* LEAVE MODAL */}
-      <Dialog open={isLeaveModalOpen} onOpenChange={setIsLeaveModalOpen}>
-        <DialogContent className="max-w-md bg-white rounded-2xl shadow-2xl p-6 border border-slate-200 text-slate-900">
-          <DialogHeader>
-            <DialogTitle className="text-base font-black text-slate-900 flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-[#30539C]" />
-              Apply for Leave
-            </DialogTitle>
-            <DialogDescription className="text-xs text-slate-500">
-              Submit your leave application for HR and Store Manager approval.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-3 py-2">
-            <div className="space-y-1">
-              <Label className="text-xs font-bold text-slate-700">Leave Type</Label>
-              <Select value={leaveType} onValueChange={(val: any) => setLeaveType(val)}>
-                <SelectTrigger className="h-9 text-xs font-bold">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Casual">Casual Leave (Personal Work)</SelectItem>
-                  <SelectItem value="Sick">Sick Leave (Medical/Health)</SelectItem>
-                  <SelectItem value="Paid">Paid Leave</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1">
-              <Label className="text-xs font-bold text-slate-700">Reason</Label>
-              <Input
-                placeholder="e.g. Urgent family matter / doctor visit"
-                value={leaveReason}
-                onChange={(e) => setLeaveReason(e.target.value)}
-                className="h-9 text-xs"
-              />
-            </div>
-          </div>
-
-          <DialogFooter className="pt-2">
-            <Button variant="ghost" onClick={() => setIsLeaveModalOpen(false)} className="text-xs">
-              Cancel
-            </Button>
-            <Button
-              onClick={() => punchMutation.mutate({ action: "apply_leave", payload: { leaveType, leaveReason } })}
-              disabled={punchMutation.isPending}
-              className="bg-[#30539C] hover:bg-[#203a70] text-white font-bold text-xs"
-            >
-              Submit Leave Request
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <AttendanceCheckInDialog open={isCheckInOpen} onClose={() => setIsCheckInOpen(false)} branchName={activeLocation.name} />
+      <LeaveRequestDialog open={isLeaveModalOpen} onClose={() => setIsLeaveModalOpen(false)} />
 
       {/* ADVANCE MODAL */}
       <Dialog open={isAdvanceModalOpen} onOpenChange={setIsAdvanceModalOpen}>

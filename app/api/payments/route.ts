@@ -3,18 +3,10 @@ import connectToDatabase from "@/lib/db";
 import PaymentTransaction from "@/models/PaymentTransaction";
 import { purchasePaymentState, round2 } from "@/lib/purchase-payments";
 
-/** The purchase bill a supplier payment is made against, if it names one. */
-async function purchaseBillFor(referenceId: any) {
-  const ref = String(referenceId || "").trim();
-  if (!ref) return null;
-  const PurchaseEntry = (await import("@/models/PurchaseEntry")).default;
-  const escaped = ref.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return PurchaseEntry.findOne({
-    billNo: { $regex: new RegExp(`^${escaped}$`, "i") },
-    type: { $ne: "debit-note" },
-    status: { $ne: "cancelled" },
-  });
-}
+import mongoose from "mongoose";
+import { requirePermission } from "@/lib/requirePermission";
+import { authoriseChange, auditChange, createChangeRequest, versionOf } from "@/lib/change-requests";
+import { checkPaymentEdit, editPayment, removePayment, summarisePayment, purchaseBillFor } from "@/lib/payment-change";
 
 export async function GET(request: Request) {
   try {
@@ -71,6 +63,10 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  // Recording a payment moves money on a ledger: only roles allowed to record payments.
+  const gate = await requirePermission("payment.record");
+  if (!gate.ok) return gate.response;
+
   try {
     await connectToDatabase();
     const data = await request.json();
@@ -181,74 +177,140 @@ export async function POST(request: Request) {
   }
 }
 
+/**
+ * Edit a payment (amount, mode, date, notes). Admin: done now. Store Manager: sent to
+ * the Admin, and the payment stays exactly as it is until the Admin approves.
+ * Needs the PIN and a reason either way.
+ */
+export async function PUT(request: Request) {
+  try {
+    const body = await request.json().catch(() => ({}));
+    const gate = await authoriseChange(request, body.pin, body.reason);
+    if (!gate.ok) return gate.response;
+
+    await connectToDatabase();
+    if (!mongoose.isValidObjectId(body.id)) {
+      return NextResponse.json({ success: false, error: "Payment ID is required" }, { status: 400 });
+    }
+    const payment: any = await PaymentTransaction.findById(body.id);
+    if (!payment) return NextResponse.json({ success: false, error: "Payment not found" }, { status: 404 });
+
+    // Only these four fields can change; the party and the bill it is against stay.
+    const c = body.changes || {};
+    const changes: any = {};
+    if (c.amount !== undefined) changes.amount = Number(c.amount);
+    if (c.paymentMode !== undefined) changes.paymentMode = String(c.paymentMode);
+    if (c.date !== undefined) changes.date = String(c.date);
+    if (c.notes !== undefined) changes.notes = String(c.notes);
+
+    const check = await checkPaymentEdit(payment, changes);
+    if (!check.ok) return NextResponse.json({ success: false, error: check.error }, { status: 400 });
+
+    if (gate.mode === "direct") {
+      const r = await editPayment(payment, changes, gate.actor);
+      if (!r.ok) return NextResponse.json({ success: false, error: r.error }, { status: 400 });
+      await auditChange({
+        action: "payment.edit",
+        entityType: "Payment",
+        entityRef: payment.transactionId,
+        entityId: String(payment._id),
+        partyName: payment.partyName,
+        amount: check.next.amount,
+        reason: gate.reason,
+        actor: gate.actor,
+        ip: gate.ip,
+        userAgent: gate.userAgent,
+        usedLegacyPin: gate.usedLegacyPin,
+        metadata: { before: r.before, after: r.after },
+      });
+      return NextResponse.json({ success: true, message: "Payment updated", data: await PaymentTransaction.findById(payment._id) });
+    }
+
+    const reqResult = await createChangeRequest({
+      kind: "payment_edit",
+      target: `payment:${payment._id}`,
+      title: `Edit ${payment.partyType === "Supplier" ? "supplier payment" : "customer receipt"} — ${payment.partyName}`,
+      description: `₹${Number(payment.amount).toLocaleString("en-IN")} → ₹${check.next.amount.toLocaleString("en-IN")} · ${payment.paymentMode} → ${check.next.paymentMode} · ${payment.date} → ${check.next.date}`,
+      amount: check.next.amount,
+      actor: gate.actor,
+      reason: gate.reason,
+      before: summarisePayment(payment),
+      after: summarisePayment({ ...payment.toObject(), ...check.next }),
+      data: { paymentId: String(payment._id), changes },
+      baseVersion: versionOf(payment),
+      meta: { ip: gate.ip, userAgent: gate.userAgent, usedLegacyPin: gate.usedLegacyPin },
+    });
+    if (!reqResult.ok) return NextResponse.json({ success: false, error: reqResult.error }, { status: 409 });
+    return NextResponse.json({
+      success: true,
+      pending: true,
+      message: "Sent to the Admin for approval. The payment stays as it is until it is approved.",
+    });
+  } catch (error: any) {
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
+}
+
+/** Delete a payment. Admin: done now. Store Manager: sent to the Admin. PIN and a reason either way. */
 export async function DELETE(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
-    
-    if (!id) {
+    const body = await request.json().catch(() => ({}));
+
+    const gate = await authoriseChange(request, body.pin ?? searchParams.get("pin") ?? "", body.reason ?? searchParams.get("reason") ?? "");
+    if (!gate.ok) return gate.response;
+
+    if (!id || !mongoose.isValidObjectId(id)) {
       return NextResponse.json({ success: false, error: "Payment ID is required" }, { status: 400 });
     }
-
     await connectToDatabase();
-    
-    const payment = await PaymentTransaction.findById(id);
+
+    const payment: any = await PaymentTransaction.findById(id);
     if (!payment) {
       return NextResponse.json({ success: false, error: "Payment not found" }, { status: 404 });
     }
+    const before = summarisePayment(payment);
 
-    // Reverse the balance update for Customer or Supplier
-    if (payment.partyType === "Customer") {
-      const Customer = (await import("@/models/Customer")).default;
-      const multiplier = payment.type === "paid" ? -1 : 1;
-      await Customer.findByIdAndUpdate(payment.partyId, {
-        $inc: { outstandingBalance: multiplier * Number(payment.amount) } // add it back or subtract it
+    if (gate.mode === "direct") {
+      await removePayment(payment);
+      await auditChange({
+        action: "payment.delete",
+        entityType: "Payment",
+        entityRef: payment.transactionId,
+        entityId: String(payment._id),
+        partyName: payment.partyName,
+        amount: Number(payment.amount) || 0,
+        reason: gate.reason,
+        actor: gate.actor,
+        ip: gate.ip,
+        userAgent: gate.userAgent,
+        usedLegacyPin: gate.usedLegacyPin,
+        metadata: { before },
       });
-
-      // Revert invoice paid amount if referenceId was linked
-      if (payment.referenceId) {
-        try {
-          const Invoice = (await import("@/models/Invoice")).default;
-          const inv = await Invoice.findOne({ invoiceNumber: payment.referenceId });
-          if (inv) {
-            const newPaid = Math.max(0, (Number(inv.paidAmount) || 0) - Number(payment.amount));
-            const newBalance = Math.max(0, (Number(inv.total) || 0) - newPaid);
-            const newStatus = newPaid <= 0 ? "pending" : newBalance <= 0 ? "paid" : "partial";
-            await Invoice.findByIdAndUpdate(inv._id, {
-              paidAmount: newPaid,
-              balanceAmount: newBalance,
-              status: newStatus,
-            });
-          }
-        } catch (e) {
-          console.warn("Notice reverting invoice from payment delete:", e);
-        }
-      }
-    } else if (payment.partyType === "Supplier") {
-      const Supplier = (await import("@/models/Supplier")).default;
-      // Reverse of POST: if we paid supplier, removing payment INCREASES our outstanding (1)
-      // if we received refund, removing payment DECREASES our outstanding (-1)
-      const multiplier = payment.type === "paid" ? 1 : -1;
-      await Supplier.findByIdAndUpdate(payment.partyId, {
-        $inc: { outstandingBalance: multiplier * Number(payment.amount) }
-      });
-
-      // Removing a payment made against a purchase bill puts that amount back on it.
-      if (payment.type === "paid") {
-        const bill: any = await purchaseBillFor(payment.referenceId);
-        if (bill) {
-          const state = purchasePaymentState(bill.total, (Number(bill.paid) || 0) - Number(payment.amount));
-          bill.paid = Math.max(0, state.paid);
-          bill.balance = state.balance;
-          bill.status = state.status;
-          await bill.save();
-        }
-      }
+      return NextResponse.json({ success: true, message: "Payment deleted successfully" });
     }
 
-    await PaymentTransaction.findByIdAndDelete(id);
-
-    return NextResponse.json({ success: true, message: "Payment deleted successfully" });
+    const reqResult = await createChangeRequest({
+      kind: "payment_delete",
+      target: `payment:${payment._id}`,
+      title: `Delete ${payment.partyType === "Supplier" ? "supplier payment" : "customer receipt"} — ${payment.partyName}`,
+      description: `₹${Number(payment.amount).toLocaleString("en-IN")} · ${payment.paymentMode} · ${payment.date}${payment.referenceId ? ` · against ${payment.referenceId}` : ""}`,
+      amount: Number(payment.amount) || 0,
+      actor: gate.actor,
+      reason: gate.reason,
+      before,
+      after: { deleted: true },
+      data: { paymentId: String(payment._id) },
+      baseVersion: versionOf(payment),
+      meta: { ip: gate.ip, userAgent: gate.userAgent, usedLegacyPin: gate.usedLegacyPin },
+    });
+    if (!reqResult.ok) return NextResponse.json({ success: false, error: reqResult.error }, { status: 409 });
+    return NextResponse.json({
+      success: true,
+      pending: true,
+      message: "Sent to the Admin for approval. The payment stays until it is approved.",
+    });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }

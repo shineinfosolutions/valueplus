@@ -28,6 +28,29 @@ async function getPendingDate(): Promise<string | null> {
   return addDays(latest.date, 1);
 }
 
+/**
+ * The cash the drawer should hold at the end of a business day: what the last
+ * audit counted in it (0 before the first audit), plus the
+ * cash that came in that day (bills first) and minus what went out (expenses,
+ * deposits, handovers). Only that day's movements count, so a day is checked against
+ * its own cash and not against the register's running total.
+ */
+async function expectedForDay(date: string) {
+  const summary = await getCashRegisterSummary(date);
+  const day = summary.forDate!;
+  // Only the day's own cash counts: nothing is carried over from the day before, so a day
+  // with no cash bills does not inherit the previous day's count.
+  const opening = 0;
+  return {
+    date,
+    opening,
+    cashIn: day.cashIn,
+    cashFromInvoices: day.cashFromInvoices,
+    cashOut: day.cashOut,
+    closing: Math.max(0, Math.round((opening + day.cashIn - day.cashOut) * 100) / 100),
+  };
+}
+
 export async function GET(req: Request) {
   try {
     await connectToDatabase();
@@ -35,7 +58,9 @@ export async function GET(req: Request) {
     // Last 60 days of closed audits — so Admin/Manager can see who actually
     // did each day's cash count, when, and whether it matched the system.
     const history = await DayClose.find({}).sort({ date: -1 }).limit(60).lean();
-    return NextResponse.json({ success: true, data: { pendingDate, history } });
+    // What the drawer should hold at the end of the pending day (start, cash in, cash out).
+    const pendingSummary = pendingDate ? await expectedForDay(pendingDate) : null;
+    return NextResponse.json({ success: true, data: { pendingDate, pendingSummary, history } });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
@@ -72,15 +97,19 @@ export async function POST(req: Request) {
     }
     const countedCash = denominationTotal(denominations, coinsAmount);
 
-    const summary = await getCashRegisterSummary();
-    const systemExpectedCash = summary.currentBalance;
+    // What the drawer should hold at the end of the day being closed (see expectedForDay).
+    const day = await expectedForDay(pendingDate);
+    const systemExpectedCash = day.closing;
 
-    const previous = await DayClose.findOne({}).sort({ date: -1 });
-    const openingCash = previous ? previous.countedCash : summary.baseOpening;
+    const openingCash = day.opening;
 
     const record = await DayClose.create({
       date: pendingDate,
       openingCash,
+      systemOpeningCash: day.opening,
+      dayCashIn: day.cashIn,
+      dayCashFromInvoices: day.cashFromInvoices,
+      dayCashOut: day.cashOut,
       systemExpectedCash,
       countedCash,
       denominations,

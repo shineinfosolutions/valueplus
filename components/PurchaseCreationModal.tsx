@@ -1244,8 +1244,9 @@ export function PurchaseCreationModal({ isOpen, onClose, mode = "entry", preload
                                               content size, so without this a long product name pushed the
                                               row wider than the dropdown and got clipped by the dialog's own
                                               overflow-hidden, which is what silently cut names off. */}
-                                          <span className="font-semibold text-slate-800 truncate min-w-0" title={c.name}>
-                                            {c.name}
+                                          <span className="min-w-0">
+                                            <span className="block font-semibold text-slate-800 truncate" title={c.name}>{c.name}</span>
+                                            <span className="block text-[10px] text-slate-400 font-mono truncate">{c.vpCode || c.code} · {c.brand && !/^(brand|no\s*brand|valueplus)$/i.test(c.brand) ? c.brand : "no brand"}</span>
                                           </span>
                                           <span className="text-slate-500 font-mono shrink-0">{formatCurrency(c.purchasePrice || 0)}</span>
                                         </div>

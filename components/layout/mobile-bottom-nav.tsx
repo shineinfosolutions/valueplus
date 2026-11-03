@@ -3,7 +3,8 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useSession, signOut } from "next-auth/react";
+import { useSession } from "next-auth/react";
+import { signOutAndForgetDevice } from "@/lib/push-client";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useBranch } from "@/context/BranchContext";
@@ -152,19 +153,19 @@ export function MobileBottomNav() {
     <>
       {/* ─── FLOATING NATIVE MOBILE BOTTOM NAVIGATION BAR ─────────────────── */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 pointer-events-auto print:hidden">
-        <div className="mx-3 mb-3 bg-[#1B2537]/90 backdrop-blur-2xl border border-white/15 rounded-3xl shadow-[0_12px_32px_rgba(0,0,0,0.4)] px-2 py-1.5 flex items-center justify-around">
+        <div className="mx-3 mb-[max(12px,env(safe-area-inset-bottom))] bg-[#1B2537]/95 backdrop-blur-2xl border border-white/15 rounded-3xl shadow-[0_12px_32px_rgba(0,0,0,0.4)] px-1.5 py-1 flex items-end justify-between min-h-[60px]">
           {tabs.map((tab, idx) => {
             if (tab.isFab) {
               return (
-                <div key="fab" className="relative -top-5 flex flex-col items-center">
+                <div key="fab" className="relative flex-1 flex flex-col items-center justify-end self-stretch">
                   <button
                     onClick={() => setIsQuickActionsOpen(true)}
-                    className="w-13 h-13 rounded-full bg-gradient-to-tr from-[#76C043] via-[#8CE846] to-[#5ea133] text-slate-950 flex items-center justify-center shadow-[0_8px_20px_rgba(118,192,67,0.5)] border-3 border-[#1B2537] active:scale-90 transition-transform"
+                    className="absolute -top-6 w-14 h-14 rounded-full bg-gradient-to-tr from-[#76C043] via-[#8CE846] to-[#5ea133] text-slate-950 flex items-center justify-center shadow-[0_8px_20px_rgba(118,192,67,0.5)] border-4 border-[#1B2537] active:scale-90 transition-transform"
                     aria-label="Quick Actions"
                   >
                     <Plus className="w-7 h-7 stroke-[2.8]" />
                   </button>
-                  <span className="text-[10px] font-black text-[#76C043] mt-0.5 tracking-tight">Quick</span>
+                  <span className="text-[11px] font-bold text-[#76C043] pb-1.5 leading-none">Quick</span>
                 </div>
               );
             }
@@ -175,10 +176,11 @@ export function MobileBottomNav() {
                 <button
                   key="menu"
                   onClick={() => setIsMenuDrawerOpen(true)}
-                  className="flex flex-col items-center justify-center flex-1 py-1.5 text-slate-400 hover:text-white transition-colors"
+                  className="flex flex-col items-center justify-center flex-1 min-h-[52px] py-1.5 text-slate-300 hover:text-white active:text-white transition-colors"
+                  aria-label="Open menu"
                 >
                   <Icon className="w-5 h-5 stroke-[2.2]" />
-                  <span className="text-[10px] font-bold mt-1 tracking-tight">Menu</span>
+                  <span className="text-[11px] font-semibold mt-1 leading-none">Menu</span>
                 </button>
               );
             }
@@ -190,9 +192,10 @@ export function MobileBottomNav() {
               <Link
                 key={tab.href}
                 href={tab.href!}
+                aria-current={isActive ? "page" : undefined}
                 className={cn(
-                  "flex flex-col items-center justify-center flex-1 py-1.5 transition-all relative",
-                  isActive ? "text-[#76C043] font-bold" : "text-slate-400 hover:text-slate-200"
+                  "flex flex-col items-center justify-center flex-1 min-h-[52px] py-1.5 transition-all relative",
+                  isActive ? "text-[#76C043]" : "text-slate-300 hover:text-white active:text-white"
                 )}
               >
                 <div className="relative">
@@ -204,7 +207,7 @@ export function MobileBottomNav() {
                     />
                   )}
                 </div>
-                <span className="text-[10px] mt-1 tracking-tight leading-none">{tab.label}</span>
+                <span className={cn("text-[11px] mt-1.5 leading-none", isActive ? "font-bold" : "font-medium")}>{tab.label}</span>
               </Link>
             );
           })}
@@ -281,23 +284,6 @@ export function MobileBottomNav() {
                     <p className="text-[10px] text-slate-400">Vehicle & KYC</p>
                   </div>
                 </button>
-
-                {/* Driver Quick 4: Attendance */}
-                <button
-                  onClick={() => {
-                    setIsQuickActionsOpen(false);
-                    router.push("/staff/attendance");
-                  }}
-                  className="p-3 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-left transition-all group flex flex-col justify-between h-24"
-                >
-                  <div className="w-8 h-8 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center font-bold group-hover:scale-110 transition-transform">
-                    <Clock className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold text-white">Punch Attendance</p>
-                    <p className="text-[10px] text-slate-400">Daily In/Out</p>
-                  </div>
-                </button>
               </>
             ) : (
               <>
@@ -318,12 +304,31 @@ export function MobileBottomNav() {
                   </div>
                 </button>
 
+                {/* Quick 2a: Bill (goes to the cashier) */}
+                {userRole === "salesman" && (
+                  <button
+                    onClick={() => {
+                      setIsQuickActionsOpen(false);
+                      router.push("/sales/estimates?new=bill");
+                    }}
+                    className="p-3 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-left transition-all group flex flex-col justify-between h-24"
+                  >
+                    <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold group-hover:scale-110 transition-transform">
+                      <FileText className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-white">New Bill</p>
+                      <p className="text-[10px] text-slate-400">Customer is buying</p>
+                    </div>
+                  </button>
+                )}
+
                 {/* Quick 2: Estimate */}
                 {userRole === "salesman" && (
                   <button
                     onClick={() => {
                       setIsQuickActionsOpen(false);
-                      router.push("/sales/estimates");
+                      router.push("/sales/estimates?new=true");
                     }}
                     className="p-3 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-left transition-all group flex flex-col justify-between h-24"
                   >
@@ -458,7 +463,7 @@ export function MobileBottomNav() {
                 <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider px-2">
                   {group.title}
                 </p>
-                <div className="grid grid-cols-1 gap-1">
+                <div className="grid grid-cols-3 gap-1.5">
                   {group.items.map((item) => {
                     const Icon = item.icon;
                     const isItemActive = pathname === item.href;
@@ -469,17 +474,14 @@ export function MobileBottomNav() {
                         {...(item.external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
                         onClick={() => setIsMenuDrawerOpen(false)}
                         className={cn(
-                          "flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all",
-                          isItemActive 
-                            ? "bg-[#30539C] text-white shadow-md font-bold" 
-                            : "text-slate-300 hover:bg-white/10 hover:text-white"
+                          "flex min-h-[72px] flex-col items-center justify-start gap-1 rounded-xl border px-1.5 py-2 text-center transition-all",
+                          isItemActive
+                            ? "border-[#30539C] bg-[#30539C] text-white shadow-md font-bold"
+                            : "border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white"
                         )}
                       >
-                        <div className="flex items-center gap-2.5">
-                          <Icon className="w-4 h-4" />
-                          <span>{item.title}</span>
-                        </div>
-                        <ChevronRight className="w-3.5 h-3.5 opacity-60" />
+                        <Icon className="h-5 w-5 shrink-0" />
+                        <span className="line-clamp-3 break-words text-[10px] font-semibold leading-[1.15]">{item.title}</span>
                       </Link>
                     );
                   })}
@@ -491,7 +493,7 @@ export function MobileBottomNav() {
           {/* Drawer Footer */}
           <div className="p-3 border-t border-white/10 bg-black/30 flex items-center justify-between">
             <button
-              onClick={() => signOut({ callbackUrl: logoutUrl })}
+              onClick={() => signOutAndForgetDevice({ callbackUrl: logoutUrl })}
               className="flex items-center gap-2 px-3 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-xs font-bold transition-colors"
             >
               <LogOut className="w-4 h-4" />

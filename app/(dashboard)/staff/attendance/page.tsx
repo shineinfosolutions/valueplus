@@ -63,9 +63,9 @@ export default function StaffAttendancePage() {
   // Shift Settings Modal State
   const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
   const [shiftForm, setShiftForm] = useState({
-    shiftName: "Showroom Shift (10:00 AM - 06:00 PM)",
+    shiftName: "Showroom Shift (10:00 AM - 09:00 PM)",
     startTime: "10:00",
-    endTime: "18:00",
+    endTime: "21:00",
     lateGraceMinutes: 15,
     halfDayLateCutoff: "12:00",
     minHoursForFullDay: 7.5,
@@ -81,7 +81,7 @@ export default function StaffAttendancePage() {
     staffRole: "salesman",
     date: todayIST,
     checkInTime: "10:00 AM",
-    checkOutTime: "06:00 PM",
+    checkOutTime: "09:00 PM",
     status: "Present" as "Present" | "Late" | "Half-Day" | "Absent" | "On Leave",
     notes: "",
   });
@@ -104,9 +104,9 @@ export default function StaffAttendancePage() {
       const json = await res.json();
       if (json.success && json.data) {
         setShiftForm({
-          shiftName: json.data.shiftName || "Showroom Shift (10:00 AM - 06:00 PM)",
+          shiftName: json.data.shiftName || "Showroom Shift (10:00 AM - 09:00 PM)",
           startTime: json.data.startTime || "10:00",
-          endTime: json.data.endTime || "18:00",
+          endTime: json.data.endTime || "21:00",
           lateGraceMinutes: json.data.lateGraceMinutes ?? 15,
           halfDayLateCutoff: json.data.halfDayLateCutoff || "12:00",
           minHoursForFullDay: json.data.minHoursForFullDay ?? 7.5,
@@ -304,7 +304,7 @@ export default function StaffAttendancePage() {
                     staffRole: usersList.length > 0 ? usersList[0].role : "salesman",
                     date: selectedDate === "all" ? todayIST : selectedDate,
                     checkInTime: "10:00 AM",
-                    checkOutTime: "06:00 PM",
+                    checkOutTime: "09:00 PM",
                     status: "Present",
                     notes: "Manual attendance entry",
                   });
@@ -637,6 +637,10 @@ export default function StaffAttendancePage() {
                           {rec.checkInTime && rec.checkInTime !== "--" ? (
                             <div className="flex items-center gap-1.5">
                               <span className="font-mono font-bold text-emerald-700">{rec.checkInTime}</span>
+                              {isManagerOrAdmin && rec.checkInPhotoKey && (
+                                <a href={`/api/staff/attendance/photo?id=${rec._id}`} target="_blank" rel="noreferrer" title="Check-in selfie" className="text-[11px] font-bold text-[#30539C] hover:underline">📷</a>
+                              )}
+                              {rec.lateMinutes > 0 && <span className="text-[10px] font-bold text-amber-700">{rec.lateMinutes} min</span>}
                               {rec.isLate && (
                                 <Badge className="bg-amber-100 text-amber-800 border-amber-300 text-[9px] px-1 py-0 font-bold">
                                   Late
@@ -731,7 +735,7 @@ export default function StaffAttendancePage() {
                                   staffRole: rec.staffRole || "salesman",
                                   date: rec.date,
                                   checkInTime: rec.checkInTime || "10:00 AM",
-                                  checkOutTime: rec.checkOutTime || "06:00 PM",
+                                  checkOutTime: rec.checkOutTime || "09:00 PM",
                                   status: rec.status || "Present",
                                   notes: rec.notes || "",
                                 });
@@ -962,7 +966,7 @@ export default function StaffAttendancePage() {
               <div>
                 <Label className="font-bold text-slate-700">Check-Out Time</Label>
                 <Input
-                  placeholder="e.g. 06:00 PM"
+                  placeholder="e.g. 09:00 PM"
                   value={manualForm.checkOutTime}
                   onChange={(e) => setManualForm({ ...manualForm, checkOutTime: e.target.value })}
                   className="h-9 mt-1 text-xs font-mono"

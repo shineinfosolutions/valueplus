@@ -17,9 +17,13 @@
   "observability": {
     "enabled": true
   },
+  // Photos the delivery boy takes at handover (viewed by Admin / Manager).
+  "r2_buckets": [{ "binding": "DELIVERY_PROOFS", "bucket_name": "valueplus-delivery-proofs" }],
   "vars": {
     "NEXTAUTH_URL": "https://valuplus.shineinfosolutions.in"
   },
+  // Every minute (worker.ts picks the job): office-time reminder at 10:00 India time, late / break alerts.
+  "triggers": { "crons": ["* * * * *"] },
   "routes": [
     { "pattern": "valuplus.shineinfosolutions.in", "custom_domain": true }
   ],
@@ -44,6 +48,8 @@
           "service": "valueplus-erp-staging"
         }
       ],
+      "triggers": { "crons": ["* * * * *"] },
+      "r2_buckets": [{ "binding": "DELIVERY_PROOFS", "bucket_name": "valueplus-delivery-proofs-staging" }],
       "vars": {
         "NEXTAUTH_URL": "https://valueplus-erp-staging.shineinfosolutions1.workers.dev"
       }

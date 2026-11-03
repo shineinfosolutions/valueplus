@@ -23,6 +23,8 @@ export interface IStaffTask extends Document {
   linkedInvoiceNumber?: string; // e.g. "INV-2026-0042"
 
   createdBy: string;
+  /** Who has opened the notification for this task, and when (shown to the Admin / Manager as "Seen"). */
+  seenBy?: Array<{ userId: string; name: string; at: Date }>;
   completedAt?: Date;
   completionRemarks?: string;
   notes?: string;
@@ -77,6 +79,7 @@ const StaffTaskSchema = new Schema<IStaffTask>(
     linkedInvoiceNumber: { type: String, default: "" },
 
     createdBy: { type: String, default: "Admin" },
+    seenBy: { type: [{ _id: false, userId: String, name: String, at: Date }], default: [] },
     completedAt: { type: Date },
     completionRemarks: { type: String, default: "" },
     notes: { type: String, default: "" },

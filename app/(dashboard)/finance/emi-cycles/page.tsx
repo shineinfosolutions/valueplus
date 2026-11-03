@@ -206,7 +206,7 @@ export default function MonthlyEmiCyclesStandalonePage() {
     >
       <div className="space-y-4">
         {/* SUMMARY KPI CARDS */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-4">
           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
             <div>
               <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Total Financed Portfolio</span>

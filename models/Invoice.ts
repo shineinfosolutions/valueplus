@@ -198,6 +198,12 @@ export interface IInvoice extends Document {
   driverName?: string;
   driverPhone?: string;
   driverVehicleNo?: string;
+  /** Photo of the delivered goods, kept in the R2 bucket (key + who / when). */
+  deliveryProofKey?: string;
+  /** The three photos of the delivered goods (R2 keys); deliveryProofKey is the first. */
+  deliveryProofKeys?: string[];
+  deliveryProofAt?: Date | string;
+  deliveryProofBy?: string;
   deliveredAt?: Date | string;
 
   deliveryChallanNo?: string;
@@ -395,6 +401,10 @@ const InvoiceSchema = new Schema<IInvoice>(
     driverName: { type: String, default: "" },
     driverPhone: { type: String, default: "" },
     driverVehicleNo: { type: String, default: "" },
+    deliveryProofKey: { type: String, default: "" },
+    deliveryProofKeys: { type: [String], default: [] },
+    deliveryProofAt: { type: Date },
+    deliveryProofBy: { type: String, default: "" },
     deliveredAt: { type: Date },
 
     deliveryChallanNo: String,

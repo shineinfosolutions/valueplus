@@ -1,7 +1,17 @@
+import { getActor } from "@/lib/requirePermission";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import User from "@/models/User";
 import bcrypt from "bcryptjs";
+
+/** The Store Manager can see the staff master, but logins, roles and passwords are changed by the Admin only. */
+async function managerBlocked() {
+  const actor = await getActor();
+  if (actor?.role === "manager") {
+    return NextResponse.json({ success: false, error: "Only the Admin can add or change staff logins, roles and passwords." }, { status: 403 });
+  }
+  return null;
+}
 
 export async function GET() {
   try {
@@ -19,6 +29,8 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
+    const blocked = await managerBlocked();
+    if (blocked) return blocked;
     await connectToDatabase();
     const body = await req.json();
 
@@ -56,6 +68,7 @@ export async function POST(req: Request) {
       );
     }
 
+    const isDelivery = ["driver", "courier", "delivery"].includes(String(role || "").toLowerCase());
     const existing = await User.findOne({ email: email.toLowerCase().trim() });
     if (existing) {
       return NextResponse.json(
@@ -91,8 +104,10 @@ export async function POST(req: Request) {
       bankIfsc: bankIfsc || "",
       assignedWarehouseId: assignedWarehouseId || "",
       assignedWarehouseName: assignedWarehouseName || "",
-      assignedBrand: body.assignedBrand || "",
-      assignedBrands: Array.isArray(body.assignedBrands) ? body.assignedBrands : (body.assignedBrand ? [body.assignedBrand] : []),
+      // Delivery staff have no company brand; they have a vehicle number (it fills in on a bill with a delivery).
+      assignedBrand: isDelivery ? "" : body.assignedBrand || "",
+      assignedBrands: isDelivery ? [] : Array.isArray(body.assignedBrands) ? body.assignedBrands : (body.assignedBrand ? [body.assignedBrand] : []),
+      vehicleNumber: isDelivery ? String(body.vehicleNumber || "").trim().toUpperCase() : "",
       status: "active",
     });
 
@@ -107,6 +122,8 @@ export async function POST(req: Request) {
 
 export async function PUT(req: Request) {
   try {
+    const blocked = await managerBlocked();
+    if (blocked) return blocked;
     await connectToDatabase();
     const body = await req.json();
     const { id, password, ...updateFields } = body;
@@ -117,6 +134,18 @@ export async function PUT(req: Request) {
 
     if (password && password.trim().length > 0) {
       updateFields.password = await bcrypt.hash(password, 10);
+    }
+    // Delivery staff: no company brand, a vehicle number instead. Anyone else: no vehicle.
+    if (updateFields.role !== undefined || updateFields.vehicleNumber !== undefined) {
+      const current: any = await User.findById(id).select("role").lean();
+      const role = String(updateFields.role ?? current?.role ?? "").toLowerCase();
+      if (["driver", "courier", "delivery"].includes(role)) {
+        updateFields.assignedBrand = "";
+        updateFields.assignedBrands = [];
+        if (updateFields.vehicleNumber !== undefined) updateFields.vehicleNumber = String(updateFields.vehicleNumber || "").trim().toUpperCase();
+      } else {
+        updateFields.vehicleNumber = "";
+      }
     }
 
     const updated = await User.findByIdAndUpdate(id, updateFields, { new: true })
@@ -135,6 +164,8 @@ export async function PUT(req: Request) {
 
 export async function DELETE(req: Request) {
   try {
+    const blocked = await managerBlocked();
+    if (blocked) return blocked;
     await connectToDatabase();
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");

@@ -70,6 +70,10 @@ export async function GET(req: Request) {
     const filter: any = {};
     if (action) filter.action = action;
     if (from || to) filter.createdAt = range;
+    // A bill's own history: exact references (e.g. the bill number, and "invoice:<number>"
+    // for the requests sent about it), comma separated.
+    const refs = (searchParams.get("refs") || "").split(",").map((r) => r.trim()).filter(Boolean).slice(0, 10);
+    if (refs.length > 0) filter.entityRef = { $in: refs };
     if (q) {
       const rx = new RegExp(escapeRegex(q), "i");
       filter.$or = [{ entityRef: rx }, { partyName: rx }, { performedBy: rx }, { reason: rx }];

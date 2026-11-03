@@ -22,6 +22,8 @@ export interface IItem extends Document {
   hsnCode: string;
   gstRate: number;
   purchasePrice: number;
+  /** True when `purchasePrice` already has GST in it; profit then does not add GST on top. */
+  purchaseIncludesGst?: boolean;
   sellingPrice: number;
   /** Value Plus Selling Price — the price Value Plus suggests this item be
    *  sold at. Reference only: billing can still charge any amount, this
@@ -32,6 +34,10 @@ export interface IItem extends Document {
    *  the product is purchased; absent on older products, which are Value Plus. */
   billingEntity?: "valueplus" | "ashoka";
   minSellingPrice?: number;
+  /** Locked minimum price set by Admin / Manager. Estimates may not go below it without the price-unlock PIN. 0 = no lock. */
+  lockedMinPrice?: number;
+  priceLockedBy?: string;
+  priceLockedAt?: Date;
   maxDiscountPercent?: number;
   maxDiscountAmount?: number;
   incentiveTargetAmount?: number;
@@ -86,9 +92,13 @@ const ItemSchema = new Schema<IItem>(
     // Never saved above 18% (see lib/gst-rate.ts).
     gstRate: { type: Number, default: 18, set: (v: any) => allowedGstRate(v) },
     purchasePrice: { type: Number, required: true },
+    purchaseIncludesGst: { type: Boolean, default: false },
     sellingPrice: { type: Number, required: true },
     vsp: { type: Number, default: 0 },
     minSellingPrice: { type: Number, default: 0 },
+    lockedMinPrice: { type: Number, default: 0 },
+    priceLockedBy: { type: String, default: "" },
+    priceLockedAt: { type: Date },
     maxDiscountPercent: { type: Number, default: 0 },
     maxDiscountAmount: { type: Number, default: 0 },
     incentiveTargetAmount: { type: Number, default: 0 },

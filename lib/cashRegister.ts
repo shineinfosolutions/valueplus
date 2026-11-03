@@ -3,6 +3,7 @@ import Invoice from "@/models/Invoice";
 import Expense from "@/models/Expense";
 import FinanceTransaction from "@/models/FinanceTransaction";
 import PaymentTransaction from "@/models/PaymentTransaction";
+import CashRegisterSetting from "@/models/CashRegisterSetting";
 
 /**
  * Builds the same consolidated cash ledger + running balance the Cash Register
@@ -25,7 +26,7 @@ function momentOf(date?: string, time?: string, createdAt?: any): number {
   return date ? new Date(`${date}T12:00:00+05:30`).getTime() : 0;
 }
 
-export async function getCashRegisterSummary() {
+export async function getCashRegisterSummary(asOfDate?: string) {
   const todayStr = istDay(new Date());
 
   const recordedTxns = await CashTransaction.find({}).sort({ createdAt: -1 });
@@ -66,8 +67,25 @@ export async function getCashRegisterSummary() {
   const consolidatedLedger: any[] = [];
   const seenRefs = new Set<string>();
 
+  // A cashier's handover that the Admin has not confirmed (or said was not received) is not a handover yet:
+  // the cash is still with the cashier, so it stays out of every figure below.
+  const pendingHandovers: any[] = [];
+  const rejectedHandovers: any[] = [];
   recordedTxns.forEach((tx) => {
     seenRefs.add(tx.referenceNo);
+    if (tx.category === "MD_HANDOVER" && (tx.adminStatus === "pending" || tx.adminStatus === "rejected")) {
+      const row = {
+        _id: tx._id.toString(),
+        amount: Number(tx.amount || 0),
+        date: tx.date || todayStr,
+        time: tx.time || "",
+        recordedBy: tx.recordedBy || "Cashier",
+        description: tx.description || "",
+        reason: tx.adminRejectReason || "",
+      };
+      (tx.adminStatus === "pending" ? pendingHandovers : rejectedHandovers).push(row);
+      return;
+    }
     consolidatedLedger.push({
       _id: tx._id.toString(),
       type: tx.type,
@@ -302,10 +320,55 @@ export async function getCashRegisterSummary() {
     sinceLastHandover.push(e);
   });
 
-  const baseOpening = 200000;
+  // The starting figure is the one the Admin set from a real drawer count; until then 0.
+  // (It used to be a fixed 2,00,000 that was never real cash.)
+  const setting: any = await CashRegisterSetting.findOne({ key: "cash-register" }).lean();
+  const baseOpening = Number(setting?.openingCash) || 0;
   const currentBalance = Math.max(0, baseOpening + totalInflow - totalOutflow);
 
+  // The drawer on one particular business day: what the system had at the start of
+  // that day, the cash that came in (bills first) and went out that day, and so what
+  // it should hold at the end of it. Day-close uses this, so a day is checked against
+  // its own cash, not against whatever the register holds when the audit is typed in.
+  let forDate: null | {
+    date: string;
+    opening: number;
+    cashIn: number;
+    cashFromInvoices: number;
+    cashOut: number;
+    closing: number;
+  } = null;
+  if (asOfDate && /^\d{4}-\d{2}-\d{2}$/.test(asOfDate)) {
+    let before = 0;
+    let cashIn = 0;
+    let cashFromInvoices = 0;
+    let cashOut = 0;
+    consolidatedLedger.forEach((item) => {
+      const d = String(item.date || "").slice(0, 10);
+      const amt = Number(item.amount || 0);
+      const sign = item.type === "INFLOW" ? 1 : -1;
+      if (d < asOfDate) before += sign * amt;
+      else if (d === asOfDate) {
+        if (sign > 0) {
+          cashIn += amt;
+          if (item.source === "INVOICE") cashFromInvoices += amt;
+        } else cashOut += amt;
+      }
+    });
+    const round = (n: number) => Math.round(n * 100) / 100;
+    const opening = Math.max(0, baseOpening + before);
+    forDate = {
+      date: asOfDate,
+      opening: round(opening),
+      cashIn: round(cashIn),
+      cashFromInvoices: round(cashFromInvoices),
+      cashOut: round(cashOut),
+      closing: round(Math.max(0, opening + cashIn - cashOut)),
+    };
+  }
+
   return {
+    forDate,
     currentBalance,
     baseOpening,
     totalInflow,
@@ -318,6 +381,8 @@ export async function getCashRegisterSummary() {
     cashSinceLastHandover: Math.max(0, Math.round(cashSinceLastHandover * 100) / 100),
     lastHandover: lastHandover ? { amount: lastHandover.amount, date: lastHandover.date, time: lastHandover.time, at: lastHandover.at } : null,
     sinceLastHandover: sinceLastHandover.sort((a, b) => (a.at || 0) - (b.at || 0)),
+    pendingHandovers,
+    rejectedHandovers: rejectedHandovers.slice(0, 3),
     ledger: consolidatedLedger,
   };
 }

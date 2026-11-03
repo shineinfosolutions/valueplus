@@ -208,7 +208,7 @@ export default function StockFlowPage() {
       }
     >
       {/* ─── 4 TOP METRIC CARDS ───────────────────────────────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
         {/* Metric 1: Live On-Hand Inventory */}
         <div className="metric-card bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-3.5">
           <div className="w-12 h-12 rounded-xl bg-[#3F63AD]/10 text-[#3F63AD] flex items-center justify-center shrink-0">

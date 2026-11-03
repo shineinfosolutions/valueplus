@@ -4,7 +4,7 @@ import Invoice from "@/models/Invoice";
 import Item from "@/models/Item";
 import Expense from "@/models/Expense";
 import PurchaseEntry from "@/models/PurchaseEntry";
-import { buildCatalogLookup, lineUnitCost } from "@/lib/sale-cost";
+import { buildCatalogLookup, costWithGst, lineUnitCost } from "@/lib/sale-cost";
 import { getActor } from "@/lib/requirePermission";
 
 export async function GET(req: Request) {
@@ -76,6 +76,9 @@ export async function GET(req: Request) {
     let totalRevenue = 0;
     let totalCOGS = 0;
     let totalTaxCollected = 0;
+    // GST charged on the bill lines this period — same basis as the revenue
+    // above (line taxable amounts), so the GST box compares like with like.
+    let salesGst = 0;
     let totalDiscountGiven = 0;
     let totalUnitsSold = 0;
 
@@ -101,13 +104,19 @@ export async function GET(req: Request) {
 
         const matched = findCatalogItem(line);
         // The cost the line was billed at; older bills fall back to the catalog's.
-        const purchaseRate = lineUnitCost(line, matched);
-        const lineTaxable = Number(line.taxableAmount) || Number(line.amount) || (Number(line.rate || 0) * qty);
+        // Purchase prices are before GST; the bill is GST included, so the cost gets the product's GST too.
+        const purchaseRate = costWithGst(lineUnitCost(line, matched), line, matched);
+        const taxablePart = Number(line.taxableAmount) || Number(line.amount) || (Number(line.rate || 0) * qty);
+        const lineGst = (Number(line.cgst) || 0) + (Number(line.sgst) || 0) + (Number(line.igst) || 0);
+        // The amount the customer was billed for the product, GST included — the same
+        // basis as the purchase rate (purchases are entered with GST included).
+        const lineTaxable = taxablePart + lineGst;
         const lineCost = purchaseRate * qty;
         const lineProfit = lineTaxable - lineCost;
 
         invRevenue += lineTaxable;
         invCost += lineCost;
+        salesGst += lineGst;
 
         // Aggregate Product metrics
         const prodKey = matched?.code || matched?.vpCode || line.itemCode || line.vpCode || line.itemName || "UNKNOWN";
@@ -196,13 +205,23 @@ export async function GET(req: Request) {
     // A debit-note is a return TO the supplier (stock going back out), so it
     // subtracts from the period's net purchase value rather than adding to
     // it, the same way it already reverses inventory on save.
+    //
+    // Purchases are shown at the bill total, GST included — the same basis as
+    // sales (the amount on the invoice, GST included) and as the purchase rate
+    // used for the cost of goods sold. The GST on purchases is also kept apart
+    // (purchaseGst) for the GST box on the report.
     let totalPurchases = 0;
+    let purchaseGst = 0;
     const supplierPurchaseMap = new Map<string, { name: string; amount: number; bills: number }>();
 
     for (const pur of purchaseEntries) {
-      const amt = Number(pur.total) || 0;
-      const signedAmt = pur.type === "debit-note" ? -amt : amt;
+      const gstPart = Number(pur.gst) || 0;
+      const totalAmt = Number(pur.total) || 0;
+      const amt = totalAmt > 0 ? totalAmt : Math.max(0, (Number(pur.subtotal) || 0) + gstPart);
+      const sign = pur.type === "debit-note" ? -1 : 1;
+      const signedAmt = sign * amt;
       totalPurchases += signedAmt;
+      purchaseGst += sign * gstPart;
 
       const supplier = pur.supplierName || "Unknown Supplier";
       if (!supplierPurchaseMap.has(supplier)) {
@@ -284,8 +303,13 @@ export async function GET(req: Request) {
           totalInvoices: invoices.length,
           totalTaxCollected: Math.round(totalTaxCollected),
           totalDiscountGiven: Math.round(totalDiscountGiven),
+          // GST included, like totalRevenue.
           totalPurchases: Math.round(totalPurchases),
           totalPurchaseBills: purchaseEntries.length,
+          // GST apart from profit: charged on sales, paid on purchases.
+          salesGst: Math.round(salesGst),
+          purchaseGst: Math.round(purchaseGst),
+          netGst: Math.round(salesGst - purchaseGst),
         },
         productBreakdown,
         categoryBreakdown,

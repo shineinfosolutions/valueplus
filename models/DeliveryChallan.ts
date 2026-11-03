@@ -33,6 +33,10 @@ export interface IDeliveryChallan extends Document {
   creditNoteRef?: string;
   deliveryOtp?: string;
   deliveredAt?: Date;
+  deliveryProofKey?: string;
+  deliveryProofKeys?: string[];
+  /** True for the challan the system makes by itself when a bill has a delivery / vehicle (shown under Pending Delivery). */
+  autoFromBill?: boolean;
   status: "dispatched" | "in-transit" | "delivered" | "returned" | "received";
   remarks?: string;
 }
@@ -86,6 +90,9 @@ const DeliveryChallanSchema = new Schema<IDeliveryChallan>(
     debitNoteRef: { type: String, default: "" },
     deliveryOtp: { type: String, default: "" },
     deliveredAt: { type: Date },
+    deliveryProofKey: { type: String, default: "" },
+    deliveryProofKeys: { type: [String], default: [] },
+    autoFromBill: { type: Boolean, default: false },
     status: {
       type: String,
       enum: ["dispatched", "in-transit", "delivered", "returned", "received"],

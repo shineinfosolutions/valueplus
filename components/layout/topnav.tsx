@@ -3,7 +3,8 @@
 import { panelForRole } from "@/lib/role-routes";
 import { Bell, Search, Settings, Sun, Moon, ChevronDown, User, LogOut, Sparkles, Wifi, WifiOff, RefreshCw, CloudUpload, CheckCircle2, Power } from "lucide-react";
 import { useState, useEffect } from "react";
-import { useSession, signOut } from "next-auth/react";
+import { useSession } from "next-auth/react";
+import { signOutAndForgetDevice } from "@/lib/push-client";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { useOfflineSync } from "@/components/shared/offline-sync-provider";
@@ -39,6 +40,15 @@ export function Topnav() {
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+  // The long search hint does not fit a phone: it showed as "Search Cu".
+  const [isPhone, setIsPhone] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 639px)");
+    const sync = () => setIsPhone(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
 
   useEffect(() => {
     if (searchQuery.trim().length < 2) {
@@ -90,7 +100,8 @@ export function Topnav() {
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
-            placeholder="Search Customer, Mobile, Invoice #, VP Code, Serial #, Vehicle #, DO ID..."
+            placeholder={isPhone ? "Search…" : "Search Customer, Mobile, Invoice #, VP Code, Serial #, Vehicle #, DO ID..."}
+            aria-label="Search customers, invoices and products"
             value={searchQuery}
             onChange={(e) => {
               setSearchQuery(e.target.value);
@@ -98,7 +109,7 @@ export function Topnav() {
             }}
             onFocus={() => setShowSearchDropdown(true)}
             onBlur={() => setTimeout(() => setShowSearchDropdown(false), 300)}
-            className="w-full h-9 pl-9 pr-8 bg-slate-100/80 hover:bg-slate-100 focus:bg-white border border-slate-200 rounded-full text-xs font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#30539C]/20 transition-all"
+            className="w-full h-10 pl-9 pr-8 bg-slate-100/80 hover:bg-slate-100 focus:bg-white border border-slate-200 rounded-full text-xs font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#30539C]/20 transition-all"
           />
           {searchQuery && (
             <button
@@ -184,9 +195,10 @@ export function Topnav() {
         <Button
           variant="outline"
           size="sm"
-          onClick={() => signOut({ callbackUrl: logoutUrl })}
-          className="h-8 px-2.5 text-xs font-bold text-rose-600 border-rose-200 bg-rose-50 hover:bg-rose-100 hover:text-rose-700 transition-all flex items-center gap-1.5 shadow-2xs"
+          onClick={() => signOutAndForgetDevice({ callbackUrl: logoutUrl })}
+          className="h-9 min-w-9 px-2.5 text-xs font-bold text-rose-600 border-rose-200 bg-rose-50 hover:bg-rose-100 hover:text-rose-700 transition-all flex items-center gap-1.5 shadow-2xs"
           title="Sign out / Logout of Value Plus ERP"
+          aria-label="Sign out"
         >
           <LogOut className="w-3.5 h-3.5" />
           <span className="hidden md:inline">Logout</span>
@@ -223,7 +235,7 @@ export function Topnav() {
               </Link>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => signOut({ callbackUrl: logoutUrl })} className="cursor-pointer py-2 text-rose-600 focus:text-rose-700 focus:bg-rose-50 font-semibold">
+            <DropdownMenuItem onClick={() => signOutAndForgetDevice({ callbackUrl: logoutUrl })} className="cursor-pointer py-2 text-rose-600 focus:text-rose-700 focus:bg-rose-50 font-semibold">
               <LogOut className="mr-2 h-4 w-4" />
               <span>Log out</span>
             </DropdownMenuItem>

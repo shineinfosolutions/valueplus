@@ -1,5 +1,6 @@
 import User from "@/models/User";
 import Notification, { INotification } from "@/models/Notification";
+import { pushToUsers } from "@/lib/push";
 
 /**
  * Send a notification to the bell of one or more users. Best-effort: a failure
@@ -12,6 +13,9 @@ export interface NotifyInput {
   message?: string;
   link?: string;
   createdBy?: string;
+  /** What it is about (e.g. a task), kept so reading it can mark that thing as seen. */
+  refType?: string;
+  refId?: string;
 }
 
 type Recipient = { _id: any; name?: string };
@@ -20,7 +24,7 @@ async function send(recipients: Recipient[], input: NotifyInput): Promise<number
   const unique = new Map<string, Recipient>();
   for (const r of recipients) if (r?._id) unique.set(String(r._id), r);
   if (unique.size === 0) return 0;
-  await Notification.insertMany(
+  const docs: any[] = await Notification.insertMany(
     Array.from(unique.values()).map((r) => ({
       recipientId: String(r._id),
       recipientName: r.name || "",
@@ -29,8 +33,13 @@ async function send(recipients: Recipient[], input: NotifyInput): Promise<number
       message: input.message || "",
       link: input.link || "",
       createdBy: input.createdBy || "",
+      refType: input.refType || "",
+      refId: input.refId || "",
     }))
   );
+  // The same message goes to their phones, so they see it with the app closed. Each phone is told which
+  // notification it is, so tapping it marks that notification read.
+  await Promise.all(docs.map((d) => pushToUsers([String(d.recipientId)], { title: input.title, body: input.message, link: input.link, nid: String(d._id) })));
   return unique.size;
 }
 
@@ -70,6 +79,17 @@ export async function notifyAdmins(input: NotifyInput) {
     return await send(admins, input);
   } catch (e) {
     console.warn("Notice: could not notify admins:", e);
+    return 0;
+  }
+}
+
+/** Every active user with one of these roles (bell + phone notification). */
+export async function notifyRoles(roles: string[], input: NotifyInput, exceptUserId?: string) {
+  try {
+    const users = (await User.find({ ...ACTIVE, role: { $in: roles } }, { name: 1 }).lean()) as any[];
+    return await send(users.filter((u) => String(u._id) !== String(exceptUserId || "")), input);
+  } catch (e) {
+    console.warn("Notice: could not notify roles:", e);
     return 0;
   }
 }

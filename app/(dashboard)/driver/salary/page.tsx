@@ -122,7 +122,7 @@ export default function DriverSalaryPage() {
         </div>
 
         {/* ─── SALARY CARDS ─────────────────────────────────────────── */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-4">
           {/* Card 1: Monthly Base Salary */}
           <Card className="rounded-3xl border-slate-200 bg-white shadow-xs p-5 space-y-2">
             <div className="flex items-center justify-between">

@@ -16,12 +16,19 @@ export interface IAttendance extends Document {
   isLate?: boolean;
   isEarlyCheckout?: boolean;
   status: "Present" | "Late" | "Half-Day" | "Absent" | "On Leave";
-  leaveType?: "Casual" | "Sick" | "Paid" | "Unpaid" | "None";
+  leaveType?: "Casual" | "Sick" | "Paid" | "Unpaid" | "Weekly Off" | "Emergency" | "None";
   leaveStatus?: "None" | "Pending" | "Approved" | "Rejected";
   leaveReason?: string;
   advanceRequested?: number;
   advanceStatus?: "None" | "Pending" | "Approved" | "Rejected";
   notes?: string;
+  /** Minutes after the shift start (10:00) the person checked in. */
+  lateMinutes?: number;
+  /** Selfie taken at check-in (key in the R2 bucket) and where the phone was. */
+  checkInPhotoKey?: string;
+  checkInLat?: number;
+  checkInLng?: number;
+  checkInDistanceM?: number;
 }
 
 const AttendanceSchema = new Schema<IAttendance>(
@@ -48,7 +55,7 @@ const AttendanceSchema = new Schema<IAttendance>(
     },
     leaveType: {
       type: String,
-      enum: ["Casual", "Sick", "Paid", "Unpaid", "None"],
+      enum: ["Casual", "Sick", "Paid", "Unpaid", "Weekly Off", "Emergency", "None"],
       default: "None",
     },
     leaveStatus: {
@@ -64,6 +71,11 @@ const AttendanceSchema = new Schema<IAttendance>(
       default: "None",
     },
     notes: { type: String, default: "" },
+    lateMinutes: { type: Number, default: 0 },
+    checkInPhotoKey: { type: String, default: "" },
+    checkInLat: { type: Number },
+    checkInLng: { type: Number },
+    checkInDistanceM: { type: Number },
   },
   { timestamps: true, collection: "attendance" }
 );

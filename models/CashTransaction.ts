@@ -20,6 +20,11 @@ export interface ICashTransaction extends Document {
   targetBankAccount?: string;
   handedTo?: string;
   recordedBy?: string;
+  /** A handover from the cashier counts only once the Admin confirms receiving it. Empty = an older entry, already counted. */
+  adminStatus?: "pending" | "confirmed" | "rejected";
+  adminReviewedBy?: string;
+  adminReviewedAt?: string;
+  adminRejectReason?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -54,6 +59,10 @@ const CashTransactionSchema = new Schema<ICashTransaction>(
     targetBankAccount: { type: String, default: "" },
     handedTo: { type: String, default: "" },
     recordedBy: { type: String, default: "Cashier / Admin" },
+    adminStatus: { type: String, enum: ["pending", "confirmed", "rejected"] },
+    adminReviewedBy: String,
+    adminReviewedAt: String,
+    adminRejectReason: String,
   },
   { timestamps: true, collection: "cash_transactions" }
 );

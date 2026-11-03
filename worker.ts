@@ -40,6 +40,24 @@ function isBlocked(pathname: string) {
 }
 
 export default {
+  // Cron (wrangler.jsonc "triggers"), every minute:
+  //  - 10:00-10:04 India time -> "office time has started" for all staff (once a day);
+  //  - always -> attendance alerts (not checked in from 10:00, break over and not at the store).
+  async scheduled(_event: unknown, env: any, ctx: ExecutionContext) {
+    const hit = async (path: string) => {
+      try {
+        const req = new Request(`https://scheduled.internal${path}`, { headers: { "x-cron-key": String(env?.NEXTAUTH_SECRET || "") } });
+        const res = env?.WORKER_SELF_REFERENCE ? await env.WORKER_SELF_REFERENCE.fetch(req) : await (this as any).fetch(req, env, ctx);
+        console.log(`${path} cron:`, res.status);
+      } catch (e) {
+        console.warn(`${path} cron failed:`, e);
+      }
+    };
+    const ist = new Date(Date.now() + 5.5 * 3600 * 1000);
+    if (ist.getUTCHours() === 10 && ist.getUTCMinutes() < 5) ctx.waitUntil(hit("/api/cron/office-start"));
+    ctx.waitUntil(hit("/api/cron/attendance"));
+  },
+
   async fetch(request: Request, env: unknown, ctx: ExecutionContext): Promise<Response> {
     if (isBlocked(new URL(request.url).pathname)) {
       return new Response("Not found", { status: 404 });

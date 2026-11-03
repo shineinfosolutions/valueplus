@@ -1,5 +1,6 @@
 "use client";
 
+import { CameraCapture } from "@/components/shared/CameraCapture";
 import { PageShell } from "@/components/shared/page-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,12 +42,17 @@ export default function DriverDeliveriesPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState<"pending" | "delivered" | "all">("pending");
+  const todayIst = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date());
 
   // OTP Verification Modal
   const [otpModalOpen, setOtpModalOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
   const [otpInput, setOtpInput] = useState("");
   const [isVerifying, setIsVerifying] = useState(false);
+  const [photos, setPhotos] = useState<File[]>([]);
+  const cameraOnly = ["driver", "courier", "delivery"].includes(String(userRole).toLowerCase());
+  const REQUIRED_PHOTOS = 3;
+  const [cameraOpen, setCameraOpen] = useState(false);
 
   const fetchDriverOrders = async () => {
     setLoading(true);
@@ -111,6 +117,7 @@ export default function DriverDeliveriesPage() {
   const handleOpenOtpModal = (order: any) => {
     setSelectedOrder(order);
     setOtpInput("");
+    setPhotos([]);
     setOtpModalOpen(true);
   };
 
@@ -120,8 +127,23 @@ export default function DriverDeliveriesPage() {
       return;
     }
 
+    if (photos.length < REQUIRED_PHOTOS) {
+      toast.error(`Take ${REQUIRED_PHOTOS} photos of the delivered goods first (${photos.length} taken).`);
+      return;
+    }
+
     setIsVerifying(true);
     try {
+      {
+        const form = new FormData();
+        form.append("invoiceNumber", selectedOrder.invoiceNumber);
+        photos.forEach((f) => form.append("file", f));
+        const up = await (await fetch("/api/delivery/proof", { method: "POST", body: form })).json();
+        if (!up.success) {
+          toast.error(up.error || "Could not upload the photo.");
+          return;
+        }
+      }
       const res = await fetch("/api/delivery/verify-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -299,6 +321,35 @@ export default function DriverDeliveriesPage() {
                   </CardHeader>
 
                   <CardContent className="p-4 sm:p-5 space-y-4">
+                    {/* WHEN THE DELIVERY IS DUE */}
+                    {(inv.expectedDeliveryDate || isDelivered) && (
+                      <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold">
+                        {inv.expectedDeliveryDate && (
+                          <span
+                            className={cn(
+                              "px-2 py-1 rounded-lg border",
+                              isDelivered
+                                ? "bg-slate-50 text-slate-600 border-slate-200"
+                                : inv.expectedDeliveryDate < todayIst
+                                  ? "bg-rose-50 text-rose-700 border-rose-300"
+                                  : inv.expectedDeliveryDate === todayIst
+                                    ? "bg-amber-50 text-amber-800 border-amber-300"
+                                    : "bg-orange-50 text-orange-800 border-orange-300"
+                            )}
+                          >
+                            🚚 Expected delivery: {formatDate(inv.expectedDeliveryDate)}
+                            {!isDelivered && inv.expectedDeliveryDate < todayIst ? " · OVERDUE" : !isDelivered && inv.expectedDeliveryDate === todayIst ? " · TODAY" : ""}
+                          </span>
+                        )}
+                        {isDelivered && inv.deliveredAt && (
+                          <span className="px-2 py-1 rounded-lg border bg-emerald-50 text-emerald-800 border-emerald-300">
+                            ✅ Delivered on {formatDate(inv.deliveredAt)}
+                          </span>
+                        )}
+                        {inv.deliveryNote && !isDelivered && <span className="text-slate-500 font-medium">{inv.deliveryNote}</span>}
+                      </div>
+                    )}
+
                     {/* CUSTOMER & CONTACT ROW */}
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                       <div>
@@ -443,6 +494,33 @@ export default function DriverDeliveriesPage() {
                   placeholder="• • • •"
                   className="h-14 text-center font-mono text-3xl font-black tracking-widest text-[#30539C] border-2 border-emerald-300 focus:ring-emerald-500 rounded-2xl"
                 />
+              </div>
+
+              <div className="space-y-1 text-left">
+                <label className="text-xs font-bold text-slate-700">Photos of the delivered goods * ({photos.length}/{REQUIRED_PHOTOS})</label>
+                <p className="text-[11px] text-slate-500">Take {REQUIRED_PHOTOS} photos with the camera{cameraOnly ? "" : " (or pick them from the gallery)"}. The phone will ask for camera permission.</p>
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" size="sm" onClick={() => setCameraOpen(true)} disabled={photos.length >= 6} className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold">
+                    📷 {photos.length === 0 ? "Take photo" : "Take another photo"}
+                  </Button>
+                  {!cameraOnly && (
+                    <label className="inline-flex cursor-pointer items-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50">
+                      Choose from gallery
+                      <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => setPhotos((p) => [...p, ...Array.from(e.target.files || [])].slice(0, 6))} />
+                    </label>
+                  )}
+                </div>
+                <CameraCapture open={cameraOpen} onClose={() => setCameraOpen(false)} onCapture={(f) => setPhotos((p) => [...p, f].slice(0, 6))} facing="environment" title={`Photo ${Math.min(photos.length + 1, REQUIRED_PHOTOS)} of ${REQUIRED_PHOTOS}`} />
+                {photos.length > 0 && (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {photos.map((f, i) => (
+                      <div key={i} className="relative">
+                        <img src={URL.createObjectURL(f)} alt={`Photo ${i + 1}`} className="h-16 w-16 rounded-lg object-cover border" />
+                        <button type="button" onClick={() => setPhotos((p) => p.filter((_, k) => k !== i))} className="absolute -right-1.5 -top-1.5 h-5 w-5 rounded-full bg-rose-600 text-[11px] font-bold text-white">x</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center gap-2 pt-2">

@@ -5,8 +5,10 @@ export interface IEstimateItem {
   name: string;
   quantity: number;
   rate: number;
+  discount?: number;
   tax: number;
   amount: number;
+  itemId?: string;
 }
 
 export interface IEstimate extends Document {
@@ -26,6 +28,25 @@ export interface IEstimate extends Document {
   taxTotal?: number;
   total: number;
   notes?: string;
+  /** pending -> approved | rejected. An estimate with no value predates the approval step and counts as approved. */
+  /** "estimate" = a quotation for the customer (no approval); "bill" = a sale the salesman sends to the cashier to invoice. */
+  kind?: "estimate" | "bill";
+  approvalStatus?: "pending" | "approved" | "rejected";
+  approvedBy?: string;
+  approvedAt?: Date;
+  rejectedBy?: string;
+  rejectedAt?: Date;
+  rejectReason?: string;
+  /** What the salesman closed the deal at: the estimate total, frozen when the cashier approves. */
+  dealAmount?: number;
+  convertedInvoiceNumber?: string;
+  dealSalesperson?: string;
+  priceUnlock?: {
+    by: string;
+    byRole: string;
+    at: Date;
+    lines: { itemName: string; rate: number; lockedMin: number }[];
+  };
 }
 
 const EstimateItemSchema = new Schema<IEstimateItem>({
@@ -33,6 +54,8 @@ const EstimateItemSchema = new Schema<IEstimateItem>({
   name: { type: String, required: true },
   quantity: { type: Number, required: true, min: 1 },
   rate: { type: Number, required: true, min: 0 },
+  discount: { type: Number, default: 0 },
+  itemId: { type: String, default: "" },
   tax: { type: Number, default: 0 },
   amount: { type: Number, required: true },
 }, { _id: false });
@@ -56,6 +79,26 @@ const EstimateSchema = new Schema<IEstimate>(
     total: { type: Number, required: true },
     notes: { type: String },
     convertedInvoiceNumber: { type: String },
+    kind: { type: String, enum: ["estimate", "bill"], default: "estimate" },
+    approvalStatus: { type: String, enum: ["pending", "approved", "rejected"] },
+    approvedBy: { type: String },
+    approvedAt: { type: Date },
+    rejectedBy: { type: String },
+    rejectedAt: { type: Date },
+    rejectReason: { type: String },
+    dealAmount: { type: Number },
+    dealSalesperson: { type: String },
+    priceUnlock: {
+      type: new Schema(
+        {
+          by: String,
+          byRole: String,
+          at: Date,
+          lines: [{ _id: false, itemName: String, rate: Number, lockedMin: Number }],
+        },
+        { _id: false }
+      ),
+    },
   },
   { timestamps: true, collection: "estimates" }
 );

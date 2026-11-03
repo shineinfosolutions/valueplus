@@ -1,3 +1,4 @@
+import { deferIfManager, diffFields } from "@/lib/deferred-actions";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import Supplier from "@/models/Supplier";
@@ -78,6 +79,12 @@ export async function PUT(req: Request) {
   try {
     const body = await req.json();
     await connectToDatabase();
+    const waiting = await deferIfManager(req, async () => {
+      const current: any = await Supplier.findOne({ code: body.code }).lean();
+      const { before, after } = diffFields(current, body);
+      return { title: `Edit supplier ${current?.name || body.code}`, description: `Change the supplier ${current?.name || ""} (${body.code}).`, target: `supplier.edit:${body.code}`, before, after, body };
+    });
+    if (waiting) return waiting;
     
     if (!body.code) {
       return NextResponse.json({ success: false, error: "Supplier code is required for update" }, { status: 400 });
@@ -99,6 +106,8 @@ export async function DELETE(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const code = searchParams.get("code");
+    const waiting = await deferIfManager(req, { title: `Delete supplier ${code || ""}`, description: `Delete the supplier ${code || ""}.`, target: `supplier.delete:${code}` });
+    if (waiting) return waiting;
     
     if (!code) {
       return NextResponse.json({ success: false, error: "Supplier code is required" }, { status: 400 });

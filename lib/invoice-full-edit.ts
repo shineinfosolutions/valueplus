@@ -46,12 +46,59 @@ const PROTECTED_FIELDS = [
   "pin", "reason", "action",
 ];
 
+const txt = (v: any) => String(v ?? "").trim();
+const money = (v: any) => (Number.isFinite(Number(v)) ? Math.round(Number(v) * 100) / 100 : 0);
+
+/**
+ * A readable, comparable picture of a bill, for the audit log and for the Admin's approval screen. The same function
+ * describes the bill as it is and the bill as it would become, so every field that can change shows up as "was -> will be".
+ * An empty value and a missing one read the same, so only real changes show.
+ */
+export function summariseInvoice(inv: any) {
+  const line = (it: any) => {
+    const parts = [`${txt(it.itemName)} x${it.quantity} @ ${money(it.rate)}`];
+    if (Number(it.discount) > 0) parts.push(`discount ${it.discount}${it.discountType === "percent" ? "%" : ""}`);
+    if (it.gstRate !== undefined && it.gstRate !== null && it.gstRate !== "") parts.push(`GST ${it.gstRate}%`);
+    if (txt(it.serialNumber)) parts.push(`serial ${txt(it.serialNumber)}`);
+    if (txt(it.extendedWarrantyPlan)) parts.push(`warranty ${txt(it.extendedWarrantyPlan)}`);
+    return parts.join(" · ");
+  };
+  const pays = (inv.payments || []).map((p: any) => `${txt(p.mode)} ${money(p.amount)}${txt(p.txnId) ? ` (${txt(p.txnId)})` : ""}`);
+  return {
+    customer: `${txt(inv.customerName)} ${txt(inv.customerPhone)}`.trim(),
+    customerGST: txt(inv.customerGST),
+    customerAddress: txt(inv.customerAddress),
+    placeOfSupply: txt(inv.placeOfSupply),
+    shippingAddress: txt(inv.shippingAddress),
+    vehicleNumber: txt(inv.vehicleNumber),
+    expectedDeliveryDate: txt(inv.expectedDeliveryDate).slice(0, 10),
+    items: (inv.items || []).map(line),
+    discount: money(inv.discount),
+    taxableAmount: money(inv.taxableAmount),
+    totalGST: money(inv.totalGST),
+    total: inv.total,
+    paid: inv.paidAmount,
+    balance: inv.balanceAmount,
+    paymentMode: inv.paymentMode,
+    payments: pays,
+    dueDate: txt(inv.dueDate).slice(0, 10),
+    date: String(inv.date || "").slice(0, 10),
+    notes: txt(inv.notes),
+  };
+}
+
+/**
+ * `dryRun` runs every check and stops before anything is written, so a Store
+ * Manager is told straight away if a change cannot be made, instead of the
+ * Admin finding out when approving it.
+ */
 export async function fullEditInvoice(
   existing: any,
   incoming: any,
   actor: { name: string; id?: string; role?: string; email?: string },
   reason: string,
-  meta: { ip?: string; userAgent?: string; usedLegacyPin?: boolean } = {}
+  meta: { ip?: string; userAgent?: string; usedLegacyPin?: boolean } = {},
+  opts: { dryRun?: boolean } = {}
 ): Promise<Result> {
   // ── 1. What may be edited ────────────────────────────────────────────────
   if (existing.type !== "tax-invoice") {
@@ -79,13 +126,13 @@ export async function fullEditInvoice(
   const dateUpdate: any = {};
   let backdateNeedsApproval = false;
   if (dateChanged) {
+    return { ok: false, status: 403, error: "A bill's date cannot be changed. Back-dating is not allowed." };
+  }
+  if (dateChanged) {
     if (billDate > todayIst) {
       return { ok: false, status: 400, error: "A bill cannot be dated in the future." };
     }
     const role = String(actor.role || "");
-    if (!["admin", "superadmin", "manager"].includes(role)) {
-      return { ok: false, status: 403, error: "Only the Admin or the Store Manager can change a bill's date." };
-    }
     dateUpdate.date = billDate;
     if (billDate < todayIst) {
       dateUpdate.backdateMadeOn = todayIst;
@@ -232,36 +279,44 @@ export async function fullEditInvoice(
 
   // ── 3. Customer ──────────────────────────────────────────────────────────
   let customerId = String(incoming.customerId || existing.customerId || "");
+  let createCustomer = false;
   if (!mongoose.isValidObjectId(customerId)) {
     const phone = String(incoming.customerPhone || "").replace(/\D/g, "");
-    let found: any = phone ? await Customer.findOne({ phone }) : null;
-    if (!found) {
-      const last: any = await Customer.findOne({ code: /^CUST-\d+$/ }).sort({ code: -1 }).lean();
-      const lastNum = last?.code ? parseInt(String(last.code).replace("CUST-", ""), 10) || 0 : 0;
-      found = await Customer.create({
-        code: `CUST-${String(lastNum + 1).padStart(3, "0")}`,
-        name: incoming.customerName || "Walk-in Customer",
-        phone: phone || "0000000000",
-        email: incoming.customerEmail || "",
-        gstNumber: incoming.customerGST || "",
-        billingAddress: {
-          line1: incoming.customerAddress || "Address not provided",
-          city: incoming.customerCity || "City Not Specified",
-          state: incoming.customerState || "Uttar Pradesh",
-          pincode: incoming.customerPin || "",
-          country: "India",
-        },
-      });
-    }
-    customerId = String(found._id);
+    const found: any = phone ? await Customer.findOne({ phone }) : null;
+    if (found) customerId = String(found._id);
+    else createCustomer = true;
   }
-  const customerChanged = String(existing.customerId || "") !== customerId;
+  const customerChanged = createCustomer || String(existing.customerId || "") !== customerId;
   if (customerChanged && advance > 0) {
     return {
       ok: false,
       status: 400,
       error: "An advance from this customer was used on the bill, so it cannot be moved to a different customer. Cancel it and make a new bill instead.",
     };
+  }
+
+  // Every check has passed. A dry run stops here, before anything is written.
+  if (opts.dryRun) return { ok: true, invoice: existing };
+
+  if (createCustomer) {
+    const phone = String(incoming.customerPhone || "").replace(/\D/g, "");
+    const last: any = await Customer.findOne({ code: /^CUST-\d+$/ }).sort({ code: -1 }).lean();
+    const lastNum = last?.code ? parseInt(String(last.code).replace("CUST-", ""), 10) || 0 : 0;
+    const created: any = await Customer.create({
+      code: `CUST-${String(lastNum + 1).padStart(3, "0")}`,
+      name: incoming.customerName || "Walk-in Customer",
+      phone: phone || "0000000000",
+      email: incoming.customerEmail || "",
+      gstNumber: incoming.customerGST || "",
+      billingAddress: {
+        line1: incoming.customerAddress || "Address not provided",
+        city: incoming.customerCity || "City Not Specified",
+        state: incoming.customerState || "Uttar Pradesh",
+        pincode: incoming.customerPin || "",
+        country: "India",
+      },
+    });
+    customerId = String(created._id);
   }
 
   // ── 4. Apply ─────────────────────────────────────────────────────────────
@@ -496,15 +551,7 @@ export async function fullEditInvoice(
 
   // ── 5. Audit trail ───────────────────────────────────────────────────────
   try {
-    const summarise = (inv: any) => ({
-      customer: `${inv.customerName || ""} ${inv.customerPhone || ""}`.trim(),
-      items: (inv.items || []).map((it: any) => `${it.itemName} x${it.quantity} @ ${it.rate}${it.serialNumber ? ` [${it.serialNumber}]` : ""}`),
-      total: inv.total,
-      paid: inv.paidAmount,
-      balance: inv.balanceAmount,
-      paymentMode: inv.paymentMode,
-      date: String(inv.date || "").slice(0, 10),
-    });
+    const summarise = summariseInvoice;
     await AuditLog.create({
       action: "invoice.edit",
       entityType: "Invoice",

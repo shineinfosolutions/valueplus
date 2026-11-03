@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { PageShell } from "@/components/shared/page-shell";
 import { Button } from "@/components/ui/button";
 import { 
@@ -20,6 +20,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ExportMenu } from "@/components/shared/ExportMenu";
 import { describeDenominations } from "@/lib/cashDenominations";
 import { todayInIndia } from "@/lib/today";
+import { useSession } from "next-auth/react";
 
 export default function BankAccountsAndCashRegisterPage() {
   const queryClient = useQueryClient();
@@ -27,6 +28,15 @@ export default function BankAccountsAndCashRegisterPage() {
   // Modals State
   const [isAddBankModalOpen, setIsAddBankModalOpen] = useState(false);
   const [isCashLedgerOpen, setIsCashLedgerOpen] = useState(false);
+
+  // "/banking/accounts?ledger=handover" (the dashboard's cash card) opens the cash ledger at once.
+  useEffect(() => {
+    const wanted = new URLSearchParams(window.location.search).get("ledger");
+    if (!wanted) return;
+    if (wanted === "handover") setLedgerFilter("MD_HANDOVER");
+    setIsCashLedgerOpen(true);
+    window.history.replaceState(null, "", window.location.pathname);
+  }, []);
   const [isCashOutflowModalOpen, setIsCashOutflowModalOpen] = useState(false);
 
   const [editingAccount, setEditingAccount] = useState<any | null>(null);
@@ -95,6 +105,58 @@ export default function BankAccountsAndCashRegisterPage() {
     },
   });
   const auditHistory = dayCloseData?.history || [];
+
+  // Admin: recalculate the expected cash of old audits by day (preview first, then apply).
+  const { data: authSession } = useSession();
+  const isAdminUser = ["admin", "superadmin"].includes(String((authSession?.user as any)?.role || "").toLowerCase());
+  const [recalcRows, setRecalcRows] = useState<any[] | null>(null);
+
+  // Admin: set the register to the cash really in the drawer.
+  const [calibrateOpen, setCalibrateOpen] = useState(false);
+  const [calibrateAmount, setCalibrateAmount] = useState("");
+  const calibrateMutation = useMutation({
+    mutationFn: async ({ apply }: { apply: boolean }) => {
+      const res = await fetch("/api/cash-register/calibrate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ countedCash: Number(calibrateAmount), apply }),
+      });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || "Could not set the cash in hand");
+      return { apply, ...json.data };
+    },
+    onSuccess: (r: any) => {
+      if (r.apply) {
+        toast.success(`Cash in hand set to ${formatCurrency(r.counted)}.`);
+        setCalibrateOpen(false);
+        setCalibrateAmount("");
+        queryClient.invalidateQueries({ queryKey: ["cash-register"] });
+      }
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const recalcMutation = useMutation({
+    mutationFn: async (apply: boolean) => {
+      const res = await fetch("/api/day-close/recompute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apply }),
+      });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || "Could not recalculate");
+      return { apply, rows: json.data as any[] };
+    },
+    onSuccess: ({ apply, rows }) => {
+      if (apply) {
+        toast.success(`${rows.length} audits recalculated.`);
+        setRecalcRows(null);
+        queryClient.invalidateQueries({ queryKey: ["day-close-status"] });
+      } else {
+        setRecalcRows(rows);
+      }
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
   const auditPendingDate = dayCloseData?.pendingDate || null;
 
   const liveCashBalance = cashRegisterData?.currentBalance || 0;
@@ -344,6 +406,11 @@ export default function BankAccountsAndCashRegisterPage() {
 
             {/* RIGHT: ACTION BUTTONS */}
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 flex-shrink-0">
+              {isAdminUser && (
+                <Button variant="outline" onClick={() => setCalibrateOpen(true)} className="border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-bold h-10 px-4 shadow-2xs">
+                  Set actual cash
+                </Button>
+              )}
               <Button
                 onClick={() => setIsCashLedgerOpen(true)}
                 variant="outline"
@@ -409,11 +476,18 @@ export default function BankAccountsAndCashRegisterPage() {
                 <p className="text-xs text-slate-500">Each day's audit: who did it, how much cash was counted note by note, and whether it matched the system.</p>
               </div>
             </div>
-            {auditPendingDate && (
-              <Badge variant="outline" className="bg-amber-50 text-amber-800 border-amber-300 font-bold text-[11px]">
-                ⚠️ Audit for {auditPendingDate} is still pending
-              </Badge>
-            )}
+            <div className="flex flex-wrap items-center gap-2">
+              {auditPendingDate && (
+                <Badge variant="outline" className="bg-amber-50 text-amber-800 border-amber-300 font-bold text-[11px]">
+                  ⚠️ Audit for {auditPendingDate} is still pending
+                </Badge>
+              )}
+              {isAdminUser && auditHistory.length > 0 && (
+                <Button size="sm" variant="outline" disabled={recalcMutation.isPending} onClick={() => recalcMutation.mutate(false)}>
+                  {recalcMutation.isPending ? "Checking…" : "Recalculate old audits"}
+                </Button>
+              )}
+            </div>
           </div>
 
           <div className="overflow-x-auto">
@@ -447,7 +521,15 @@ export default function BankAccountsAndCashRegisterPage() {
                       <td className="px-3 py-2.5 text-[11px] font-mono text-slate-600 min-w-[180px]">
                         {describeDenominations(a.denominations, a.coinsAmount) || <span className="text-slate-300">Not recorded</span>}
                       </td>
-                      <td className="px-3 py-2.5 text-right font-mono text-slate-500">{formatCurrency(a.systemExpectedCash)}</td>
+                      <td className="px-3 py-2.5 text-right font-mono text-slate-500">
+                        {formatCurrency(a.systemExpectedCash)}
+                        {a.dayCashIn !== undefined && (
+                          <p className="text-[10px] font-sans text-slate-400 mt-0.5 whitespace-nowrap">
+                            in {formatCurrency(a.dayCashIn)}
+                            {a.dayCashFromInvoices > 0 ? ` (bills ${formatCurrency(a.dayCashFromInvoices)})` : ""} − out {formatCurrency(a.dayCashOut || 0)}
+                          </p>
+                        )}
+                      </td>
                       <td className={`px-3 py-2.5 text-right font-mono font-bold ${Math.abs(a.difference) < 1 ? "text-emerald-600" : "text-rose-600"}`}>
                         {a.difference > 0 ? "+" : ""}{formatCurrency(a.difference)}
                       </td>
@@ -460,6 +542,85 @@ export default function BankAccountsAndCashRegisterPage() {
             </table>
           </div>
         </div>
+
+        <Dialog open={!!recalcRows} onOpenChange={(o) => { if (!o) setRecalcRows(null); }}>
+          <DialogContent className="max-w-4xl">
+            <DialogHeader>
+              <DialogTitle>Recalculate old audits by day</DialogTitle>
+            </DialogHeader>
+            <p className="text-xs text-slate-600">
+              Expected cash for each day = cash the previous audit counted + that day's cash in (bills first) − that day's cash out. The counted cash, note breakup and who did the audit are not changed, and the old figures are kept on each record.
+            </p>
+            <div className="max-h-[50vh] overflow-auto border rounded-lg">
+              <table className="w-full text-xs">
+                <thead className="bg-slate-50 sticky top-0">
+                  <tr>
+                    <th className="px-3 py-2 text-left">Date</th>
+                    <th className="px-3 py-2 text-right">Counted</th>
+                    <th className="px-3 py-2 text-right">Opening</th>
+                    <th className="px-3 py-2 text-right">Cash in (bills)</th>
+                    <th className="px-3 py-2 text-right">Cash out</th>
+                    <th className="px-3 py-2 text-right">Expected: old → new</th>
+                    <th className="px-3 py-2 text-right">Difference: old → new</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y font-mono">
+                  {(recalcRows || []).map((r) => (
+                    <tr key={r.id}>
+                      <td className="px-3 py-1.5 font-bold text-[#3F63AD]">{r.date}</td>
+                      <td className="px-3 py-1.5 text-right">{formatCurrency(r.countedCash)}</td>
+                      <td className="px-3 py-1.5 text-right">{formatCurrency(r.opening)}</td>
+                      <td className="px-3 py-1.5 text-right">{formatCurrency(r.cashIn)} ({formatCurrency(r.cashFromInvoices)})</td>
+                      <td className="px-3 py-1.5 text-right">{formatCurrency(r.cashOut)}</td>
+                      <td className="px-3 py-1.5 text-right">{formatCurrency(r.oldExpected)} → <b>{formatCurrency(r.newExpected)}</b></td>
+                      <td className={`px-3 py-1.5 text-right ${Math.abs(r.newDifference) < 1 ? "text-emerald-600" : "text-rose-600"}`}>
+                        {formatCurrency(r.oldDifference)} → <b>{formatCurrency(r.newDifference)}</b>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setRecalcRows(null)}>Cancel</Button>
+              <Button disabled={recalcMutation.isPending} onClick={() => recalcMutation.mutate(true)}>
+                {recalcMutation.isPending ? "Saving…" : "Apply to all audits"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={calibrateOpen} onOpenChange={(o) => { if (!o) { setCalibrateOpen(false); calibrateMutation.reset(); } }}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Set the cash actually in hand</DialogTitle>
+            </DialogHeader>
+            <p className="text-xs text-slate-600">
+              Count the cash in the drawer and enter it here. The register will show exactly this amount now, and then move with every cash bill, expense, deposit and handover after it. This is saved in the audit log.
+            </p>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Cash in the drawer now (₹)</Label>
+              <Input type="number" min="0" inputMode="decimal" value={calibrateAmount} onChange={(e) => { setCalibrateAmount(e.target.value); calibrateMutation.reset(); }} placeholder="0" autoFocus />
+            </div>
+            {calibrateMutation.data && !calibrateMutation.data.apply && (
+              <p className="text-xs rounded-lg bg-slate-50 border p-3">
+                Register shows <b>{formatCurrency(calibrateMutation.data.registerNow)}</b> now. After this it will show <b>{formatCurrency(calibrateMutation.data.counted)}</b>.
+              </p>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setCalibrateOpen(false)}>Cancel</Button>
+              {!calibrateMutation.data ? (
+                <Button disabled={calibrateAmount === "" || calibrateMutation.isPending} onClick={() => calibrateMutation.mutate({ apply: false })}>
+                  Check
+                </Button>
+              ) : (
+                <Button disabled={calibrateMutation.isPending} onClick={() => calibrateMutation.mutate({ apply: true })}>
+                  Set cash in hand
+                </Button>
+              )}
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* ─── 2. REAL BANK ACCOUNTS MASTER GRID ─── */}
         <div className="bg-white p-6 rounded-2xl border border-slate-200/90 shadow-sm space-y-4">

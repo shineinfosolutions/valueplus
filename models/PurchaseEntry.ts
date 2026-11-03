@@ -45,6 +45,11 @@ export interface IPurchaseEntry extends Document {
   cancelReason?: string;
   /** Set whenever a non-cancel PUT touches the record, so the UI can flag it as edited. */
   lastModifiedReason?: "content-edit" | "cancel";
+  /** A bill dated earlier than the day it was entered: Admin / Store Manager only, and a
+   *  Store Manager's goes to the Admin for approval (same rule as a sales bill). */
+  backdateStatus?: "approved" | "pending" | "rejected" | "";
+  backdateRequestedBy?: string;
+  backdateMadeOn?: string;
 }
 
 const PurchaseEntrySchema = new Schema<IPurchaseEntry>(
@@ -82,6 +87,9 @@ const PurchaseEntrySchema = new Schema<IPurchaseEntry>(
     cancelledBy: { type: String },
     cancelReason: { type: String },
     lastModifiedReason: { type: String, enum: ["content-edit", "cancel"] },
+    backdateStatus: { type: String, enum: ["approved", "pending", "rejected", ""], default: "" },
+    backdateRequestedBy: { type: String, default: "" },
+    backdateMadeOn: { type: String, default: "" },
   },
   { timestamps: true, collection: "purchase_entries" }
 );

@@ -1,5 +1,6 @@
 "use client";
 
+import { LeaveRequestDialog } from "@/components/shared/LeaveRequestDialog";
 import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageShell } from "@/components/shared/page-shell";
@@ -68,34 +69,6 @@ export default function StaffPersonalProfilePage() {
 
   // Leave Application Modal State
   const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
-  const [leaveType, setLeaveType] = useState("Casual");
-  const [leaveReason, setLeaveReason] = useState("");
-
-  const leaveMutation = useMutation({
-    mutationFn: async () => {
-      const res = await fetch("/api/staff/attendance", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          staffName: userName,
-          action: "apply_leave",
-          leaveType,
-          leaveReason,
-          branchName: activeLocation?.name,
-        }),
-      });
-      const json = await res.json();
-      if (!json.success) throw new Error(json.error || "Failed to submit leave");
-      return json;
-    },
-    onSuccess: (data) => {
-      toast.success(data.message || "Leave request submitted successfully!");
-      setIsLeaveModalOpen(false);
-      setLeaveReason("");
-      queryClient.invalidateQueries({ queryKey: ["my-attendance-summary"] });
-    },
-    onError: (err: any) => toast.error(err.message),
-  });
 
   // Advance Salary Modal State
   const [isAdvanceModalOpen, setIsAdvanceModalOpen] = useState(false);
@@ -368,58 +341,7 @@ export default function StaffPersonalProfilePage() {
         )}
       </div>
 
-      {/* LEAVE APPLICATION MODAL */}
-      <Dialog open={isLeaveModalOpen} onOpenChange={setIsLeaveModalOpen}>
-        <DialogContent className="max-w-md rounded-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-[#30539C]" />
-              <span>Apply for Leave</span>
-            </DialogTitle>
-            <DialogDescription className="text-xs">
-              Submit your leave request for Store Manager & HR approval.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-3.5 py-2 text-xs">
-            <div>
-              <Label className="font-bold text-slate-700">Leave Type</Label>
-              <select
-                value={leaveType}
-                onChange={(e) => setLeaveType(e.target.value)}
-                className="w-full h-9 mt-1 rounded-lg border border-slate-300 px-3 bg-white text-xs font-semibold"
-              >
-                <option value="Casual">Casual Leave (CL)</option>
-                <option value="Sick">Sick / Medical Leave (SL)</option>
-                <option value="Paid">Earned / Paid Leave (PL)</option>
-              </select>
-            </div>
-
-            <div>
-              <Label className="font-bold text-slate-700">Reason for Leave</Label>
-              <textarea
-                rows={3}
-                placeholder="Specify reason for leave..."
-                value={leaveReason}
-                onChange={(e) => setLeaveReason(e.target.value)}
-                className="w-full mt-1 p-2.5 rounded-lg border border-slate-300 text-xs"
-              />
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setIsLeaveModalOpen(false)}>Cancel</Button>
-            <Button
-              size="sm"
-              onClick={() => leaveMutation.mutate()}
-              disabled={leaveMutation.isPending}
-              className="bg-[#30539C] hover:bg-[#203a70] text-white font-bold"
-            >
-              {leaveMutation.isPending ? "Submitting..." : "Submit Leave Request"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <LeaveRequestDialog open={isLeaveModalOpen} onClose={() => setIsLeaveModalOpen(false)} />
 
       {/* ADVANCE SALARY MODAL */}
       <Dialog open={isAdvanceModalOpen} onOpenChange={setIsAdvanceModalOpen}>

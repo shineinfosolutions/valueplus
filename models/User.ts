@@ -42,6 +42,10 @@ export interface IUser extends Document {
   pinUpdatedAt?: Date;
   pinFailCount?: number;
   pinLockedUntil?: Date;
+  unlockPinFailCount?: number;
+  unlockPinLockedUntil?: Date;
+  /** Admin-granted right to run the Live Audit (cashier / manager / admin have it by role). */
+  liveAuditAccess?: boolean;
   status: "active" | "inactive";
 }
 
@@ -93,6 +97,10 @@ const UserSchema = new Schema<IUser>(
     pinUpdatedAt: { type: Date },
     pinFailCount: { type: Number, default: 0, select: false },
     pinLockedUntil: { type: Date, select: false },
+    // Wrong tries of the Admin-set price-unlock PIN (separate from the security PIN).
+    unlockPinFailCount: { type: Number, default: 0, select: false },
+    unlockPinLockedUntil: { type: Date, select: false },
+    liveAuditAccess: { type: Boolean, default: false },
     status: { type: String, enum: ["active", "inactive"], default: "active" },
   },
   { timestamps: true, collection: "users" }

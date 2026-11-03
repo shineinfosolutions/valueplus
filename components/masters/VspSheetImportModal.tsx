@@ -5,7 +5,8 @@ import { useMutation } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { UploadCloud, FileSpreadsheet, CheckCircle2, AlertTriangle, ArrowRight } from "lucide-react";
+import { UploadCloud, FileSpreadsheet, CheckCircle2, AlertTriangle, ArrowRight, Download } from "lucide-react";
+import * as XLSX from "xlsx";
 import { toast } from "sonner";
 import { formatCurrency } from "@/lib/utils";
 
@@ -120,6 +121,20 @@ export function VspSheetImportModal({
 
   const busy = previewMutation.isPending || applyMutation.isPending;
 
+  // A ready-made sheet in the format this screen reads, so the next upload matches without any changes.
+  const downloadSample = () => {
+    const rows = [
+      ["VP CODE", "Material code", "Material Description", "New V+NLC", "New VSP", "Status"],
+      ["-", 1234567, "BRAND EXAMPLE-MODEL-ABC123", 14750, 18590, ""],
+      ["VP0000001", 7654321, "BRAND EXAMPLE-MODEL-XYZ789-P", 21600, 27190, ""],
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws["!cols"] = [{ wch: 12 }, { wch: 14 }, { wch: 36 }, { wch: 12 }, { wch: 12 }, { wch: 10 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Price List");
+    XLSX.writeFile(wb, "price-list-sample.xlsx");
+  };
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-3xl p-0 rounded-2xl overflow-y-auto border-none shadow-2xl">
@@ -154,10 +169,21 @@ export function VspSheetImportModal({
                 {previewMutation.isPending ? "Reading the sheet..." : "Choose the price list Excel sheet"}
               </p>
               <p className="text-xs text-slate-400 mt-1">
-                Each tab needs a "Model" (or "Product") column and a "New V+NLC" and/or "New VSP" column. Nothing is saved until you
+                Each tab needs a "Model", "Product" or "Material Description" column and a "New V+NLC" and/or "New VSP" column. Nothing is saved until you
                 confirm.
               </p>
             </button>
+          )}
+
+          {!report && (
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
+              <p className="text-xs text-slate-600">
+                Not sure about the format? Download a sample sheet, fill in your products and prices, and upload it. It will match without changes.
+              </p>
+              <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={downloadSample}>
+                <Download className="w-3.5 h-3.5 mr-1.5" /> Sample sheet
+              </Button>
+            </div>
           )}
 
           {report && (
@@ -225,17 +251,17 @@ export function VspSheetImportModal({
               {report.notAdded.length > 0 && (
                 <div className="bg-white rounded-xl border border-amber-200 overflow-hidden">
                   <div className="px-4 py-2.5 border-b border-amber-100 bg-amber-50/70 text-xs font-black text-amber-900 uppercase tracking-wider flex items-center gap-2">
-                    <AlertTriangle className="w-3.5 h-3.5" /> Product not added ({report.notAdded.length})
+                    <AlertTriangle className="w-3.5 h-3.5" /> Not in your product list ({report.notAdded.length})
                   </div>
                   <p className="px-4 pt-2.5 text-[11px] text-slate-500">
-                    These models are in the sheet but not in the product list, so their prices were not updated. Add
-                    the product first, then upload the sheet again.
+                    These products are in the sheet but do not exist in your product list, so their prices were NOT updated.
+                    Add each product first, then upload the sheet again.
                   </p>
                   <div className="max-h-48 overflow-y-auto px-4 py-2.5 space-y-1">
                     {report.notAdded.map((n, idx) => (
                       <div key={`${n.sheet}-${n.model}-${idx}`} className="flex items-center justify-between gap-3 text-xs">
                         <span className="min-w-0 truncate">
-                          <span className="font-bold text-slate-800">Product not added:</span>{" "}
+                          <span className="font-bold text-red-700">Product does not exist:</span>{" "}
                           <span className="font-mono text-slate-700">{n.model}</span>
                           <span className="text-slate-400"> · {n.sheet}</span>
                         </span>
@@ -268,6 +294,9 @@ export function VspSheetImportModal({
           </Button>
           {report && (
             <div className="flex items-center gap-2">
+              <Button type="button" variant="ghost" size="sm" onClick={downloadSample} className="text-slate-600">
+                <Download className="w-3.5 h-3.5 mr-1.5" /> Sample sheet
+              </Button>
               <Button type="button" variant="outline" size="sm" disabled={busy} onClick={reset}>
                 Upload another sheet
               </Button>

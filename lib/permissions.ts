@@ -80,8 +80,10 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, Permission[]> = {
     "vendor.manage",
     "payment.record",
     "invoice.cancel",
+    "invoice.delete",
     "invoice.edit",
     "purchase.entry.cancel",
+    "purchase.entry.delete",
     "audit.view",
   ],
   accounts: [

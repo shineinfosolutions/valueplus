@@ -17,6 +17,8 @@ export interface IStoredDocument extends Document {
   fileName: string;
   fileType: string;
   fileSize: number;
+  /** The folder it is filed in; empty = not in any folder. */
+  folderId?: string;
   uploadedBy: string;
   uploadedByUserId?: string;
   uploadedByRole?: string;
@@ -35,6 +37,7 @@ const StoredDocumentSchema = new Schema<IStoredDocument>(
     fileName: { type: String, default: "" },
     fileType: { type: String, default: "" },
     fileSize: { type: Number, default: 0 },
+    folderId: { type: String, default: "", index: true },
     uploadedBy: { type: String, required: true },
     uploadedByUserId: { type: String, default: "" },
     uploadedByRole: { type: String, default: "" },

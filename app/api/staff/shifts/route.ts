@@ -1,28 +1,13 @@
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import ShiftSetting from "@/models/ShiftSetting";
-
-const DEFAULT_SHIFT = {
-  shiftName: "Showroom Shift (10:00 AM - 06:00 PM)",
-  startTime: "10:00",
-  endTime: "18:00",
-  lateGraceMinutes: 15,
-  halfDayLateCutoff: "12:00",
-  minHoursForFullDay: 7.5,
-  minHoursForHalfDay: 4.0,
-  allowEarlyCheckoutWithoutPenalty: false,
-  branchName: "All Branches",
-  updatedBy: "SuperAdmin",
-};
+import { DEFAULT_SHIFT, SHIFT_NAME, getShift } from "@/lib/shift-settings";
 
 // GET active shift settings
 export async function GET() {
   try {
     await connectToDatabase();
-    let shift = await ShiftSetting.findOne().sort({ updatedAt: -1 });
-    if (!shift) {
-      shift = await ShiftSetting.create(DEFAULT_SHIFT);
-    }
+    const shift = await getShift();
     return NextResponse.json({ success: true, data: shift });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message, data: DEFAULT_SHIFT }, { status: 500 });
@@ -36,9 +21,9 @@ export async function POST(req: Request) {
     await connectToDatabase();
 
     const {
-      shiftName = "Showroom Shift (10:00 AM - 06:00 PM)",
+      shiftName = SHIFT_NAME,
       startTime = "10:00",
-      endTime = "18:00",
+      endTime = "21:00",
       lateGraceMinutes = 15,
       halfDayLateCutoff = "12:00",
       minHoursForFullDay = 7.5,

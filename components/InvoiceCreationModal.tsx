@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import { allowedGstRate } from "@/lib/gst-rate";
 const todayInIndia = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date());
-import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -62,6 +62,7 @@ export function InvoiceCreationModal({
   preloadedEstimate = null,
   editEstimate = null,
   editInvoice = null,
+  billRequest = false,
 }: { 
   isOpen: boolean; 
   onClose: () => void; 
@@ -74,6 +75,8 @@ export function InvoiceCreationModal({
   /** A saved tax invoice to edit: the form opens filled with it and saving
    *  re-does the bill on the server (PIN + reason), keeping its number. */
   editInvoice?: any;
+  /** Estimate form used by a salesman to send a sale (bill) to the cashier, who makes the invoice. */
+  billRequest?: boolean;
 }) {
   const isEditingEstimate = mode === "estimate" && Boolean(editEstimate);
   const isEditingInvoice = mode === "invoice" && Boolean(editInvoice);
@@ -95,6 +98,14 @@ export function InvoiceCreationModal({
   const canChangeSalesExecutive = isSuperAdmin || isManager || isCashier || isAccountant;
   const isIndividualStaff = !canChangeSalesExecutive;
 
+  // Delivery staff for the driver / vehicle drop-down (name, phone and vehicle fill in by themselves).
+  const { data: deliveryDrivers = [] } = useQuery<any[]>({
+    queryKey: ["delivery-drivers"],
+    queryFn: async () => {
+      const json = await (await fetch("/api/delivery/drivers")).json();
+      return json.success ? json.data : [];
+    },
+  });
   const { data: usersList = [] } = useQuery({
     queryKey: ["users-list-for-invoice-modal"],
     queryFn: async () => {
@@ -227,7 +238,7 @@ export function InvoiceCreationModal({
     paymentStatus: "Paid",
     
     // Cash specifics
-    cashReceivedBy: "Amit Singh (Counter #1)",
+    cashReceivedBy: "",
     cashRemarks: "",
     
     // UPI specifics
@@ -277,7 +288,9 @@ export function InvoiceCreationModal({
     downPaymentMode: "Cash",
     shippingCharges: 0,
     freightCharges: 0,
-    salesExecutive: "AMIT SINGH",
+    // Empty on purpose: the lead's salesman fills it in, otherwise the cashier picks one
+    // (and an untouched box falls back to the person billing, at save time).
+    salesExecutive: "",
     advanceAmount: 0,
     linkedEstimateNumber: "",
     lineItems: [] as any[],
@@ -343,6 +356,10 @@ export function InvoiceCreationModal({
     } else {
       if (isIndividualStaff && currentUserName) {
         setBillingForm((prev) => ({ ...prev, salesExecutive: currentUserName }));
+      }
+      // Cash is received by whoever is billing, not a fixed name.
+      if (currentUserName) {
+        setBillingForm((prev) => (prev.cashReceivedBy ? prev : { ...prev, cashReceivedBy: currentUserName }));
       }
     }
   }, [isOpen, isIndividualStaff, currentUserName]);
@@ -424,13 +441,20 @@ export function InvoiceCreationModal({
   const [enteredPin, setEnteredPin] = useState("");
   const [pinError, setPinError] = useState(false);
 
+  // Estimates: a line below the product's locked minimum price needs the price unlock
+  // PIN (set by the Admin). The server checks it; this only asks for it and resends.
+  const [unlockPrompt, setUnlockPrompt] = useState<{ lines: { itemName: string; rate: number; lockedMin: number }[]; error?: string } | null>(null);
+  const [unlockPinInput, setUnlockPinInput] = useState("");
+  const unlockPinRef = useRef("");
+  const lastEstimatePayloadRef = useRef<any>(null);
+  const lockedMinFor = (it: any) => {
+    const c: any = catalogItems.find((x: any) => (it.itemId && x._id === it.itemId) || (it.name && x.name === it.name));
+    return Number(c?.lockedMinPrice) || 0;
+  };
+
   // Billing & GST Calculations
-  // A GSTIN entered against the bill zeroes the GST breakdown out entirely,
-  // by admin's explicit instruction — the sticker price the customer pays
-  // (grossAmount, below) doesn't depend on the GST rate either way, so
-  // treating the rate as 0% here just reclassifies the whole amount as
-  // taxable value with no tax line, without changing what's actually charged.
-  const gstinProvided = Boolean(billingForm.customerGstin && billingForm.customerGstin.trim());
+  // The rate on a line is GST-inclusive, so the amount the customer pays does not change with the GST split.
+  // A customer GSTIN no longer zeroes the GST: a bill to a GST-registered business must carry its real GST (GSTR-1 B2B).
 
   const billCalculations = useMemo(() => {
     let subtotal = 0;
@@ -442,7 +466,7 @@ export function InvoiceCreationModal({
     billingForm.lineItems.forEach((item) => {
       // Rate is GST-inclusive: split it back into taxable + GST instead of adding GST on top.
       const grossAmount = ((Number(item.rate) || 0) - (Number(item.discount) || 0)) * (Number(item.qty) || 1);
-      const effectiveGstRate = gstinProvided ? 0 : (Number(item.gstRate) || 0);
+      const effectiveGstRate = (Number(item.gstRate) || 0);
       const lineTaxable = grossAmount / (1 + (effectiveGstRate / 100));
       const lineGst = grossAmount - lineTaxable;
       subtotal += (Number(item.rate) || 0) * (Number(item.qty) || 1);
@@ -612,6 +636,9 @@ export function InvoiceCreationModal({
   // A split with a Finance row is a finance sale too: which company financed it
   // (and its DO) has to be asked here just as in single Finance mode.
   const splitHasFinance = isSplitPayment && splitRows.some((r) => r.mode === "Finance");
+  // Choosing Bajaj Finance (whole bill or a split part) makes the vehicle number compulsory.
+  const bajajVehicleRequired =
+    (billingForm.paymentMode === "Finance" || splitHasFinance) && /bajaj/i.test(String(billingForm.financeProvider || ""));
   const splitFinanceAmount = splitRows
     .filter((r) => r.mode === "Finance")
     .reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
@@ -664,7 +691,8 @@ export function InvoiceCreationModal({
             maxDiscountAmount: matchedCatalog?.maxDiscountAmount || 0,
             incentiveTargetAmount: matchedCatalog?.incentiveTargetAmount || 0,
             incentiveAmount: matchedCatalog?.incentiveAmount || 0,
-            adminApprovedRate: false,
+            // A line the price unlock PIN already cleared on the estimate is not asked again.
+            adminApprovedRate: Boolean(est.priceUnlock?.lines?.some((u: any) => u.itemName === (it.name || it.itemName))),
             incentiveType: matchedCatalog?.incentiveType || "fixed",
             incentiveValue: matchedCatalog?.incentiveValue || 0,
             discount: Number(it.discount) || 0,
@@ -721,6 +749,8 @@ export function InvoiceCreationModal({
       customerCompanyName: est.customerCompanyName || prev.customerCompanyName || "",
       notes: prev.notes ? `${prev.notes} • Linked to Estimate ${est.estimateNumber}` : `Linked to Estimate ${est.estimateNumber}`,
       linkedEstimateNumber: est.estimateNumber,
+      // The invoice goes under the salesman who made the bill.
+      salesExecutive: est.salesperson || est.salesExecutive || prev.salesExecutive,
       lineItems: newItems,
     }));
 
@@ -785,8 +815,8 @@ export function InvoiceCreationModal({
         qty: Number(it.quantity) || 1,
         rate: Number(it.rate) || 0,
         discount: Number(it.discount) || 0,
-        // A bill with a GSTIN saved its lines at 0%; the form zeroes GST itself
-        // for a GSTIN, so the line goes back to the product's own rate here.
+        // Bills made while a GSTIN zeroed the GST were saved at 0%: such a line
+        // goes back to the product's own rate here.
         gstRate: allowedGstRate(Number(it.gstRate) > 0 ? it.gstRate : (cat?.gstRate ?? 18)),
         minSellingPrice: Number(it.minSellingPrice) || cat?.minSellingPrice || 0,
         maxDiscountPercent: cat?.maxDiscountPercent || 0,
@@ -898,6 +928,8 @@ export function InvoiceCreationModal({
         if (!estPhone || estPhone.length < 10) return false;
         const estStatus = (est.status || "").toLowerCase();
         if (estStatus === "converted" || estStatus === "accepted" || estStatus === "cancelled") return false;
+        // Only an estimate the cashier approved can be turned into a bill.
+        if (est.approvalStatus === "pending" || est.approvalStatus === "rejected") return false;
         return estPhone.slice(-10) === cleanPhone.slice(-10);
       });
       if (activeEst) {
@@ -1138,12 +1170,15 @@ export function InvoiceCreationModal({
     networkMode: "always",
     mutationFn: async (payload: any) => {
       if (typeof navigator !== "undefined" && !navigator.onLine) {
+        // An estimate needs the cashier's approval, so it cannot wait in the offline queue.
+        if (mode === "estimate") throw new Error("An estimate needs an internet connection so the cashier can approve it. Try again when you are online.");
         const offlineRecord = saveOfflineInvoice(payload);
         return { isOffline: true, data: offlineRecord };
       }
 
+      let estimateApproval: string | undefined;
       if (mode === "estimate") {
-        try {
+        {
           const estRes = await fetch("/api/estimates", {
             method: isEditingEstimate ? "PUT" : "POST",
             headers: { "Content-Type": "application/json" },
@@ -1164,24 +1199,31 @@ export function InvoiceCreationModal({
                 name: it.itemName || it.name || "Item",
                 quantity: it.quantity || 1,
                 rate: it.rate || 0,
+                discount: it.discount || 0,
+                itemId: it.itemId || "",
                 tax: it.gstRate || 0,
                 amount: it.amount || 0,
               })),
               subTotal: payload.subtotal,
               taxTotal: payload.totalGST,
               total: payload.total,
-              status: "Sent",
               notes: payload.notes || "Official Estimate Generated",
+              kind: billRequest || editEstimate?.kind === "bill" ? "bill" : "estimate",
+              priceUnlockPin: unlockPinRef.current || undefined,
             }),
           });
           const estJson = await estRes.json();
           if (!estJson.success) {
-            console.error("Error creating Estimate record:", estJson.error);
-            toast.warning("Invoice saved, but the Estimate list entry failed to save: " + (estJson.error || "unknown error"));
+            // The estimate itself is what the cashier approves, so nothing else is saved without it.
+            const err: any = new Error(estJson.error || "The estimate could not be saved.");
+            err.belowFloor = Boolean(estJson.belowFloor);
+            err.lines = estJson.lines || [];
+            err.pinFailed = Boolean(estJson.pinFailed);
+            err.noUnlock = Boolean(estJson.noUnlock);
+            err.discountApproval = Boolean(estJson.discountApproval);
+            throw err;
           }
-        } catch (e) {
-          console.error("Error creating Estimate record:", e);
-          toast.warning("Invoice saved, but the Estimate list entry failed to save.");
+          estimateApproval = estJson.data?.approvalStatus;
         }
       }
 
@@ -1204,24 +1246,32 @@ export function InvoiceCreationModal({
         body: JSON.stringify(payload),
       });
       const json = await res.json();
-      if (!json.success) throw new Error(json.error || "Failed to generate invoice");
+      if (!json.success) {
+        const err: any = new Error(json.error || "Failed to generate invoice");
+        err.discountApproval = Boolean(json.discountApproval);
+        throw err;
+      }
       return {
         isOffline: false,
         data: json.data,
         numberReassignedFrom: json.numberReassignedFrom,
         warning: json.warning,
+        estimateApproval,
       };
     },
     onSuccess: (result: any) => {
+      unlockPinRef.current = "";
+      setUnlockPrompt(null);
+      setUnlockPinInput("");
       if (result.isOffline) {
         toast.warning("⚡ Saved locally in offline queue. Auto-sync on connection.", { duration: 5000 });
         setOfflineInvoiceToPrint(result.data);
       } else {
         toast.success(
           result.edited
-            ? `Estimate ${result.data?.invoiceNumber || ""} updated.`
+            ? `Estimate ${result.data?.invoiceNumber || ""} updated.${result.estimateApproval === "pending" ? " Sent to the cashier for approval." : ""}`
             : mode === "estimate"
-            ? `Estimate ${result.data?.invoiceNumber || ""} created & recorded!`
+            ? `${billRequest ? "Bill" : "Estimate"} ${result.data?.invoiceNumber || ""} created${result.estimateApproval === "pending" ? " and sent to the cashier" : ""}.`
             : `Invoice ${result.data?.invoiceNumber || ""} finalized successfully!`
         );
         if (result.numberReassignedFrom) {
@@ -1251,10 +1301,75 @@ export function InvoiceCreationModal({
         onSuccess && onSuccess();
       }
     },
-    onError: (error: any) => {
+    onError: (error: any, variables: any) => {
+      if (error?.discountApproval) {
+        // A discount of 1% or more needs the Store Manager's / Admin's approval: ask, wait, then save again.
+        askDiscountApproval(variables);
+        return;
+      }
+      if (error?.belowFloor && !error.noUnlock) {
+        // Below a locked minimum price: ask for the unlock PIN (a wrong PIN comes back here too).
+        unlockPinRef.current = "";
+        setUnlockPinInput("");
+        setUnlockPrompt({ lines: error.lines || [], error: error.pinFailed ? error.message : undefined });
+        return;
+      }
       toast.error(error.message || "Failed to generate invoice");
     }
   });
+
+  // Discount approval: the lines are sent to the Store Manager / Admin, and the same save is repeated once they say yes.
+  const [discountWait, setDiscountWait] = useState<{ payload: any; ids: string[]; rows: any[] } | null>(null);
+  const askDiscountApproval = async (payload: any) => {
+    try {
+      const res = await fetch("/api/discount-approvals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          context: mode === "estimate" && !billRequest ? "estimate" : "bill",
+          customerName: payload.customerName,
+          lines: (payload.items || []).map((it: any) => ({ itemId: it.itemId, name: it.itemName || it.name, rate: it.rate, discount: it.discount, quantity: it.quantity })),
+        }),
+      });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || "Could not send the discount for approval");
+      if (!json.data?.length) {
+        createInvoiceMutation.mutate(payload);
+        return;
+      }
+      setDiscountWait({ payload, ids: json.data.map((d: any) => String(d._id)), rows: json.data });
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  };
+  useEffect(() => {
+    if (!discountWait) return;
+    let stop = false;
+    const poll = async () => {
+      try {
+        const json = await (await fetch(`/api/discount-approvals?ids=${discountWait.ids.join(",")}`)).json();
+        if (stop || !json.success) return;
+        const rows: any[] = json.data;
+        if (rows.some((r) => r.status === "rejected")) {
+          const r = rows.find((x) => x.status === "rejected");
+          toast.error(`Discount on ${r.itemName} was rejected${r.reviewNote ? `: ${r.reviewNote}` : ""}. Change the price and try again.`, { duration: 8000 });
+          setDiscountWait(null);
+        } else if (rows.length > 0 && rows.every((r) => r.status === "approved")) {
+          const payload = discountWait.payload;
+          setDiscountWait(null);
+          toast.success("Discount approved. Saving...");
+          createInvoiceMutation.mutate(payload);
+        } else {
+          setDiscountWait((w) => (w ? { ...w, rows } : w));
+        }
+      } catch {
+        /* try again */
+      }
+    };
+    const t = setInterval(poll, 4000);
+    return () => { stop = true; clearInterval(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [discountWait?.ids.join(",")]);
 
   // Saving an edited invoice: the payload waits here until the PIN and reason
   // are given, then goes to PUT /api/invoices (action "full-edit").
@@ -1275,9 +1390,19 @@ export function InvoiceCreationModal({
       });
       const json = await res.json().catch(() => ({}));
       if (!json.success) throw new Error(json.error || "Could not update the invoice");
-      return json.data;
+      return json;
     },
-    onSuccess: (data: any) => {
+    onSuccess: (json: any) => {
+      // A Store Manager's change is only sent to the Admin: the bill is unchanged until
+      // it is approved, so there is nothing new to print.
+      if (json.pending) {
+        setPendingEdit(null);
+        toast.success("Sent to the Admin for approval. The bill stays as it is until it is approved.", { duration: 7000 });
+        queryClient.invalidateQueries({ queryKey: ["pending-changes"] });
+        onClose();
+        return;
+      }
+      const data = json.data;
       setPendingEdit(null);
       toast.success(`Invoice ${data?.invoiceNumber || ""} updated.`);
       queryClient.invalidateQueries({ queryKey: ["invoices"] });
@@ -1336,6 +1461,13 @@ export function InvoiceCreationModal({
       return;
     }
 
+    // A tax invoice always names the salesman it is credited to: the lead's salesman (filled in by itself)
+    // or the one the cashier picks. It no longer falls back to whoever is billing.
+    if (mode === "invoice" && !isIndividualStaff && !String(billingForm.salesExecutive || "").trim()) {
+      toast.error("Choose the Sales Executive for this bill. The bill cannot be saved without one.");
+      return;
+    }
+
     if (!billingForm.customerName.trim()) {
       toast.error("Customer Name is mandatory.");
       return;
@@ -1363,6 +1495,10 @@ export function InvoiceCreationModal({
       toast.error("Confirm the delivery date with the customer and enter it — the bill then shows in Order Dispatch.");
       return;
     }
+    if (bajajVehicleRequired && mode === "invoice" && !isEditingInvoice && !String(billingForm.vehicleNumber || "").trim()) {
+      toast.error("Vehicle number is compulsory for a Bajaj Finance bill — enter the delivery vehicle number.");
+      return;
+    }
     if (splitHasFinance && mode !== "estimate" && !String(billingForm.financeProvider || "").trim()) {
       toast.error("Select the finance company (Bajaj, HDB, …) for the Finance part of this split payment.");
       return;
@@ -1383,9 +1519,10 @@ export function InvoiceCreationModal({
 
     // Floor-price protection: ask for one Admin PIN covering every below-floor item,
     // right at submit time — not while the cashier is still typing the rate.
+    // (An estimate has its own locked-price rule, checked by the server.)
     const belowFloor = billingForm.lineItems
       .map((it, idx) => ({ it, idx }))
-      .filter(({ it }) => Number(it.minSellingPrice) > 0 && Number(it.rate) < Number(it.minSellingPrice) && !it.adminApprovedRate);
+      .filter(({ it }) => mode !== "estimate" && Number(it.minSellingPrice) > 0 && Number(it.rate) < Number(it.minSellingPrice) && !it.adminApprovedRate);
 
     if (belowFloor.length > 0) {
       setPinPrompt({
@@ -1410,7 +1547,7 @@ export function InvoiceCreationModal({
     const formattedItems = items.map(item => {
       // Rate is GST-inclusive: split it back into taxable + GST instead of adding GST on top.
       const grossAmount = ((Number(item.rate) || 0) - (Number(item.discount) || 0)) * (Number(item.qty) || 1);
-      const effectiveGstRate = gstinProvided ? 0 : (Number(item.gstRate) || 0);
+      const effectiveGstRate = (Number(item.gstRate) || 0);
       const lineTaxable = grossAmount / (1 + (effectiveGstRate / 100));
       const lineGst = grossAmount - lineTaxable;
       const isIntraState = billingForm.placeOfSupply.includes("09") || billingForm.placeOfSupply.toLowerCase().includes("uttar pradesh");
@@ -1568,8 +1705,8 @@ export function InvoiceCreationModal({
       warehouse: activeLocation?.name,
       type: mode === "credit-note" ? "credit-note" : (mode === "sales-order" ? "sales-order" : (mode === "estimate" ? "proforma" : "tax-invoice")),
       billingEntity,
-      salesExecutive: isIndividualStaff ? currentUserName : (billingForm.salesExecutive || currentUserName),
-      salesperson: isIndividualStaff ? currentUserName : (billingForm.salesExecutive || currentUserName),
+      salesExecutive: isIndividualStaff ? currentUserName : (billingForm.salesExecutive || (mode === "invoice" ? "" : currentUserName)),
+      salesperson: isIndividualStaff ? currentUserName : (billingForm.salesExecutive || (mode === "invoice" ? "" : currentUserName)),
       createdBy: currentUserName,
       date: billingForm.invoiceDate,
       dueDate: billingForm.dueDate || todayInIndia(),
@@ -1682,27 +1819,28 @@ export function InvoiceCreationModal({
       setPendingEdit(finalPayload);
       return;
     }
+    lastEstimatePayloadRef.current = finalPayload;
     createInvoiceMutation.mutate(finalPayload);
   };
 
   return (
     <>
       <Dialog open={isOpen && !offlineInvoiceToPrint} onOpenChange={onClose}>
-        <DialogContent className="max-w-6xl max-h-[94vh] overflow-y-auto p-0 rounded-2xl border-none shadow-2xl">
+        <DialogContent className="max-w-6xl w-[calc(100%-0.75rem)] sm:w-[calc(100%-2rem)] max-h-[94vh] overflow-y-auto p-0 rounded-2xl border-none shadow-2xl">
           {/* Header */}
-          <div className="bg-gradient-to-r from-[#1B2537] via-[#243753] to-[#1B2537] text-white p-5 rounded-t-2xl flex items-center justify-between border-b border-white/10">
-            <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-xl bg-white/10 flex items-center justify-center backdrop-blur-md border border-white/20">
+          <div className="bg-gradient-to-r from-[#1B2537] via-[#243753] to-[#1B2537] text-white p-3 pr-12 sm:p-5 rounded-t-2xl flex items-center justify-between border-b border-white/10">
+            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+              <div className="hidden sm:flex w-11 h-11 rounded-xl bg-white/10 flex items-center justify-center backdrop-blur-md border border-white/20">
                 <Receipt className="w-5 h-5 text-[#76C043]" />
               </div>
               <div>
-                <h3 className="text-lg font-bold tracking-tight flex items-center gap-2">
-                  {isEditingInvoice ? `Edit Tax Invoice ${editInvoice?.invoiceNumber || ""}` : mode === "estimate" ? "Create Commercial Estimate" : mode === "sales-order" ? "Sales Order Booking" : mode === "credit-note" ? "Issue Credit Note" : `${billingEntity ? entityLabel(billingEntity) : "New"} Tax Invoice Billing`}
-                  <span className="text-xs px-2.5 py-0.5 rounded-full bg-[#76C043]/20 text-[#76C043] border border-[#76C043]/30 font-mono font-bold">
+                <h3 className="text-[15px] sm:text-lg font-bold tracking-tight flex flex-wrap items-center gap-x-2 gap-y-0.5 leading-tight">
+                  {isEditingInvoice ? `Edit Tax Invoice ${editInvoice?.invoiceNumber || ""}` : mode === "estimate" ? (billRequest ? "New Bill (goes to the cashier)" : "Create Commercial Estimate") : mode === "sales-order" ? "Sales Order Booking" : mode === "credit-note" ? "Issue Credit Note" : `${billingEntity ? entityLabel(billingEntity) : "New"} Tax Invoice Billing`}
+                  <span className="hidden sm:inline text-xs px-2.5 py-0.5 rounded-full bg-[#76C043]/20 text-[#76C043] border border-[#76C043]/30 font-mono font-bold">
                     {mode === "credit-note" ? "CREDIT NOTE" : mode === "estimate" ? "COMMERCIAL ESTIMATE" : mode === "sales-order" ? "SALES ORDER" : "TAX INVOICE (ORIGINAL)"}
                   </span>
                 </h3>
-                <p className="text-xs text-slate-300 mt-0.5">
+                <p className="text-[11px] sm:text-xs text-slate-300 mt-0.5 line-clamp-2 sm:line-clamp-none">
                   {billingEntity
                     ? `Billing for: ${entityLabel(billingEntity)} • ${BILLING_ENTITIES[billingEntity].printName} • GSTIN: 09ANHPJ7242D1Z2`
                     : "Choose Value Plus or Ashoka Enterprises to start the bill"}
@@ -1711,13 +1849,15 @@ export function InvoiceCreationModal({
             </div>
           </div>
 
-          <form onSubmit={handleFinalSubmit} className="p-6 space-y-6 bg-slate-50/70">
+          <form onSubmit={handleFinalSubmit} className="p-2.5 sm:p-6 space-y-3 sm:space-y-6 bg-slate-50/70">
             {isEditingInvoice ? (
               <div className="rounded-xl border border-blue-200 bg-blue-50/60 px-4 py-3 text-xs text-slate-700">
                 Editing bill <strong className="font-mono text-[#3F63AD]">{editInvoice?.invoiceNumber}</strong> of{" "}
                 <strong>{billingEntity ? entityLabel(billingEntity) : ""}</strong>, dated <strong>{String(editInvoice?.date || "").slice(0, 10)}</strong>.
-                Number and company stay the same; the Admin or Store Manager can change the Bill Date below. Stock,
-                serial numbers, the customer&apos;s balance and payment are corrected when you save (Security PIN needed).
+                Number and company stay the same; the Admin or Store Manager can change the Bill Date below.{" "}
+                {userRole === "manager"
+                  ? "Your change is sent to the Admin and the bill stays as it is until the Admin approves it (Security PIN needed)."
+                  : "Stock, serial numbers, the customer&apos;s balance and payment are corrected when you save (Security PIN needed)."}
               </div>
             ) : (
             <BillingEntityPicker
@@ -1734,13 +1874,13 @@ export function InvoiceCreationModal({
 
             {/* Everything below stays locked until the company is chosen. */}
             <div
-              className={cn("space-y-6", !billingEntity && "opacity-40 pointer-events-none select-none")}
+              className={cn("space-y-3 sm:space-y-6", !billingEntity && "opacity-40 pointer-events-none select-none")}
               aria-disabled={!billingEntity}
             >
             {/* SECTION 1: CUSTOMER-FIRST BILLING FORM */}
-            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
+            <div className="bg-white p-3 sm:p-5 rounded-xl border border-slate-200 shadow-sm space-y-3 sm:space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b pb-3">
-                <h4 className="text-xs font-extrabold uppercase tracking-wider text-[#3F63AD] flex items-center gap-2">
+                <h4 className="text-[11px] sm:text-xs font-extrabold uppercase tracking-normal sm:tracking-wider leading-snug text-[#3F63AD] flex items-start sm:items-center gap-2">
                   <Users className="w-4 h-4 text-[#3F63AD]" /> 1. CUSTOMER PARTICULARS (CUSTOMER-FIRST IDENTIFICATION)
                 </h4>
                 <div className="text-xs text-slate-500 font-semibold">
@@ -1817,28 +1957,13 @@ export function InvoiceCreationModal({
                   <Input value={billingForm.invoiceNo} readOnly={isEditingInvoice} onChange={e => setBillingForm({ ...billingForm, invoiceNo: e.target.value })} className="font-mono text-xs font-bold text-[#3F63AD] bg-blue-50/60 border-blue-200" />
                 </div>
 
-                {/* 3b. BILL DATE — only the Admin and the Store Manager can date a bill
-                    earlier; a Store Manager's back-dated bill goes to the Admin to approve. */}
-                {mode === "invoice" && ["admin", "superadmin", "manager"].includes(userRole) && (
+                {/* 3b. BILL DATE: always today's date (or, on an edit, the bill's own date). Back-dating is not allowed. */}
+                {mode === "invoice" && (
                   <div className="space-y-1.5 md:col-span-1">
                     <Label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Bill Date</Label>
-                    <Input
-                      type="date"
-                      value={billingForm.invoiceDate}
-                      max={todayInIndia()}
-                      onChange={(e) => setBillingForm({ ...billingForm, invoiceDate: e.target.value || todayInIndia() })}
-                      className={cn(
-                        "font-mono text-xs",
-                        billingForm.invoiceDate < todayInIndia() && "border-amber-400 bg-amber-50 text-amber-900"
-                      )}
-                    />
-                    {billingForm.invoiceDate < todayInIndia() && (
-                      <p className="text-[10px] font-semibold text-amber-700">
-                        {userRole === "manager"
-                          ? "Back-dated — the Admin will be asked to approve this bill."
-                          : "Back-dated bill."}
-                      </p>
-                    )}
+                    <div className="h-9 px-3 bg-slate-100 border border-slate-300 rounded-md flex items-center font-mono text-xs font-bold text-slate-700 select-none">
+                      {billingForm.invoiceDate}
+                    </div>
                   </div>
                 )}
 
@@ -1959,14 +2084,14 @@ export function InvoiceCreationModal({
                       is a quotation, nothing is handed over yet. */}
                   {mode !== "estimate" && (
                   <div className="pt-2 border-t border-blue-100/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
+                    <div className="flex w-full flex-col gap-1.5 sm:w-auto sm:flex-row sm:items-center sm:gap-2">
                       <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wide">Dispatch Mode:</span>
-                      <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 shadow-2xs">
+                      <div className="flex w-full rounded-lg border border-slate-200 bg-white p-0.5 shadow-2xs sm:inline-flex sm:w-auto">
                         <button
                           type="button"
                           onClick={() => setBillingForm({ ...billingForm, dispatchType: "immediate" })}
                           className={cn(
-                            "px-2.5 py-1 text-xs font-bold rounded-md transition-all flex items-center gap-1.5",
+                            "flex-1 sm:flex-none justify-center text-center leading-tight min-h-[44px] sm:min-h-0 px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-bold rounded-md transition-all flex items-center gap-1.5",
                             billingForm.dispatchType === "immediate" 
                               ? "bg-[#30539C] text-white shadow-xs" 
                               : "text-slate-600 hover:text-slate-900"
@@ -1978,7 +2103,7 @@ export function InvoiceCreationModal({
                           type="button"
                           onClick={() => setBillingForm({ ...billingForm, dispatchType: "delayed_delivery" })}
                           className={cn(
-                            "px-2.5 py-1 text-xs font-bold rounded-md transition-all flex items-center gap-1.5",
+                            "flex-1 sm:flex-none justify-center text-center leading-tight min-h-[44px] sm:min-h-0 px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-bold rounded-md transition-all flex items-center gap-1.5",
                             billingForm.dispatchType === "delayed_delivery" 
                               ? "bg-amber-600 text-white shadow-xs" 
                               : "text-slate-600 hover:text-slate-900"
@@ -2091,20 +2216,47 @@ export function InvoiceCreationModal({
                 {/* 11. VEHICLE NUMBER */}
                 <div className="space-y-1.5 md:col-span-1">
                   <Label className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
-                    <Truck className="w-3.5 h-3.5 text-blue-600" /> Vehicle Number (Optional)
+                    <Truck className="w-3.5 h-3.5 text-blue-600" /> Driver / Vehicle {bajajVehicleRequired ? <span className="text-rose-600">* (compulsory for Bajaj Finance)</span> : "(Optional)"}
                   </Label>
-                  <Input 
-                    placeholder="e.g. UP53 CA 1234" 
-                    value={billingForm.vehicleNumber} 
-                    onChange={(e) => setBillingForm({ ...billingForm, vehicleNumber: e.target.value })} 
-                    className="font-mono bg-slate-50 border-slate-300 uppercase text-xs"
-                  />
+                  {deliveryDrivers.length > 0 ? (
+                    <>
+                      <select
+                        value={deliveryDrivers.find((d: any) => d.name === billingForm.driverName && (d.vehicleNumber || "") === (billingForm.vehicleNumber || ""))?.id || ""}
+                        onChange={(e) => {
+                          const d = deliveryDrivers.find((x: any) => x.id === e.target.value);
+                          setBillingForm({ ...billingForm, driverName: d?.name || "", driverPhone: d?.phone || "", vehicleNumber: d?.vehicleNumber || "" });
+                        }}
+                        className={`h-9 w-full rounded-md border bg-slate-50 px-2 font-mono text-xs ${bajajVehicleRequired && !String(billingForm.vehicleNumber || "").trim() ? "border-rose-400 bg-rose-50" : "border-slate-300"}`}
+                      >
+                        <option value="">Select driver / vehicle</option>
+                        {deliveryDrivers.map((d: any) => (
+                          <option key={d.id} value={d.id}>
+                            {d.name}{d.vehicleNumber ? ` · ${d.vehicleNumber}` : ""}{d.phone ? ` · ${d.phone}` : ""}
+                          </option>
+                        ))}
+                      </select>
+                      {billingForm.driverName && (
+                        <p className="text-[10px] text-slate-500">
+                          Driver: {billingForm.driverName}{billingForm.driverPhone ? ` (${billingForm.driverPhone})` : ""}{billingForm.vehicleNumber ? ` · Vehicle ${billingForm.vehicleNumber}` : " · no vehicle saved for this driver"}
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <Input 
+                      placeholder="e.g. UP53 CA 1234" 
+                      value={billingForm.vehicleNumber} 
+                      onChange={(e) => setBillingForm({ ...billingForm, vehicleNumber: e.target.value })} 
+                      className={`font-mono bg-slate-50 border-slate-300 uppercase text-xs ${bajajVehicleRequired && !String(billingForm.vehicleNumber || "").trim() ? "border-rose-400 bg-rose-50" : ""}`}
+                    />
+                  )}
                 </div>
 
                 {/* 12. SALES EXECUTIVE */}
                 <div className="space-y-1.5 md:col-span-1">
                   <div className="flex items-center justify-between">
-                    <Label className="text-xs font-semibold text-slate-700">Sales Executive</Label>
+                    <Label className="text-xs font-semibold text-slate-700">
+                      Sales Executive {mode === "invoice" && !isIndividualStaff && <span className="text-rose-600">*</span>}
+                    </Label>
                     {isIndividualStaff && (
                       <span className="text-[10px] text-amber-800 font-mono font-bold bg-amber-100/70 px-1 rounded border border-amber-300">
                         🔒 Auto Locked
@@ -2124,8 +2276,13 @@ export function InvoiceCreationModal({
                         setBillingForm({ ...billingForm, salesExecutive: v });
                       }}
                     >
-                      <SelectTrigger className="bg-blue-50/50 border-blue-200 font-bold text-[#3F63AD]">
-                        <SelectValue />
+                      <SelectTrigger
+                        className={cn(
+                          "bg-blue-50/50 border-blue-200 font-bold text-[#3F63AD]",
+                          mode === "invoice" && !String(billingForm.salesExecutive || "").trim() && "border-rose-400 bg-rose-50"
+                        )}
+                      >
+                        <SelectValue placeholder={mode === "invoice" ? "Select the salesman (required)" : `Lead's salesman / ${currentUserName || "me"}`} />
                       </SelectTrigger>
                       <SelectContent className="max-h-60">
                         {usersList.length > 0 ? (
@@ -2197,10 +2354,10 @@ export function InvoiceCreationModal({
             </div>
 
             {/* SECTION 2: ITEMS, VP CODES, STOCK, SERIALS & EXTENDED WARRANTY */}
-            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
+            <div className="bg-white p-3 sm:p-5 rounded-xl border border-slate-200 shadow-sm space-y-3 sm:space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                  <h4 className="text-xs font-extrabold uppercase tracking-wider text-[#3F63AD] flex items-center gap-2">
+                  <h4 className="text-[11px] sm:text-xs font-extrabold uppercase tracking-normal sm:tracking-wider leading-snug text-[#3F63AD] flex items-start sm:items-center gap-2">
                     <ShoppingCart className="w-4 h-4 text-[#3F63AD]" /> 2. PRODUCTS, VP CODES, INVENTORY STOCK & SERIAL / WARRANTY
                   </h4>
                   <p className="text-[11px] text-slate-500 mt-0.5">
@@ -2216,7 +2373,7 @@ export function InvoiceCreationModal({
                 {billingForm.lineItems.map((item, idx) => {
                   // Rate is GST-inclusive: split it back into taxable + GST instead of adding GST on top.
                   const grossAmount = ((Number(item.rate) || 0) - (Number(item.discount) || 0)) * (Number(item.qty) || 1);
-                  const rowEffectiveGstRate = gstinProvided ? 0 : (Number(item.gstRate) || 0);
+                  const rowEffectiveGstRate = (Number(item.gstRate) || 0);
                   const lineTaxable = grossAmount / (1 + (rowEffectiveGstRate / 100));
                   const lineGst = grossAmount - lineTaxable;
                   const warrantyAmt = Number(item.extendedWarrantyAmount) || 0;
@@ -2367,9 +2524,9 @@ export function InvoiceCreationModal({
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+                      <div className="grid grid-cols-3 md:grid-cols-6 gap-2 sm:gap-3">
                         {/* PRODUCT SEARCH & AUTOCOMPLETE */}
-                        <div className="md:col-span-3 relative">
+                        <div className="col-span-3 md:col-span-3 relative">
                           <Label className="text-[11px] font-semibold text-slate-700">Product / Item Search *</Label>
                           <Input
                             placeholder="Type to search electronics/mobile catalog..."
@@ -2441,7 +2598,7 @@ export function InvoiceCreationModal({
                         </div>
 
                         {/* SERIAL NUMBER DROPDOWN (EXPANDED TO 3 COLS) */}
-                        <div className="md:col-span-3">
+                        <div className="col-span-3 md:col-span-3">
                           <div className="flex items-center justify-between mb-1">
                             <Label className="text-[11px] font-semibold text-slate-700">Serial Number (In Store)</Label>
                             {matchingSerials.length > 0 && (
@@ -2478,7 +2635,7 @@ export function InvoiceCreationModal({
 
                         {/* QTY */}
                         <div>
-                          <Label className="text-[11px] font-semibold text-slate-700">Qty (Pcs)</Label>
+                          <div className="mb-1 flex items-center justify-between"><Label className="text-[11px] font-semibold text-slate-700">Qty (Pcs)</Label></div>
                           <Input 
                             type="number" min="1" 
                             value={item.qty} 
@@ -2491,7 +2648,11 @@ export function InvoiceCreationModal({
                         <div>
                           <div className="flex items-center justify-between mb-1">
                             <Label className="text-[11px] font-semibold text-slate-700">Rate (₹)</Label>
-                            {item.minSellingPrice > 0 && (
+                            {mode === "estimate" && lockedMinFor(item) > 0 ? (
+                              <span className="text-[8.5px] font-mono text-red-800 bg-red-50 px-1 rounded border border-red-200" title="Locked minimum price. A lower price needs the price unlock PIN.">
+                                Locked min: ₹{lockedMinFor(item)}
+                              </span>
+                            ) : mode !== "estimate" && item.minSellingPrice > 0 && (
                               <span className="text-[8.5px] font-mono text-amber-800 bg-amber-50 px-1 rounded border border-amber-200" title={`Min Floor Price: ₹${item.minSellingPrice}`}>
                                 Min: ₹{item.minSellingPrice}
                               </span>
@@ -2504,7 +2665,8 @@ export function InvoiceCreationModal({
                             className={cn(
                               "h-8 text-xs bg-white border-slate-300 text-right font-semibold",
                               item.adminApprovedRate && "border-emerald-500 bg-emerald-50 text-emerald-900 font-bold",
-                              item.minSellingPrice > 0 && item.rate < item.minSellingPrice && !item.adminApprovedRate && "border-amber-500 bg-amber-50 text-amber-900"
+                              mode !== "estimate" && item.minSellingPrice > 0 && item.rate < item.minSellingPrice && !item.adminApprovedRate && "border-amber-500 bg-amber-50 text-amber-900",
+                              mode === "estimate" && lockedMinFor(item) > 0 && (Number(item.rate) || 0) - (Number(item.discount) || 0) < lockedMinFor(item) && "border-red-500 bg-red-50 text-red-900"
                             )}
                           />
                         </div>
@@ -2528,7 +2690,7 @@ export function InvoiceCreationModal({
                         </div>
 
                         {/* GST % */}
-                        <div>
+                        <div className="col-span-3 md:col-span-1">
                           <Label className="text-[11px] font-semibold text-slate-700">GST Slab</Label>
                           <Select value={String(item.gstRate)} onValueChange={(v) => handleLineItemChange(idx, "gstRate", Number(v))}>
                             <SelectTrigger className="h-8 text-xs bg-white border-slate-300 font-semibold"><SelectValue /></SelectTrigger>
@@ -2542,7 +2704,7 @@ export function InvoiceCreationModal({
                         </div>
 
                         {/* EXTENDED WARRANTY PLAN & CUSTOM DETAILS */}
-                        <div className="md:col-span-6 bg-purple-50/60 p-3 rounded-xl border border-purple-200 space-y-2.5">
+                        <div className="col-span-3 md:col-span-6 bg-purple-50/60 p-3 rounded-xl border border-purple-200 space-y-2.5">
                           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
                             <Label className="text-xs font-bold text-purple-950 flex items-center gap-1.5">
                               <Shield className="w-3.5 h-3.5 text-purple-600" /> Extended Warranty & Device Protection
@@ -2717,7 +2879,7 @@ export function InvoiceCreationModal({
 
             {/* 3A. ESTIMATE QUOTATION TERMS (PRICE QUOTE ONLY BY DEFAULT) */}
             {mode === "estimate" && (
-              <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
+              <div className="bg-white p-3 sm:p-5 rounded-xl border border-slate-200 shadow-sm space-y-3 sm:space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b pb-3">
                   <h4 className="text-xs font-extrabold uppercase tracking-wider text-blue-700 flex items-center gap-2">
                     <FileText className="w-4 h-4 text-blue-600" /> 3. ESTIMATE QUOTATION TERMS
@@ -2776,9 +2938,9 @@ export function InvoiceCreationModal({
 
             {/* 3B. PAYMENT MODES & RECONCILIATION (CASH, UPI, ONLINE, CREDIT CARD + MDR, DEBIT CARD, FINANCE, DUE) */}
             {(mode !== "estimate" || estimateIncludesAdvance) && (
-              <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
+              <div className="bg-white p-3 sm:p-5 rounded-xl border border-slate-200 shadow-sm space-y-3 sm:space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-3">
-                    <h4 className="text-xs font-extrabold uppercase tracking-wider text-[#3F63AD] flex items-center gap-2">
+                    <h4 className="text-[11px] sm:text-xs font-extrabold uppercase tracking-normal sm:tracking-wider leading-snug text-[#3F63AD] flex items-start sm:items-center gap-2">
                       <CreditCard className="w-4 h-4 text-[#3F63AD]" /> 
                       {mode === "estimate" ? "3. TOKEN ADVANCE PAYMENT MODE SPECIFICATIONS" : "3. PAYMENT MODE SPECIFICATIONS & RECONCILIATION"}
                     </h4>
@@ -2799,7 +2961,7 @@ export function InvoiceCreationModal({
                         Split Payment
                       </button>
                     )}
-                    <div className={cn("flex flex-wrap items-center gap-1 bg-slate-100 p-1 rounded-lg", isSplitPayment && "opacity-40 pointer-events-none")}>
+                    <div className={cn("grid grid-cols-3 gap-1 sm:flex sm:flex-wrap sm:items-center bg-slate-100 p-1 rounded-lg w-full sm:w-auto", isSplitPayment && "opacity-40 pointer-events-none")}>
                       {(mode === "estimate"
                         ? (["Cash", "UPI", "Credit Card", "Debit Card"] as const)
                         : (["Cash", "UPI", "Credit Card", "Debit Card", "Online", "Finance", "Due / Credit"] as const)
@@ -2809,7 +2971,7 @@ export function InvoiceCreationModal({
                           type="button"
                           onClick={() => setBillingForm({ ...billingForm, paymentMode: modeKey })}
                           className={cn(
-                            "px-3 py-1 rounded-md text-xs font-bold transition-all flex items-center gap-1",
+                            "px-1.5 sm:px-3 py-2.5 sm:py-1 min-h-[44px] sm:min-h-0 justify-center text-center rounded-md text-[11px] sm:text-xs font-bold transition-all flex items-center gap-1",
                             // While Split Payment is on, this single-mode row is
                             // disabled (see the opacity/pointer-events wrapper
                             // above) and no longer the source of truth — leaving
@@ -3583,7 +3745,7 @@ export function InvoiceCreationModal({
                   )}
                 >
                   {mode === "estimate" ? (
-                    <><FileText className="w-4 h-4 mr-2" /> Generate Estimate</>
+                    <><FileText className="w-4 h-4 mr-2" /> {billRequest || editEstimate?.kind === "bill" ? "Send Bill to Cashier" : "Generate Estimate"}</>
                   ) : mode === "sales-order" ? (
                     <><ShoppingCart className="w-4 h-4 mr-2" /> Book Sales Order</>
                   ) : mode === "credit-note" ? (
@@ -3591,7 +3753,7 @@ export function InvoiceCreationModal({
                   ) : (
                     <>
                       <Receipt className="w-4 h-4 mr-2" />
-                      {isIndividualStaff ? "Restricted: Cashier Only" : isEditingInvoice ? "Save Changes" : "Finalize & Generate Invoice"}
+                      {isIndividualStaff ? "Restricted: Cashier Only" : isEditingInvoice ? (userRole === "manager" ? "Send for Approval" : "Save Changes") : "Finalize & Generate Invoice"}
                     </>
                   )}
                 </Button>
@@ -3599,6 +3761,93 @@ export function InvoiceCreationModal({
             </DialogFooter>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── Price unlock PIN (estimate line below the locked minimum price) ─── */}
+      <Dialog open={!!discountWait} onOpenChange={(open) => { if (!open) setDiscountWait(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Waiting for discount approval</DialogTitle>
+            <DialogDescription>
+              The discount was sent to the Store Manager (up to 10%) or the Admin (above 10%). This bill is saved by itself as soon as they approve.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            {(discountWait?.rows || []).map((r: any) => (
+              <div key={r._id} className="rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs">
+                <div className="flex justify-between gap-2">
+                  <span className="font-bold">{r.itemName}</span>
+                  <span className="font-black text-rose-700">{r.percent}% off</span>
+                </div>
+                <p className="text-slate-600">{formatCurrency(r.sellingPrice)} to {formatCurrency(r.price)} · {r.tier === "admin" ? "needs the Admin" : "needs the Store Manager"} · {r.status}</p>
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDiscountWait(null)}>Cancel</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!unlockPrompt} onOpenChange={(open) => { if (!open) { setUnlockPrompt(null); setUnlockPinInput(""); } }}>
+        <DialogContent className="max-w-md p-0 rounded-2xl border-none shadow-2xl overflow-y-auto bg-white z-[99999]">
+          <div className="bg-gradient-to-r from-red-700 to-red-800 text-white p-5 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
+              <Shield className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h3 className="font-bold text-base">Price Unlock PIN</h3>
+              <p className="text-xs text-red-100">This price is below the locked minimum. The cashier must enter the unlock PIN.</p>
+            </div>
+          </div>
+          <div className="p-5 space-y-4">
+            <div className="bg-red-50 border border-red-200 rounded-xl p-3.5 text-xs space-y-2 max-h-40 overflow-y-auto">
+              {(unlockPrompt?.lines || []).map((l, i) => (
+                <div key={i} className={cn("space-y-1", i > 0 && "pt-2 border-t border-red-200")}>
+                  <p className="font-bold text-red-950 line-clamp-1">{l.itemName}</p>
+                  <div className="flex justify-between text-red-900"><span>Locked minimum price:</span><span className="font-mono font-bold">{formatCurrency(l.lockedMin)}</span></div>
+                  <div className="flex justify-between text-red-700 font-bold"><span>Price on this document:</span><span className="font-mono">{formatCurrency(l.rate)}</span></div>
+                </div>
+              ))}
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-slate-800">Price unlock PIN *</Label>
+              <Input
+                type="password"
+                inputMode="numeric"
+                maxLength={6}
+                autoFocus
+                placeholder="••••"
+                value={unlockPinInput}
+                onChange={(e) => setUnlockPinInput(e.target.value.replace(/\D/g, ""))}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    (document.getElementById("unlock-pin-submit") as HTMLButtonElement | null)?.click();
+                  }
+                }}
+                className={cn("text-center text-2xl tracking-[0.5em] font-mono h-12 font-black border-2", unlockPrompt?.error ? "border-red-500 bg-red-50" : "border-red-300 bg-slate-50")}
+              />
+              {unlockPrompt?.error && <p className="text-xs text-red-600 font-semibold text-center">{unlockPrompt.error}</p>}
+            </div>
+            <div className="flex items-center gap-2 pt-2">
+              <Button type="button" variant="outline" onClick={() => { setUnlockPrompt(null); setUnlockPinInput(""); }} className="flex-1 text-xs">Cancel</Button>
+              <Button
+                id="unlock-pin-submit"
+                type="button"
+                disabled={unlockPinInput.length < 4 || createInvoiceMutation.isPending}
+                onClick={() => {
+                  unlockPinRef.current = unlockPinInput;
+                  setUnlockPrompt(null);
+                  if (lastEstimatePayloadRef.current) createInvoiceMutation.mutate(lastEstimatePayloadRef.current);
+                }}
+                className="flex-1 bg-red-700 hover:bg-red-800 text-white font-bold text-xs gap-1.5 shadow-sm"
+              >
+                <CheckCircle2 className="w-4 h-4" /> Unlock & Save
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -3693,9 +3942,13 @@ export function InvoiceCreationModal({
             }
           }}
           onConfirm={(result) => editInvoiceMutation.mutate(result)}
-          title={`Save changes to ${editInvoice?.invoiceNumber || "invoice"}`}
-          description="Stock, serial numbers, the customer's balance and the bill's payment will be corrected to match. The old and new bill are kept in the audit log with your reason."
-          confirmLabel="Save Changes"
+          title={userRole === "manager" ? `Send changes to ${editInvoice?.invoiceNumber || "invoice"} for approval` : `Save changes to ${editInvoice?.invoiceNumber || "invoice"}`}
+          description={
+            userRole === "manager"
+              ? "The Admin will see what the bill is now and what you want it to become, with your reason. The bill stays exactly as it is until the Admin approves it."
+              : "Stock, serial numbers, the customer's balance and the bill's payment will be corrected to match. The old and new bill are kept in the audit log with your reason."
+          }
+          confirmLabel={userRole === "manager" ? "Send for approval" : "Save Changes"}
           destructive={false}
           isPending={editInvoiceMutation.isPending}
           errorMessage={editAuthError}

@@ -1,3 +1,4 @@
+import { deferredContext } from "@/lib/deferred-context";
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import authOptions from "@/lib/authOptions";
@@ -44,6 +45,9 @@ export function invalidatePermissionCache() {
 
 /** The signed-in user, or null when there is no session. */
 export async function getActor(): Promise<SessionActor | null> {
+  // An approved request of the Store Manager is being carried out: the approving Admin is the actor.
+  const deferred = deferredContext.getStore();
+  if (deferred) return deferred.approver;
   const session = await getServerSession(authOptions);
   const user: any = session?.user;
   if (!user) return null;

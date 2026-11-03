@@ -876,23 +876,23 @@ function ValueplusInvoiceContent({ invoiceData: propInvoiceData, onBack }: Value
                   </span>
                 </>
               ) : null}{" "}
-              {activeData.vehicleNumber ? `• Vehicle: ${activeData.vehicleNumber}` : ""}
+             
             </p>
           ) : activeData.paymentMode === "Finance" ? (
             <p>
-              <span className="font-bold">Remarks:</span> Payment Mode: <span className="font-bold uppercase text-orange-700">FINANCE ({activeData.financeProvider || "Bajaj Finance"})</span> • Sanctioned Loan: <span className="font-mono font-bold">₹{(activeData.financeGrossLoan || (activeData.netAmount - (activeData.financeDownPayment || 0)))?.toFixed(2)}</span> • Down Payment: <span className="font-mono font-bold">₹{(activeData.financeDownPayment || 0)?.toFixed(2)}</span> via <span className="font-bold uppercase">{activeData.financeDownPaymentMode || "Cash"}</span> • DO ID: <span className="font-mono font-bold">{activeData.financeDoId || "N/A"}</span> {activeData.vehicleNumber ? `• Vehicle: ${activeData.vehicleNumber}` : ""}
+              <span className="font-bold">Remarks:</span> Payment Mode: <span className="font-bold uppercase text-orange-700">FINANCE ({activeData.financeProvider || "Bajaj Finance"})</span> • Sanctioned Loan: <span className="font-mono font-bold">₹{(activeData.financeGrossLoan || (activeData.netAmount - (activeData.financeDownPayment || 0)))?.toFixed(2)}</span> • Down Payment: <span className="font-mono font-bold">₹{(activeData.financeDownPayment || 0)?.toFixed(2)}</span> via <span className="font-bold uppercase">{activeData.financeDownPaymentMode || "Cash"}</span> • DO ID: <span className="font-mono font-bold">{activeData.financeDoId || "N/A"}</span>
             </p>
           ) : activeData.paymentMode === "Due / Credit" ? (
             <p>
-              <span className="font-bold">Remarks:</span> Payment Mode: <span className="font-bold uppercase text-rose-700">DUE / CREDIT</span> • Amount Received: <span className="font-mono font-bold">₹{(activeData.dueAdvanceAmount || activeData.paidAmount || 0)?.toFixed(2)}</span> via <span className="font-bold uppercase">{activeData.dueAdvanceMode || "Cash"}</span> • Balance Due: <span className="font-mono font-bold text-rose-800">₹{activeData.balanceAmount?.toFixed(2)}</span> {activeData.dueDate ? `(Promise Date: ${activeData.dueDate})` : ""} {activeData.vehicleNumber ? `• Vehicle: ${activeData.vehicleNumber}` : ""}
+              <span className="font-bold">Remarks:</span> Payment Mode: <span className="font-bold uppercase text-rose-700">DUE / CREDIT</span> • Amount Received: <span className="font-mono font-bold">₹{(activeData.dueAdvanceAmount || activeData.paidAmount || 0)?.toFixed(2)}</span> via <span className="font-bold uppercase">{activeData.dueAdvanceMode || "Cash"}</span> • Balance Due: <span className="font-mono font-bold text-rose-800">₹{activeData.balanceAmount?.toFixed(2)}</span> {activeData.dueDate ? `(Promise Date: ${activeData.dueDate})` : ""}
             </p>
           ) : activeData.paymentMode === "Credit Card" || activeData.paymentMode === "Debit Card" ? (
             <p>
-              <span className="font-bold">Remarks:</span> Mode: <span className="font-bold uppercase text-amber-800">{activeData.paymentMode}</span> {activeData.cardType ? `(${activeData.cardType})` : ""} {activeData.cardTxnId ? `• Auth/RRN: ${activeData.cardTxnId}` : ""} {activeData.cardLast4 ? `• Card: ****${activeData.cardLast4}` : ""} {activeData.cardMdrPercent ? `• Bank MDR Rate: ${activeData.cardMdrPercent}%` : ""} {activeData.vehicleNumber ? `• Vehicle: ${activeData.vehicleNumber}` : ""}
+              <span className="font-bold">Remarks:</span> Mode: <span className="font-bold uppercase text-amber-800">{activeData.paymentMode}</span> {activeData.cardType ? `(${activeData.cardType})` : ""} {activeData.cardTxnId ? `• Auth/RRN: ${activeData.cardTxnId}` : ""} {activeData.cardLast4 ? `• Card: ****${activeData.cardLast4}` : ""} {activeData.cardMdrPercent ? `• Bank MDR Rate: ${activeData.cardMdrPercent}%` : ""}
             </p>
           ) : (
             <p>
-              <span className="font-bold">Remarks:</span> Mode: <span className="font-bold uppercase">{activeData.paymentMode}</span> {activeData.upiTxnId ? `• UPI UTR: ${activeData.upiTxnId}` : ""} {activeData.vehicleNumber ? `• Vehicle No: ${activeData.vehicleNumber}` : ""}
+              <span className="font-bold">Remarks:</span> Mode: <span className="font-bold uppercase">{activeData.paymentMode}</span> {activeData.upiTxnId ? `• UPI UTR: ${activeData.upiTxnId}` : ""}
             </p>
           )}
 

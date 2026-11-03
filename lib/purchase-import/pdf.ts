@@ -73,6 +73,41 @@ function splitPdfTextLine(line: string): string[] {
   return name ? [name, ...trailing] : [line];
 }
 
+/**
+ * Serial numbers from the text of a "SERIAL NUMBER DETAILS" section, one entry per unit,
+ * each with the product code it belongs to.
+ *
+ * Each product has one record: "S/R : <serial> / <serial> ..." and, on the same line or
+ * a later one, the product's code. A product with many units has its serials wrapped over
+ * several lines, with the code line coming AFTER them (a 6-unit air fryer's serials sat on
+ * three lines above its "VP0011236 - ..." line), so lines are gathered until a code appears.
+ */
+export function parseSerialSection(lines: string[]): { code: string; serial: string }[] {
+  const out: { code: string; serial: string }[] = [];
+  let buffer = "";
+  const flush = (code: string) => {
+    buffer
+      .replace(/^\s*S\/?R\s*:\s*/i, "")
+      .split("/")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .forEach((serial) => out.push({ code, serial }));
+    buffer = "";
+  };
+  for (const line of lines) {
+    const beforeTab = line.split("\t")[0].trim();
+    const code = extractEmbeddedCode(line);
+    if (/S\/?R\s*:/i.test(beforeTab)) {
+      buffer = beforeTab;
+      if (code) flush(code); // the code is on this same line
+    } else if (buffer) {
+      if (code) flush(code);
+      else buffer += ` ${beforeTab}`;
+    }
+  }
+  return out;
+}
+
 export interface ExtractedSupplier {
   name?: string;
   phone?: string;
@@ -169,8 +204,19 @@ export async function extractRowsFromPdf(
       return best;
     }, null);
 
+    // The serial section is also read from the page text: the wrapped lines of a many-unit
+    // product's serials (spread over several lines) are lost from the extracted table, which
+    // then lists only some of the units. The text read is used when it finds more.
+    const allLines = rawText.split("\n").map((l) => l.trim()).filter(Boolean);
+    const markerAt = allLines.findIndex((l) => /serial\s*number\s*details/i.test(l));
+    const fromText = markerAt === -1 ? [] : parseSerialSection(allLines.slice(markerAt + 1));
+    const betterSerialGrid =
+      fromText.length > Math.max(0, serialGrid.length - 1)
+        ? [["Description", "Serial Number"], ...fromText.map((e) => [e.code, e.serial])]
+        : serialGrid;
+
     if (biggest && biggest.length >= 2 && biggest[0].length >= 2) {
-      return { grid: biggest, serialGrid, usedTableExtraction: true, rawText: "", supplier };
+      return { grid: biggest, serialGrid: betterSerialGrid, usedTableExtraction: true, rawText: "", supplier };
     }
 
     // No usable table — fall back to line-by-line text. resolveRows() still
@@ -211,17 +257,7 @@ export async function extractRowsFromPdf(
     // regex) silently dropped every serial after the first, so a 2-unit line
     // always came back "1/2 Recorded" no matter how the admin filled it in.
     let textSerialGrid: string[][] = [];
-    const serialEntries: { code: string; serial: string }[] = [];
-    serialSectionLines.forEach((line) => {
-      const srBlockMatch = line.match(/S\/?R\s*:\s*([^\t]+?)(?:\t|$)/i);
-      const code = extractEmbeddedCode(line);
-      if (!srBlockMatch || !code) return;
-      srBlockMatch[1]
-        .split("/")
-        .map((s) => s.trim())
-        .filter(Boolean)
-        .forEach((serial) => serialEntries.push({ code, serial }));
-    });
+    const serialEntries = parseSerialSection(serialSectionLines);
     if (serialEntries.length > 0) {
       textSerialGrid = [["Description", "Serial Number"], ...serialEntries.map((e) => [e.code, e.serial])];
     }

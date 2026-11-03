@@ -1,3 +1,4 @@
+import { deferIfManager, diffFields } from "@/lib/deferred-actions";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import Customer from "@/models/Customer";
@@ -17,12 +18,24 @@ export async function POST(request: Request) {
     await connectToDatabase();
     const body = await request.json();
 
+    // The next free code, from the highest one in use. A random 4-digit code could land on
+    // one that exists, and the unique index then rejected the new customer.
+    let code = body.code as string | undefined;
+    if (!code) {
+      const codes = await Customer.find({ code: /^CUST-\d+$/ }, { code: 1 }).lean();
+      const highest = codes.reduce((m: number, c: any) => Math.max(m, parseInt(String(c.code).slice(5), 10) || 0), 0);
+      code = `CUST-${String(highest + 1).padStart(3, "0")}`;
+    }
+
     const newCust = await Customer.create({
-      code: body.code || `CUST-${Math.floor(1000 + Math.random() * 9000)}`,
+      code,
       name: body.name,
       email: body.email || "",
       phone: body.phone,
-      gstNumber: body.gstNumber || "",
+      // The Customer screen sends the GSTIN as `gst`, other callers as `gstNumber`:
+      // only the second was read, so a GSTIN typed when adding a customer was dropped.
+      gstNumber: body.gstNumber || body.gst || "",
+      customerGroup: body.group || body.customerGroup || "Retail",
       billingAddress: {
         line1: body.address || "Main Street",
         city: body.city || "Mumbai",
@@ -46,6 +59,12 @@ export async function PUT(request: Request) {
   try {
     await connectToDatabase();
     const body = await request.json();
+    const waiting = await deferIfManager(request, async () => {
+      const current: any = await Customer.findOne({ code: body.code }).lean();
+      const { before, after } = diffFields(current, body);
+      return { title: `Edit customer ${current?.name || body.code}`, description: `Change the customer ${current?.name || ""} (${body.code}).`, target: `customer.edit:${body.code}`, before, after, body };
+    });
+    if (waiting) return waiting;
 
     if (!body.code) {
       return NextResponse.json({ success: false, error: "Customer code is required for update" }, { status: 400 });
@@ -83,6 +102,8 @@ export async function DELETE(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const code = searchParams.get("code");
+    const waiting = await deferIfManager(request, { title: `Delete customer ${code || ""}`, description: `Delete the customer ${code || ""}.`, target: `customer.delete:${code}` });
+    if (waiting) return waiting;
     
     if (!code) {
       return NextResponse.json({ success: false, error: "Customer code is required" }, { status: 400 });
