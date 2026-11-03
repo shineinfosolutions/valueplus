@@ -211,6 +211,8 @@ export interface IInvoice extends Document {
   notes?: string;
   salesExecutive?: string;
   salesExecutiveIncentive?: number;
+  /** 10% of the Onsitego plans sold on this bill, for its salesman (lib/onsitego.ts; set by the server). */
+  onsitegoIncentive?: number;
   adminOverridePinUsed?: boolean;
   reprintCount?: number;
   lastPrintedAt?: string;
@@ -412,6 +414,7 @@ const InvoiceSchema = new Schema<IInvoice>(
     notes: String,
     salesExecutive: { type: String, default: "" },
     salesExecutiveIncentive: { type: Number, default: 0 },
+    onsitegoIncentive: { type: Number, default: 0 },
     adminOverridePinUsed: { type: Boolean, default: false },
     reprintCount: { type: Number, default: 0 },
     lastPrintedAt: { type: String },

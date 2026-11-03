@@ -7,6 +7,7 @@ import { notifyRoles } from "@/lib/notify";
 import { normName } from "@/lib/staff-incentive";
 import { getShift } from "@/lib/shift-settings";
 import { publishChange } from "@/lib/realtime";
+import { awayTooLongAlerts, closeAwayAtCheckout } from "@/lib/presence";
 
 /** Everyone who works at the store (not the Admin, not outside suppliers). */
 const STAFF_ROLES = ["salesman", "sales", "cashier", "manager", "warehouse", "accounts", "hr", "driver"];
@@ -129,6 +130,7 @@ async function autoCheckOut(now: ReturnType<typeof istNow>): Promise<number> {
     const worked = Math.max(0, endMin - inMin);
     const hours = worked / 60;
     rec.checkOutTime = label12(endMin);
+    closeAwayAtCheckout(rec, new Date(`${rec.date}T${String(Math.floor(endMin / 60)).padStart(2, "0")}:${String(endMin % 60).padStart(2, "0")}:00+05:30`));
     rec.workingDurationMinutes = worked;
     rec.isEarlyCheckout = false;
     if (hours < (Number(shift.minHoursForFullDay) || 7.5)) rec.status = "Half-Day";
@@ -141,14 +143,16 @@ async function autoCheckOut(now: ReturnType<typeof istNow>): Promise<number> {
 }
 
 /** Called every 5 minutes by the Cloudflare cron (worker.ts). */
-export async function runAttendanceChecks(): Promise<{ late: number; breaks: number; autoCheckedOut: number }> {
+export async function runAttendanceChecks(): Promise<{ late: number; breaks: number; away: number; autoCheckedOut: number }> {
   await connectToDatabase();
   const now = istNow();
   const late = await notLateCheckedInAlert(now);
   // Breaks only matter in working hours.
   const breaks = now.hour >= 9 && now.hour < 22 ? await breakOverAlerts() : 0;
+  // Outside the store too long (geofence, lib/presence.ts).
+  const away = now.hour >= 9 && now.hour < 22 ? await awayTooLongAlerts(now.day) : 0;
   const autoCheckedOut = await autoCheckOut(now);
   // The cron is not a write through the API, so worker.ts does not announce it.
   if (autoCheckedOut > 0) publishChange(["/api/staff/attendance"]);
-  return { late, breaks, autoCheckedOut };
+  return { late, breaks, away, autoCheckedOut };
 }

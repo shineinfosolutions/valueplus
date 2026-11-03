@@ -304,6 +304,83 @@
   - Asking again for location while the check-in dialog is open.
 - **Local `next dev`**: there is no hub, so nothing is pushed. Screens still refresh on focus and mount.
 
+## 31. Staff filter (lead pipeline, leads page, staff pages)
+- **One component**: `components/shared/StaffFilter.tsx`.
+  - `StaffFilter` is the dropdown. It lists active users from `/api/users` (no suppliers), with an optional role list, counts per person, and an optional "Unassigned / Sales Team" entry.
+  - `useStaffParam()` keeps the value in the address bar (`?staff=`, `?leadStaff=` on the dashboard) without `useSearchParams`.
+  - `sameStaff()` matches names ignoring case and a "(...)" suffix. It is a client-safe copy of `normName`.
+- **Where**:
+  - **Dashboard Lead Pipeline**: Admin / Manager / Cashier. One scope (`leadsInScope`) now feeds the tiles, the tabs and the list. "Open Full CRM Leads" carries the staff on.
+  - **Sales Leads page**: Admin / Manager / Cashier / Accounts. The summary numbers follow the filter.
+  - **Staff Tasks**: Admin / Manager / HR. "All Staff" / "Sales Staff" tasks show for everyone.
+  - **Leave & Breaks**: one filter for "Staff requests" and "Approved history".
+  - **Leaderboard**: the rank stays the overall rank.
+  - **Salary**, **Staff Directory**.
+- A salesman never sees the filter; the server already limits his lists to his own.
+
+## 32. Geofence: time outside the store
+- **Limit (tell the owner)**: the app is a TWA (a website). It can read the location only while it is **open on screen**. When the app is closed or the screen is locked, the time is recorded as **"unknown"**, never as "inside". A background geofence needs a native Android app (plan file `PLAN-geofence-and-staff-filters.md`, Phase 2).
+- **Phone**: `components/shared/GeofenceWatcher.tsx`, mounted in the dashboard layout.
+  - It runs only for `GEOFENCE_ROLES` (salesman, sales, cashier, manager, accounts, hr; not admin / driver / warehouse), and only while checked in and not checked out.
+  - It uses `watchPosition`, with no timers.
+  - It reports `POST /api/staff/presence` only when crossing the boundary: back inside within 100 m; outside beyond 150 m (one reading beyond 200 m, or two readings a minute apart). Readings with worse than 150 m accuracy are ignored.
+  - It also reports once when the app comes back after at least 2 minutes closed (`event: "resume"`, `hiddenMs`; the hidden time is also kept in localStorage for an app that was swiped away).
+- **Server**: `lib/presence.ts` (`recordPresence`, `closeAwayAtCheckout`, `awayTooLongAlerts`).
+  - It decides from the reported position itself and ignores impossible jumps (over 60 m/s).
+  - It keeps `Attendance.awayPeriods` with `kind` = away / break / unknown, plus `totalAwayMinutes` (away only), `unknownMinutes` and `lastPresence`.
+  - Leaving during an approved break counts as `break`; time past the break's end is split off as `away`.
+  - Someone outside when the app closed counts as away only up to that moment (`endUncertain`).
+  - Check-out and the automatic shift-end check-out close an open period.
+  - A presence write that changed nothing sends the header `x-realtime-skip: 1`, so `worker.ts` does not announce it. `QueryProvider` does not refetch on these posts.
+- **Alert**: the 5-minute cron (`lib/attendance-alerts.ts`) alerts the Manager and Admin after `AWAY_ALERT_MINUTES` (15) outside, repeated every 15 minutes, never during an approved break.
+- **Shown**:
+  - the dashboard card "Outside the store now" (`components/dashboard/OutsideNowCard.tsx`; Admin / Manager / HR);
+  - the Staff Directory column "Away today";
+  - the staff member page: month total, and per day every period with times, minutes and distance;
+  - the Attendance page: a line under the hours.
+  - `GET /api/staff/presence?date=&staff=` is for Admin / Manager / HR.
+- **Numbers** are in `lib/store-location.ts` (`GEOFENCE_*`, `AWAY_ALERT_MINUTES`, `GEOFENCE_ROLES`).
+- **Tested**: the away-time logic with a fake record (door jitter, vague fix, jump, break split, app closed, check-out). **Not tested** on real phones yet.
+
+## 33. Onsitego: On Site Go folder, plan suggestions on the bill, 10% incentive
+- **Folder**: Documents always has an **On Site Go** folder (`getOnsitegoFolder` in `lib/onsitego-server.ts`; created the first time anyone asks; it cannot be renamed or deleted).
+  - Admin and Manager upload to it.
+  - **Salesman and Cashier** see only this folder: the Documents page, list and file download are limited to it, and they cannot upload. Their menu has "On Site Go (Plans)" under sales.
+  - Excel / CSV uploads are now allowed in Documents.
+- **Price list**: an Excel put in the On Site Go folder is read by `parseOnsitegoPlans` into `onsitego_plans` (model `OnsitegoPlan`). Each upload replaces the whole list, and the upload message says how many plans were read.
+  - Columns are found by heading: category; a price band (Min/Max, or one range column like "10,001 - 20,000" / "Up to 15000" / "Above 25000"); plan name; years; plan price.
+  - A "wide" sheet with one price column per duration ("1 Year", "2 Years") also works.
+  - Tested with both layouts on made-up sheets. **The real Onsitego sheet has not been seen yet**: if it reads 0 plans, the upload message says so, and the reader needs adjusting to it.
+- **Bill form** (`components/InvoiceCreationModal.tsx`): each product line shows "Onsitego plans for this product" (`plansFor` in `lib/onsitego.ts`: the price after discount is inside the band, and the category matches the product's category or name; cheapest first). One tap fills the line's extended warranty: provider Onsitego, plan, amount, years. API: `GET /api/onsitego/plans`.
+- **Incentive**: the server stores `Invoice.onsitegoIncentive` = 10% of the Onsitego plan amounts on the bill (`onsitegoIncentiveOf`, on create and on full edit; never taken from the form). `lib/staff-incentive.ts` adds it to the salesman's earned amount, and the Incentives page and salesman dashboard include it. Bills from before 2026-11-03 have no value, so they earn nothing extra.
+
+## 34. Salesman dashboard "Incentive" card
+- `components/staff/MyIncentiveCard.tsx` replaces the two incentive tiles. The card shows Earned / Received / To receive.
+- Tapping it opens the details from `GET /api/staff/my-incentive?detail=1`: product vs Onsitego incentive, paid out vs paid with salary, every bill with an incentive, the payouts, and a link to the On Site Go folder. Everything is worked out from the login only.
+
+## 35. One task for several people
+- The task form has "Also give the same task to" (checkboxes) when the task is for one named person.
+- `POST /api/staff/tasks` with `alsoAssignTo: [...]` makes **one copy per person**, so status, sales-target progress and "Read by" stay per person. The copies share `StaffTask.groupId`, and each person gets their own notification.
+
+## 36. DO attachment (PDF) opens again
+- Cause: this Cloudinary account refuses PDFs from their plain link (401). Documents already worked around it; the finance DO attachment links did not.
+- Now `fileViewUrl()` (`lib/file-link.ts`) sends Cloudinary PDF/raw links through `GET /api/upload/view?url=` (signed-in users only, only links of this app's Cloudinary account), which fetches the file with a short-lived signed URL. Used on the Finance ledger "Attachment" button and the bill form's DO link. Images still open directly.
+
+## 37. Customer advance: reason and receipt
+- **Reason is required**: every new advance (Sales -> Advance Booking, `POST /api/crm/advances`) needs a reason of at least 3 letters, or it is refused with 400. It is stored as `CustomerAdvance.reason`.
+  - The reason shows in the list, on the receipt, in the WhatsApp text and in the export. Older advances show their remarks as the reason.
+  - An advance made from an estimate in the bill form sends "Advance on estimate #..." as its reason.
+- **Receipt**: "Print Receipt" now prints only the receipt (`printElement`, the same as invoices). Before, `window.print()` printed the whole page behind the dialog. The receipt now also shows the reason, the remarks and "Received by".
+- **Server fixes**: "Received by" comes from the login (the form never sent it, so it was always "Store Staff"). The receipt date and time are India time; before they were UTC, so the time was 5:30 hours off.
+
+## 38. Receive Payment: reason and receipt (advance taken here, used on the next bill)
+- **Reason is required** for every customer payment through Receive Payment (`components/PaymentModal.tsx`; the server refuses it with 400 without a reason of at least 3 letters). It is stored in `PaymentTransaction.notes`. Supplier payouts are unchanged (notes optional).
+- **The server also stores** `receivedBy` (from the login) and `balanceAfter`: the customer's balance right after the payment, where below 0 means an advance with the store. Older payments have neither.
+- **Receipt**: `components/payments/PaymentReceiptDialog.tsx` opens by itself after a customer payment is saved. It is also opened by the new **Receipt** button on each customer payment in `/sales/payments`, where the list now shows the reason too.
+  - It shows the receipt number, date, customer and mobile, the reason, mode / ref, received by, the amount in figures and words, and "Advance with us ₹X — taken off the next bill" / still due / settled.
+  - Print uses `printElement` (only the receipt). WhatsApp opens the text for the customer's mobile.
+- **Billing side unchanged**: the bill form already offers the customer's credit with a tick box (`applyAdvanceCredit`), see section 14.
+
 ## Change Log
 - **2026-10-24** — Upgraded Next.js 15.3.6 → 15.5.28; added OpenNext Cloudflare setup (`wrangler.jsonc`, `open-next.config.ts`, `worker.ts`, deploy/preview scripts).
 - **2026-10-24** — `lib/db.ts`: per-request MongoDB client on Cloudflare Workers.
@@ -467,3 +544,7 @@
 - **2026-11-03** — Admin approval of a bill edit now says exactly what changes: `summariseInvoice` (`lib/invoice-full-edit.ts`) also covers delivery date, customer GSTIN/address, place of supply, shipping address, vehicle no., due date, discount, amount before GST, GST, payments, notes, and each product line with discount / GST % / serial / warranty; the 'after' picture is the form's data laid over the bill as it is, so a field the form leaves out is not shown as a change. The approval card has an 'Open the bill' link (`/sales/invoices?q=<number>`; the invoices page now reads `?q=` as the search). Earlier approvals keep the short picture they were saved with. Staging first.
 - **2026-11-03** — Deployed to production (version 71868403): the bill-edit approval now lists every real change (delivery date, address, notes, GSTIN, lines, payments...) with an 'Open the bill' link.
 - **2026-11-03** — Polling removed: live updates over a WebSocket (Durable Object `RealtimeHub`, hibernating) replace every screen timer that called the server; the Worker announces each successful API write; cron every 5 minutes instead of every minute. See section 30. Needs a deploy (new Durable Object migration `v2`).
+- **2026-11-03** — Staff filter (dashboard lead pipeline, leads page, tasks, leave, leaderboard, salary, directory) and geofence time-outside-the-store (watcher on the phone, `/api/staff/presence`, away periods on attendance, 15-minute alert, dashboard card, directory / member / attendance views). See sections 31 and 32. Built, not deployed.
+- **2026-11-03** — Onsitego (On Site Go folder for Admin uploads, visible to salesman / cashier / manager; Excel price list read into plans; plans suggested on each bill line; 10% of Onsitego plans as incentive), salesman dashboard Incentive card with details, one task for several people, DO PDF attachment opens through `/api/upload/view`. See sections 33-36. Built, not deployed.
+- **2026-11-03** — Customer advance: reason asked and shown (list, receipt, WhatsApp, export); Print Receipt prints only the receipt; Received by from the login; India time on the receipt. See section 37. Built, not deployed.
+- **2026-11-03** — Receive Payment: reason required for customer payments, receipt opens after saving (print / WhatsApp, shows the advance left for the next bill), Receipt button and reason on the payments list. See section 38. Built, not deployed.

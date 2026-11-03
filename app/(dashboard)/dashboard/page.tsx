@@ -41,6 +41,7 @@ import { cn, formatCurrency, formatNumber, indianNumberFormat, formatDateShort }
 import ValueplusInvoice from "@/app/invoice/page";
 import { InvoiceCreationModal } from "@/components/InvoiceCreationModal";
 import { DateRangeFilter, resolveDateRange, isDateInRange } from "@/components/shared/date-range-filter";
+import { StaffFilter, useStaffParam, sameStaff, normStaff, UNASSIGNED } from "@/components/shared/StaffFilter";
 import { Skeleton, MetricCardsShimmer, TableShimmer, ChartShimmer, DistributionShimmer } from "@/components/shared/shimmer-skeleton";
 import {
   cacheDashboardStats,
@@ -56,6 +57,7 @@ import { CashHandoverCard } from "@/components/dashboard/CashHandoverCard";
 import { AuditLauncher } from "@/components/dashboard/AuditLauncher";
 import { PendingBillsCard } from "@/components/dashboard/PendingBillsCard";
 import { StockOrdersCard } from "@/components/dashboard/StockOrdersCard";
+import { OutsideNowCard } from "@/components/dashboard/OutsideNowCard";
 import { CashGivenCard } from "@/components/dashboard/CashGivenCard";
 import { CashToCollectSection } from "@/components/dashboard/CashToCollectSection";
 import { PurchaseDistributionCard, type PurchaseCardFilter } from "@/components/dashboard/PurchaseDistributionCard";
@@ -546,6 +548,20 @@ export default function DashboardPage() {
   // Date-wise filter for the lead pipeline widget (empty = all dates)
   const [leadDateFilter, setLeadDateFilter] = useState<string>("");
   const [leadDateRange, setLeadDateRange] = useState<{ start: string; end: string }>({ start: "", end: "" });
+  // Staff-wise view of the lead pipeline (Admin / Manager / Cashier; a salesman only gets his own leads anyway).
+  const [leadStaffFilter, setLeadStaffFilter] = useStaffParam("leadStaff");
+  const canFilterLeadStaff = ["admin", "superadmin", "manager", "cashier"].includes(userRole);
+  const isLeadDateFilterActive = Boolean(leadDateFilter && leadDateRange.start && leadDateRange.end);
+  // One scope for the summary tiles, the tabs and the list, so their numbers always agree.
+  const leadsInDateRange = isLeadDateFilterActive
+    ? leads.filter(l => isDateInRange(l.followUpDate, leadDateRange.start, leadDateRange.end))
+    : leads;
+  const leadsInScope = canFilterLeadStaff ? leadsInDateRange.filter(l => sameStaff(l.assignedStaff, leadStaffFilter)) : leadsInDateRange;
+  const leadStaffCounts = leadsInDateRange.reduce((acc: Record<string, number>, l: any) => {
+    const k = sameStaff(l.assignedStaff, UNASSIGNED) ? UNASSIGNED : normStaff(l.assignedStaff);
+    acc[k] = (acc[k] || 0) + 1;
+    return acc;
+  }, {});
   const [isNewLeadModalOpen, setIsNewLeadModalOpen] = useState(false);
   const [leadForm, setLeadForm] = useState({
     customerName: "",
@@ -2579,6 +2595,7 @@ export default function DashboardPage() {
           {["cashier", "admin", "superadmin", "manager"].includes(userRole) && <PendingBillsCard />}
           {["admin", "superadmin"].includes(userRole) && <CashGivenCard />}
           {["admin", "superadmin", "manager"].includes(userRole) && <StockOrdersCard mode="admin" />}
+          {["admin", "superadmin", "manager", "hr"].includes(userRole) && <OutsideNowCard />}
         </div>
 
         {/* ═══════════════════════════════════════════════════════════════════════════════
@@ -3803,7 +3820,7 @@ export default function DashboardPage() {
                     <h3 className="text-sm font-black text-slate-900 tracking-tight flex items-center gap-2 min-w-0">
                       <span className="truncate">Lead Pipeline & Conversion</span>
                       <Badge className="bg-emerald-50 text-emerald-800 border-emerald-200 text-xs font-bold px-2 py-0.5 shrink-0">
-                        {leads.filter(l => l.status === "Converted").length} Converted
+                        {leadsInScope.filter(l => l.status === "Converted").length} Converted
                       </Badge>
                     </h3>
                     <p className="text-xs text-slate-500 font-medium truncate">Enquiries, follow-up scheduler & counter conversion rate</p>
@@ -3820,6 +3837,17 @@ export default function DashboardPage() {
                     placeholder="All Dates"
                     className="flex-1 min-w-0 h-8 text-xs font-semibold"
                   />
+                  {canFilterLeadStaff && (
+                    <StaffFilter
+                      value={leadStaffFilter}
+                      onChange={setLeadStaffFilter}
+                      roles={["salesman", "sales", "manager", "cashier"]}
+                      counts={leadStaffCounts}
+                      total={leadsInDateRange.length}
+                      includeUnassigned
+                      className="flex-1 min-w-0 max-w-[45%]"
+                    />
+                  )}
                   <Button
                     size="sm"
                     onClick={() => setIsNewLeadModalOpen(true)}
@@ -3837,10 +3865,7 @@ export default function DashboardPage() {
                   on Payment Leakage and Category Stock; a 2x2 layout always has
                   enough width per tile. */}
               {(() => {
-                const isLeadDateFilterActive = Boolean(leadDateFilter && leadDateRange.start && leadDateRange.end);
-                const scopedLeads = isLeadDateFilterActive
-                  ? leads.filter(l => isDateInRange(l.followUpDate, leadDateRange.start, leadDateRange.end))
-                  : leads;
+                const scopedLeads = leadsInScope;
                 const totalLeads = scopedLeads.length;
                 const converted = scopedLeads.filter(l => l.status === "Converted").length;
                 const followups = scopedLeads.filter(l => l.status === "Follow-up" || l.status === "Interested" || l.status === "Contacted").length;
@@ -3875,10 +3900,7 @@ export default function DashboardPage() {
 
               {/* QUICK FILTER TABS */}
               {(() => {
-                const isLeadDateFilterActive = Boolean(leadDateFilter && leadDateRange.start && leadDateRange.end);
-                const dateScopedLeads = isLeadDateFilterActive
-                  ? leads.filter(l => isDateInRange(l.followUpDate, leadDateRange.start, leadDateRange.end))
-                  : leads;
+                const dateScopedLeads = leadsInScope;
 
                 return (
                   <div className="flex items-center gap-1.5 py-1.5 overflow-x-auto border-b border-slate-100">
@@ -3908,9 +3930,7 @@ export default function DashboardPage() {
               {/* LEADS STREAM */}
               <div className="divide-y divide-slate-100 max-h-[225px] overflow-y-auto my-1.5 space-y-1">
                 {(() => {
-                  const isLeadDateFilterActive = Boolean(leadDateFilter && leadDateRange.start && leadDateRange.end);
-                  const filtered = leads.filter(l => {
-                    if (isLeadDateFilterActive && !isDateInRange(l.followUpDate, leadDateRange.start, leadDateRange.end)) return false;
+                  const filtered = leadsInScope.filter(l => {
                     if (leadTabFilter === "new") return l.status === "New";
                     if (leadTabFilter === "followup") return l.status === "Follow-up" || l.status === "Interested" || l.status === "Contacted";
                     if (leadTabFilter === "converted") return l.status === "Converted";
@@ -3982,7 +4002,7 @@ export default function DashboardPage() {
             <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 font-medium">
               <span>Customer Relationship Management</span>
               <button 
-                onClick={() => router.push("/marketing/leads")} 
+                onClick={() => router.push(canFilterLeadStaff && leadStaffFilter !== "all" && leadStaffFilter !== UNASSIGNED ? `/marketing/leads?staff=${encodeURIComponent(leadStaffFilter)}` : "/marketing/leads")} 
                 className="font-bold text-[#30539C] hover:underline flex items-center gap-1"
               >
                 Open Full CRM Leads <ArrowRight className="w-3 h-3" />

@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { PageShell } from "@/components/shared/page-shell";
 import { Button } from "@/components/ui/button";
 import { LeaveRequestDialog } from "@/components/shared/LeaveRequestDialog";
+import { StaffFilter, useStaffParam, sameStaff } from "@/components/shared/StaffFilter";
 
 const KIND_LABEL: Record<string, string> = { weekly_off: "Weekly Off", leave: "Leave", break: "Break", emergency: "Emergency Leave" };
 const STATUS_STYLE: Record<string, string> = {
@@ -103,7 +104,7 @@ function rangeFor(preset: string, cFrom: string, cTo: string): [string, string] 
 }
 
 /** Everything that was approved, by type, for any period. A request counts when any of its days falls in the period. */
-function ApprovedHistory() {
+function ApprovedHistory({ staff }: { staff: string }) {
   const [tab, setTab] = useState("leave");
   const [preset, setPreset] = useState<string>("30d");
   const [cFrom, setCFrom] = useState("");
@@ -119,9 +120,10 @@ function ApprovedHistory() {
     () =>
       all.filter((r) => {
         if (search && !String(r.staffName).toLowerCase().includes(search.toLowerCase())) return false;
+        if (!sameStaff(r.staffName, staff)) return false;
         return !range || (r.fromDate <= range[1] && r.toDate >= range[0]);
       }),
-    [all, range, search]
+    [all, range, search, staff]
   );
   const rows = inPeriod.filter((r) => r.kind === tab).sort((a, b) => (a.fromDate < b.fromDate ? 1 : -1));
   const count = (k: string) => inPeriod.filter((r) => r.kind === k).length;
@@ -192,6 +194,8 @@ export default function LeaveRequestsPage() {
   const { data: session } = useSession();
   const role = String((session?.user as any)?.role || "").toLowerCase();
   const isViewer = ["admin", "superadmin", "manager", "hr"].includes(role);
+  // Staff-wise view of everyone's requests (`?staff=`).
+  const [staffFilter, setStaffFilter] = useStaffParam("staff");
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [scope, setScope] = useState<"pending" | "all">("pending");
@@ -235,7 +239,8 @@ export default function LeaveRequestsPage() {
   return (
     <PageShell title="Leave & Breaks" subtitle="Weekly off, leave, break and emergency leave requests.">
       <div className="space-y-5">
-        <div className="flex justify-end">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {isViewer && <StaffFilter value={staffFilter} onChange={setStaffFilter} className="w-48 h-9 bg-white" />}
           <Button onClick={() => setOpen(true)}>Apply Weekly Off / Leave / Break</Button>
         </div>
 
@@ -251,11 +256,11 @@ export default function LeaveRequestsPage() {
                 ))}
               </div>
             </div>
-            <RequestTable rows={all.data || []} role={role} onDecide={decide} onCancel={(id) => act.mutate({ id, decision: "cancel" })} showStaff />
+            <RequestTable rows={(all.data || []).filter((r: any) => sameStaff(r.staffName, staffFilter))} role={role} onDecide={decide} onCancel={(id) => act.mutate({ id, decision: "cancel" })} showStaff />
           </div>
         )}
 
-        {isViewer && <ApprovedHistory />}
+        {isViewer && <ApprovedHistory staff={staffFilter} />}
 
         <div className="rounded-xl border bg-white">
           <div className="border-b p-3"><h3 className="text-sm font-black">My requests</h3></div>

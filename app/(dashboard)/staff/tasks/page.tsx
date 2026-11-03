@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { useSession } from "next-auth/react";
 import { TableShimmer } from "@/components/shared/shimmer-skeleton";
 import { todayInIndia } from "@/lib/today";
+import { StaffFilter, useStaffParam, sameStaff } from "@/components/shared/StaffFilter";
 
 export default function StaffTasksPage() {
   const queryClient = useQueryClient();
@@ -54,6 +55,8 @@ export default function StaffTasksPage() {
     targetQty: 0,
     targetAmount: 0,
     createdBy: currentUserName,
+    /** More people who get the same task (each their own copy). */
+    alsoAssignTo: [] as string[],
   });
 
   // Fetch real registered users from MongoDB
@@ -111,13 +114,14 @@ export default function StaffTasksPage() {
       });
       const json = await res.json();
       if (!json.success) throw new Error(json.error || "Failed to create task");
-      return json.data;
+      return { ...json.data, _count: Number(json.count) || 1 };
     },
     onSuccess: (data) => {
+      const who = data._count > 1 ? ` to ${data._count} people` : "";
       toast.success(
         data.taskType === "sales_target"
-          ? `🎯 Sales Target Task assigned! It will automatically complete when invoices are billed.`
-          : `Task "${data.taskTitle}" created successfully!`
+          ? `🎯 Sales Target Task assigned${who}! It will automatically complete when invoices are billed.`
+          : `Task "${data.taskTitle}" assigned${who}!`
       );
       queryClient.invalidateQueries({ queryKey: ["staffTasks"] });
       setIsNewTaskOpen(false);
@@ -136,6 +140,7 @@ export default function StaffTasksPage() {
         targetQty: 0,
         targetAmount: 0,
         createdBy: currentUserName,
+        alsoAssignTo: [],
       });
     },
     onError: (err: any) => toast.error(err.message || "Failed to create task"),
@@ -177,9 +182,13 @@ export default function StaffTasksPage() {
     onError: (err: any) => toast.error(err.message || "Failed to delete task"),
   });
 
+  // Staff-wise view for Admin / Manager / HR (`?staff=`).
+  const [staffFilter, setStaffFilter] = useStaffParam("staff");
+
   // Filtering
   const filtered = useMemo(() => {
     return userScopedTasks.filter((t: any) => {
+      if (isSuperAdminOrAdmin && !sameStaff(t.assignedStaff, staffFilter) && !/^(all|sales) staff$/i.test(String(t.assignedStaff || "").trim())) return false;
       const matchesSearch =
         (t.taskTitle || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
         (t.assignedStaff || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -197,7 +206,7 @@ export default function StaffTasksPage() {
       }
       return true;
     });
-  }, [userScopedTasks, searchTerm, activeTab, todayStr]);
+  }, [userScopedTasks, searchTerm, activeTab, todayStr, isSuperAdminOrAdmin, staffFilter]);
 
   // Metrics
   const totalCount = userScopedTasks.length;
@@ -324,6 +333,9 @@ export default function StaffTasksPage() {
           ))}
         </div>
 
+        {isSuperAdminOrAdmin && (
+          <StaffFilter value={staffFilter} onChange={setStaffFilter} className="w-full md:w-48 h-9 bg-white" />
+        )}
         <div className="relative w-full md:w-72">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <Input
@@ -560,7 +572,9 @@ export default function StaffTasksPage() {
                 toast.error("Set a target: a product / brand with units, or an amount.");
                 return;
               }
-              createTaskMutation.mutate(form);
+              // "Also give to" only applies when the task is for one named person.
+              const group = isIndividualStaff || ["Admin (Self)", "All Staff", "Sales Staff"].includes(form.assignedStaff);
+              createTaskMutation.mutate({ ...form, alsoAssignTo: group ? [] : form.alsoAssignTo });
             }}
             className="space-y-3.5 pt-2 text-xs"
           >
@@ -697,6 +711,38 @@ export default function StaffTasksPage() {
                 </select>
               </div>
             </div>
+
+            {/* The same task for more people: each gets a copy of their own (own status and progress). */}
+            {!isIndividualStaff && !["Admin (Self)", "All Staff", "Sales Staff"].includes(form.assignedStaff) && (
+              <div>
+                <Label className="text-xs font-bold">
+                  Also give the same task to {form.alsoAssignTo.length > 0 ? `(${form.alsoAssignTo.length} more)` : "(optional)"}
+                </Label>
+                <div className="mt-1 max-h-32 overflow-y-auto rounded-md border border-input bg-white p-2 grid grid-cols-1 sm:grid-cols-2 gap-1">
+                  {usersList
+                    .filter((u: any) => u.name && u.name !== form.assignedStaff)
+                    .map((u: any) => {
+                      const on = form.alsoAssignTo.includes(u.name);
+                      return (
+                        <label key={u._id || u.email} className="flex items-center gap-2 text-xs cursor-pointer rounded px-1 py-0.5 hover:bg-slate-50">
+                          <input
+                            type="checkbox"
+                            checked={on}
+                            onChange={() =>
+                              setForm({
+                                ...form,
+                                alsoAssignTo: on ? form.alsoAssignTo.filter((n) => n !== u.name) : [...form.alsoAssignTo, u.name],
+                              })
+                            }
+                          />
+                          <span className="truncate">{u.name}</span>
+                          <span className="text-[10px] text-slate-400 uppercase">{u.role}</span>
+                        </label>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-3 gap-3">
               <div>

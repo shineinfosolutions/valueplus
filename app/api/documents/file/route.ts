@@ -4,6 +4,7 @@ import connectToDatabase from "@/lib/db";
 import cloudinary from "@/lib/cloudinary";
 import StoredDocument from "@/models/StoredDocument";
 import { getActor } from "@/lib/requirePermission";
+import { ONSITEGO_ONLY_ROLES, getOnsitegoFolder } from "@/lib/onsitego-server";
 
 /**
  * Open a stored document.
@@ -25,7 +26,8 @@ export async function GET(req: Request) {
     if (!actor) {
       return NextResponse.json({ success: false, error: "You must be signed in to do this." }, { status: 401 });
     }
-    if (!VIEW_ROLES.includes(actor.role)) {
+    const onsitegoOnly = ONSITEGO_ONLY_ROLES.includes(actor.role);
+    if (!VIEW_ROLES.includes(actor.role) && !onsitegoOnly) {
       return NextResponse.json(
         { success: false, error: "Only the admin, manager and accounts can open the documents section." },
         { status: 403 }
@@ -40,6 +42,10 @@ export async function GET(req: Request) {
     await connectToDatabase();
     const record: any = await StoredDocument.findById(id).lean();
     if (!record || !record.filePublicId) {
+      return NextResponse.json({ success: false, error: "Document not found." }, { status: 404 });
+    }
+    // Salesmen and cashiers may open only what is in the On Site Go folder.
+    if (onsitegoOnly && String(record.folderId || "") !== String((await getOnsitegoFolder())._id)) {
       return NextResponse.json({ success: false, error: "Document not found." }, { status: 404 });
     }
 

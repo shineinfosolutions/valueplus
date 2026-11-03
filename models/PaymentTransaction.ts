@@ -10,6 +10,10 @@ export interface IPaymentTransaction extends Document {
   date: string;
   referenceId?: string; // e.g. Invoice Number or Bill Number
   notes?: string;
+  /** Who took the money (from the login). */
+  receivedBy?: string;
+  /** Customer's balance right after this payment (below 0 = advance with the store). For the receipt. */
+  balanceAfter?: number;
   type: "received" | "paid"; // received from customer, paid to supplier
   // Which store bank account the money landed in (non-cash receipts, finance payouts)
   bankAccountId?: string;
@@ -32,6 +36,8 @@ const PaymentTransactionSchema = new Schema<IPaymentTransaction>(
     date: { type: String, required: true },
     referenceId: { type: String },
     notes: { type: String },
+    receivedBy: { type: String, default: "" },
+    balanceAfter: { type: Number },
     type: { type: String, enum: ["received", "paid"], required: true },
     bankAccountId: { type: String, default: "" },
     bankAccountRef: { type: String, default: "" },

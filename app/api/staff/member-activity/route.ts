@@ -47,6 +47,9 @@ export async function GET(req: Request) {
         hasPhoto: !!a.checkInPhotoKey,
         distanceM: a.checkInDistanceM ?? null,
         notes: a.notes || "",
+        awayPeriods: a.awayPeriods || [],
+        totalAwayMinutes: a.totalAwayMinutes || 0,
+        unknownMinutes: a.unknownMinutes || 0,
       }));
 
     const reqAll: any[] = await LeaveRequest.find({ fromDate: { $lte: to }, toDate: { $gte: from }, $or: [{ staffId: String(user._id) }, { staffName: user.name }] }).sort({ fromDate: -1 }).lean();
@@ -57,6 +60,8 @@ export async function GET(req: Request) {
       present: count((a) => ["Present", "Late", "Half-Day"].includes(a.status)),
       late: count((a) => a.isLate),
       lateMinutes: attendance.reduce((t, a) => t + (a.lateMinutes || 0), 0),
+      awayMinutes: attendance.reduce((t, a) => t + (a.totalAwayMinutes || 0), 0),
+      awayTimes: attendance.reduce((t, a) => t + a.awayPeriods.filter((p: any) => p.kind === "away").length, 0),
       halfDay: count((a) => a.status === "Half-Day"),
       absent: count((a) => a.status === "Absent"),
       onLeave: count((a) => a.status === "On Leave"),

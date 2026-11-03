@@ -146,7 +146,8 @@ export default {
     }
 
     // A write went through: tell the open apps what changed.
-    if (request.method !== "GET" && request.method !== "HEAD" && response.status < 400) {
+    // A route can say nothing changed (header x-realtime-skip: 1), e.g. a phone's position that moved no one in or out.
+    if (request.method !== "GET" && request.method !== "HEAD" && response.status < 400 && response.headers.get("x-realtime-skip") !== "1") {
       const changed = changedPath(pathname);
       if (changed) publish(env, ctx, { paths: [changed] });
     }

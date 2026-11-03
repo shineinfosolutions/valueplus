@@ -30,3 +30,23 @@ export function checkAtStore(loc: { lat?: any; lng?: any; accuracy?: any }): { o
   }
   return { ok: true, distance };
 }
+
+// ---------------------------------------------------------------------------
+// Geofence: time spent outside the store during the shift (GeofenceWatcher on the phone,
+// /api/staff/presence on the server). Kept here, without imports, so both sides use the same numbers.
+// ---------------------------------------------------------------------------
+
+/** Counted as back inside within this distance (the check-in circle). */
+export const GEOFENCE_ENTER_M = STORE_RADIUS_M;
+/** Counted as outside only beyond this distance, so GPS jitter at the door does not make false exits. */
+export const GEOFENCE_EXIT_M = 150;
+/** Beyond this one reading is enough to count as outside; between EXIT and this, a second reading is needed. */
+export const GEOFENCE_SURE_EXIT_M = 200;
+/** The second reading must come at least this long after the first. */
+export const GEOFENCE_CONFIRM_MS = 60_000;
+/** An app closed / in the background for less than this is not recorded. */
+export const GEOFENCE_MIN_HIDDEN_MS = 2 * 60_000;
+/** Manager / Admin are alerted once someone has been outside this long (and again every as long). */
+export const AWAY_ALERT_MINUTES = 15;
+/** Who is tracked: store staff. Not the Admin, not delivery boys (always out) or the godown (another address). */
+export const GEOFENCE_ROLES = ["salesman", "sales", "cashier", "manager", "accounts", "hr"];

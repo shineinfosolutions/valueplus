@@ -21,6 +21,7 @@ import { cn, indianNumberFormat, formatCurrency } from "@/lib/utils";
 import { ExportMenu } from "@/components/shared/ExportMenu";
 import { LeadProductPicker, leadProductsLabel, leadProductsTotal, type LeadProduct } from "@/components/shared/LeadProductPicker";
 import { todayInIndia } from "@/lib/today";
+import { StaffFilter, useStaffParam, sameStaff, normStaff, UNASSIGNED } from "@/components/shared/StaffFilter";
 
 const LEAD_STATUSES = ["all", "New", "Contacted", "Interested", "Follow-up", "Converted", "Lost"] as const;
 
@@ -83,6 +84,9 @@ export default function LeadsPipelinePage() {
   const router = useRouter();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  // Staff-wise view (`?staff=`, also opened from the dashboard's Lead Pipeline). Salesmen only get their own leads.
+  const [staffFilter, setStaffFilter] = useStaffParam("staff");
+  const canFilterStaff = ["admin", "superadmin", "manager", "cashier", "accounts"].includes(myRole);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [expandedLeads, setExpandedLeads] = useState<Record<string, boolean>>({});
   const [activityOpen, setActivityOpen] = useState(false);
@@ -295,13 +299,19 @@ export default function LeadsPipelinePage() {
     }).catch(() => toast.error("The call could not be counted — check the connection."));
   };
 
-  const totalLeads = leads.length;
-  const convertedCount = leads.filter((l: any) => l.status === "Converted").length;
-  const followUpCount = leads.filter((l: any) => l.status === "Follow-up" || l.status === "Interested" || l.status === "Contacted").length;
-  const totalPipelineValue = leads.reduce((sum: number, l: any) => sum + (Number(l.estimatedValue) || 0), 0);
+  const staffCounts = leads.reduce((acc: Record<string, number>, l: any) => {
+    const k = sameStaff(l.assignedStaff, UNASSIGNED) ? UNASSIGNED : normStaff(l.assignedStaff);
+    acc[k] = (acc[k] || 0) + 1;
+    return acc;
+  }, {});
+  const staffLeads = canFilterStaff ? leads.filter((l: any) => sameStaff(l.assignedStaff, staffFilter)) : leads;
+  const totalLeads = staffLeads.length;
+  const convertedCount = staffLeads.filter((l: any) => l.status === "Converted").length;
+  const followUpCount = staffLeads.filter((l: any) => l.status === "Follow-up" || l.status === "Interested" || l.status === "Contacted").length;
+  const totalPipelineValue = staffLeads.reduce((sum: number, l: any) => sum + (Number(l.estimatedValue) || 0), 0);
   const conversionRate = totalLeads > 0 ? Math.round((convertedCount / totalLeads) * 100) : 0;
 
-  const filtered = leads.filter((l: any) =>
+  const filtered = staffLeads.filter((l: any) =>
     (l.customerName || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
     (l.mobile || "").includes(searchTerm) ||
     (l.leadId || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -399,6 +409,17 @@ export default function LeadsPipelinePage() {
               <Button variant="outline" onClick={() => setActivityOpen(true)} className="h-9 text-xs font-bold border-slate-300">
                 <Users className="w-4 h-4 mr-1.5" /> Staff Activity
               </Button>
+            )}
+            {canFilterStaff && (
+              <StaffFilter
+                value={staffFilter}
+                onChange={setStaffFilter}
+                roles={["salesman", "sales", "manager", "cashier"]}
+                counts={staffCounts}
+                total={leads.length}
+                includeUnassigned
+                className="w-[180px] h-9 bg-slate-50 border-slate-300"
+              />
             )}
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="w-[160px] text-xs bg-slate-50 border-slate-300 font-semibold">

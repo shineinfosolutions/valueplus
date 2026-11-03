@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { DollarSign, Plus, Search, CheckCircle2, Lock, ShieldAlert, CreditCard } from "lucide-react";
 import { toast } from "sonner";
 import { TableShimmer } from "@/components/shared/shimmer-skeleton";
+import { StaffFilter, useStaffParam, sameStaff } from "@/components/shared/StaffFilter";
 
 export default function StaffSalaryPage() {
   const queryClient = useQueryClient();
@@ -52,6 +53,9 @@ export default function StaffSalaryPage() {
     onError: (err: any) => toast.error(err.message),
   });
 
+  // Staff-wise view (`?staff=`).
+  const [staffFilter, setStaffFilter] = useStaffParam("staff");
+
   const openPayDialog = (rec: any) => {
     setSelectedRecord(rec);
     setPaymentAmount(rec.payableAmount);
@@ -59,8 +63,9 @@ export default function StaffSalaryPage() {
   };
 
   const filtered = salaries.filter((s: any) =>
-    (s.employeeName || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (s.employeeId || "").toLowerCase().includes(searchTerm.toLowerCase())
+    sameStaff(s.employeeName, staffFilter) &&
+    ((s.employeeName || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (s.employeeId || "").toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
   return (
@@ -79,6 +84,7 @@ export default function StaffSalaryPage() {
               className="pl-9 bg-slate-50 border-slate-300 text-xs"
             />
           </div>
+          <StaffFilter value={staffFilter} onChange={setStaffFilter} className="w-48 h-9 bg-slate-50 border-slate-300" />
 
           <div className="flex items-center gap-2">
             <ExportMenu

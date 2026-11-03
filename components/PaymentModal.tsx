@@ -12,6 +12,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { formatCurrency } from "@/lib/utils";
 import { todayInIndia } from "@/lib/today";
 import { CustomerPicker, checkCustomerDraft, type NewCustomerDraft } from "@/components/payments/CustomerPicker";
+import { PaymentReceiptDialog } from "@/components/payments/PaymentReceiptDialog";
 
 export function PaymentModal({ isOpen, onClose, onSuccess, defaultPartyType = "Customer", initialPartyId }: { isOpen: boolean; onClose: () => void; onSuccess?: () => void; defaultPartyType?: "Customer" | "Supplier"; initialPartyId?: string }) {
   const queryClient = useQueryClient();
@@ -50,6 +51,8 @@ export function PaymentModal({ isOpen, onClose, onSuccess, defaultPartyType = "C
   const [partyQuery, setPartyQuery] = useState("");
   const [newCustomer, setNewCustomer] = useState<NewCustomerDraft | null>(null);
   const [creatingCustomer, setCreatingCustomer] = useState(false);
+  // The payment just saved, shown as a printable receipt (customers).
+  const [receipt, setReceipt] = useState<any | null>(null);
 
   // Reset form when modal opens
   useEffect(() => {
@@ -115,8 +118,10 @@ export function PaymentModal({ isOpen, onClose, onSuccess, defaultPartyType = "C
       if (!json.success) throw new Error(json.error || "Failed to record payment");
       return json.data;
     },
-    onSuccess: () => {
+    onSuccess: (saved: any) => {
       toast.success("Payment recorded successfully");
+      // A customer payment opens its receipt (print / WhatsApp) right away.
+      if (defaultPartyType === "Customer" && saved) setReceipt(saved);
       queryClient.invalidateQueries({ queryKey: ["payments"] });
       queryClient.invalidateQueries({ queryKey: ["customers"] });
       queryClient.invalidateQueries({ queryKey: ["invoices"] });
@@ -150,6 +155,10 @@ export function PaymentModal({ isOpen, onClose, onSuccess, defaultPartyType = "C
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (defaultPartyType === "Customer" && form.notes.trim().length < 3) {
+      toast.error("Write the reason for this payment (e.g. advance for an AC booking).");
+      return;
+    }
 
     // Someone new: add them to the Customer list first, with the same details the Customer
     // screen asks for, then record the payment against them.
@@ -211,6 +220,8 @@ export function PaymentModal({ isOpen, onClose, onSuccess, defaultPartyType = "C
   };
 
   return (
+    <>
+    <PaymentReceiptDialog payment={receipt} onClose={() => setReceipt(null)} />
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-2xl w-[calc(100%-0.75rem)] sm:w-[calc(100%-2rem)] p-0 rounded-2xl border-none shadow-2xl overflow-y-auto">
         <div className="bg-gradient-to-r from-[#1B2537] via-[#2C3E5A] to-[#1B2537] text-white p-3 pr-12 sm:p-6 flex items-center gap-3">
@@ -347,12 +358,14 @@ export function PaymentModal({ isOpen, onClose, onSuccess, defaultPartyType = "C
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-slate-700">Internal Notes / Remarks</Label>
+              <Label className="text-xs font-semibold text-slate-700">
+                {defaultPartyType === "Customer" ? "Reason for payment * (shown on the receipt)" : "Internal Notes / Remarks"}
+              </Label>
               <Input 
                 value={form.notes} 
                 onChange={(e) => setForm({ ...form, notes: e.target.value })} 
-                className="bg-slate-50 border-slate-300 text-sm" 
-                placeholder="Optional notes regarding this payment..."
+                className={`text-sm ${defaultPartyType === "Customer" && form.notes.trim().length < 3 ? "bg-rose-50 border-rose-300" : "bg-slate-50 border-slate-300"}`}
+                placeholder={defaultPartyType === "Customer" ? "e.g. Advance for Haier 1.5T AC booking / Old dues payment" : "Optional notes regarding this payment..."}
               />
             </div>
 
@@ -367,5 +380,6 @@ export function PaymentModal({ isOpen, onClose, onSuccess, defaultPartyType = "C
         </form>
       </DialogContent>
     </Dialog>
+    </>
   );
 }

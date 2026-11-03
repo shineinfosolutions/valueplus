@@ -124,6 +124,8 @@ export default function QueryProvider({ children }: { children: React.ReactNode 
           method !== "HEAD" &&
           url.includes("/api/") &&
           !url.includes("/api/auth/") &&
+          // The phone's geofence reports (GeofenceWatcher) change nothing on this screen.
+          !url.includes("/api/staff/presence") &&
           response.ok
         ) {
           invalidate(true);

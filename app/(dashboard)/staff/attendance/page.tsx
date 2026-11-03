@@ -35,6 +35,7 @@ import { useBranch } from "@/context/BranchContext";
 import { ExportMenu } from "@/components/shared/ExportMenu";
 import { todayInIndia } from "@/lib/today";
 import { ATTENDANCE_LIVE_PATHS } from "@/components/providers/RealtimeProvider";
+import { awaySummary, periodLine } from "@/lib/away-format";
 
 function getISTDateString() {
   try {
@@ -684,6 +685,11 @@ export default function StaffAttendancePage() {
                           >
                             {durationLabel}
                           </span>
+                          {awaySummary(rec) && (
+                            <span className="block mt-1 text-[10px] font-bold text-rose-700" title={(rec.awayPeriods || []).map(periodLine).join("\n")}>
+                              Outside the store: {awaySummary(rec)}
+                            </span>
+                          )}
                         </td>
 
                         <td className="p-3.5 text-center">

@@ -16,6 +16,8 @@ import { Phone, Search } from "lucide-react";
 import { toast } from "sonner";
 import { cn, formatCurrency, formatDate } from "@/lib/utils";
 import { todayInIndia } from "@/lib/today";
+import { StaffFilter, useStaffParam, sameStaff } from "@/components/shared/StaffFilter";
+import { awaySummary, periodLine } from "@/lib/away-format";
 
 export default function StaffDirectoryPage() {
   const { data: session } = useSession();
@@ -48,10 +50,25 @@ export default function StaffDirectoryPage() {
     },
   });
 
+  // Staff-wise view (`?staff=`).
+  const [staffFilter, setStaffFilter] = useStaffParam("staff");
+  // Today's time outside the store per person (geofence).
+  const { data: presence } = useQuery({
+    queryKey: ["presence-today"],
+    enabled: allowed,
+    meta: { live: ["/api/staff/presence", "/api/staff/attendance"] },
+    queryFn: async () => {
+      const json = await (await fetch("/api/staff/presence")).json();
+      return json.success ? json.data : null;
+    },
+  });
+  const presenceRows: any[] = presence?.rows || [];
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return staff.filter((s) => !q || `${s.name} ${s.role} ${s.designation} ${s.mobile}`.toLowerCase().includes(q));
-  }, [staff, search]);
+    return staff.filter(
+      (s) => (!q || `${s.name} ${s.role} ${s.designation} ${s.mobile}`.toLowerCase().includes(q)) && sameStaff(s.name, staffFilter)
+    );
+  }, [staff, search, staffFilter]);
   const totals = useMemo(
     () => ({
       earned: staff.reduce((t, s) => t + (s.earned || 0), 0),
@@ -126,11 +143,12 @@ export default function StaffDirectoryPage() {
           </div>
 
           <div className="data-table-container">
-            <div className="p-3 border-b">
-              <div className="relative max-w-sm">
+            <div className="p-3 border-b flex flex-wrap items-center gap-2">
+              <div className="relative max-w-sm flex-1 min-w-[200px]">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input placeholder="Search staff…" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
               </div>
+              <StaffFilter value={staffFilter} onChange={setStaffFilter} className="w-48 h-10" />
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -139,6 +157,7 @@ export default function StaffDirectoryPage() {
                     <th className="px-3 py-2.5 text-left">Name</th>
                     <th className="px-3 py-2.5 text-left">Role</th>
                     <th className="px-3 py-2.5 text-left">Mobile</th>
+                    <th className="px-3 py-2.5 text-left">Away today</th>
                     <th className="px-3 py-2.5 text-right">Bills</th>
                     <th className="px-3 py-2.5 text-right">Incentive earned</th>
                     <th className="px-3 py-2.5 text-right">Paid</th>
@@ -148,9 +167,9 @@ export default function StaffDirectoryPage() {
                 </thead>
                 <tbody className="divide-y">
                   {isLoading ? (
-                    <tr><td colSpan={8} className="px-3 py-8 text-center text-muted-foreground">Loading…</td></tr>
+                    <tr><td colSpan={9} className="px-3 py-8 text-center text-muted-foreground">Loading…</td></tr>
                   ) : rows.length === 0 ? (
-                    <tr><td colSpan={8} className="px-3 py-8 text-center text-muted-foreground">No staff found</td></tr>
+                    <tr><td colSpan={9} className="px-3 py-8 text-center text-muted-foreground">No staff found</td></tr>
                   ) : (
                     rows.map((s) => (
                       <tr key={s._id} onClick={() => setOpenId(s._id)} className="cursor-pointer hover:bg-slate-50" title="Click for the full details">
@@ -160,6 +179,15 @@ export default function StaffDirectoryPage() {
                         </td>
                         <td className="px-3 py-2.5 text-xs capitalize text-slate-600 whitespace-nowrap">{s.designation || s.role}</td>
                         <td className="px-3 py-2.5 font-mono text-xs text-slate-600 whitespace-nowrap">{s.mobile || "—"}</td>
+                        {(() => {
+                          const rec = presenceRows.find((r: any) => sameStaff(r.staffName, s.name));
+                          const text = awaySummary(rec);
+                          return (
+                            <td className={cn("px-3 py-2.5 text-xs whitespace-nowrap", text.includes("out now") ? "font-bold text-rose-700" : "text-slate-600")} title={(rec?.awayPeriods || []).map(periodLine).join("\n")}>
+                              {text || "—"}
+                            </td>
+                          );
+                        })()}
                         <td className="px-3 py-2.5 text-right font-mono">{s.bills}</td>
                         <td className="px-3 py-2.5 text-right font-mono font-bold text-emerald-700">{formatCurrency(s.earned)}</td>
                         <td className="px-3 py-2.5 text-right font-mono text-blue-700">{formatCurrency(s.received)}</td>

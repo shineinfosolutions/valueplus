@@ -14,6 +14,8 @@ export interface ICustomerAdvance extends Document {
   targetBrand?: string;
   targetCategory?: string;
   notes?: string;
+  /** Why the customer is paying this advance (asked on every new advance). */
+  reason?: string;
   status: "Available" | "Partially Used" | "Fully Adjusted" | "Refunded" | "Cancelled";
   usedAmount: number;
   remainingBalance: number;
@@ -45,6 +47,7 @@ const CustomerAdvanceSchema = new Schema<ICustomerAdvance>(
     targetBrand: { type: String, default: "" },
     targetCategory: { type: String, default: "" },
     notes: { type: String, default: "" },
+    reason: { type: String, default: "" },
     status: {
       type: String,
       enum: ["Available", "Partially Used", "Fully Adjusted", "Refunded", "Cancelled"],

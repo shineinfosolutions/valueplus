@@ -72,7 +72,7 @@ export default function SalesIncentivesPage() {
         };
       }
 
-      const invIncentive = Number(inv.salesExecutiveIncentive) || 0;
+      const invIncentive = (Number(inv.salesExecutiveIncentive) || 0) + (Number(inv.onsitegoIncentive) || 0);
       const invTotal = Number(inv.total) || 0;
       const units = (inv.items || []).reduce((acc: number, it: any) => acc + (Number(it.quantity) || 1), 0);
 
@@ -142,7 +142,8 @@ export default function SalesIncentivesPage() {
             SalesExecutive: inv.salesExecutive || "N/A",
             CustomerName: inv.customerName,
             TotalBillAmount: inv.total,
-            SalespersonIncentive: inv.salesExecutiveIncentive || 0,
+            SalespersonIncentive: (Number(inv.salesExecutiveIncentive) || 0) + (Number(inv.onsitegoIncentive) || 0),
+            OnsitegoIncentive: Number(inv.onsitegoIncentive) || 0,
             AdminPINUsed: inv.adminOverridePinUsed ? "YES" : "NO",
             PaymentMode: inv.paymentMode
           }))}
@@ -310,7 +311,7 @@ export default function SalesIncentivesPage() {
                 </tr>
               ) : (
                 filteredInvoices.map((inv: any) => {
-                  const incAmount = Number(inv.salesExecutiveIncentive) || 0;
+                  const incAmount = (Number(inv.salesExecutiveIncentive) || 0) + (Number(inv.onsitegoIncentive) || 0);
                   return (
                     <tr key={inv._id || inv.id} className="hover:bg-slate-50 transition-colors">
                       <td className="p-3 font-mono font-bold text-[#30539C]">

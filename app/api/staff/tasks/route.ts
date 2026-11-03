@@ -100,26 +100,43 @@ export async function POST(req: Request) {
       currentAmount: Number(body.currentAmount) || 0,
     };
 
-    // Remember the person's id, so the task follows them rather than a spelling.
-    if (!payload.assignedStaffId && payload.assignedStaff && !isGroupAssignee(payload.assignedStaff)) {
-      const person: any = await User.findOne({ name: exactName(String(payload.assignedStaff)) }, { _id: 1 }).lean();
-      if (person) payload.assignedStaffId = String(person._id);
+    // The same task for several people (`alsoAssignTo`): each gets a copy of their own, so status, progress
+    // and "Read by" stay per person; the copies share a groupId.
+    const { alsoAssignTo, ...base } = payload;
+    const names: string[] = Array.from(
+      new Set(
+        [String(base.assignedStaff || ""), ...(Array.isArray(alsoAssignTo) ? alsoAssignTo.map(String) : [])]
+          .map((n) => n.trim())
+          .filter(Boolean)
+      )
+    );
+    if (names.length === 0) return NextResponse.json({ success: false, error: "Choose who the task is for." }, { status: 400 });
+    const groupId = names.length > 1 ? `TG-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}` : undefined;
+
+    const actor = await getActor().catch(() => null);
+    const tasks: any[] = [];
+    for (const name of names) {
+      const one: any = { ...base, assignedStaff: name, groupId };
+      if (name !== String(base.assignedStaff || "").trim()) delete one.assignedStaffId;
+      // Remember the person's id, so the task follows them rather than a spelling.
+      if (!one.assignedStaffId && !isGroupAssignee(name)) {
+        const person: any = await User.findOne({ name: exactName(name) }, { _id: 1 }).lean();
+        if (person) one.assignedStaffId = String(person._id);
+      }
+      const task = await StaffTask.create(one);
+      tasks.push(task);
+
+      // The person (or group) it is given to sees it in their bell straight away.
+      await notifyAssignee(task.assignedStaff, task.assignedStaffId, {
+        ...describeTask(task),
+        link: "/staff/tasks",
+        createdBy: actor?.name || String(body.createdBy || ""),
+        refType: "task",
+        refId: String(task._id),
+      });
     }
 
-    const task = await StaffTask.create(payload);
-
-    // The person (or group) it is given to sees it in their bell straight away.
-    const actor = await getActor().catch(() => null);
-    const note = describeTask(task);
-    await notifyAssignee(task.assignedStaff, task.assignedStaffId, {
-      ...note,
-      link: "/staff/tasks",
-      createdBy: actor?.name || String(body.createdBy || ""),
-      refType: "task",
-      refId: String(task._id),
-    });
-
-    return NextResponse.json({ success: true, data: task });
+    return NextResponse.json({ success: true, data: tasks[0], count: tasks.length, tasks });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 400 });
   }

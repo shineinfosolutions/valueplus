@@ -12,6 +12,7 @@ import { UnreadNotificationPopup } from "@/components/shared/UnreadNotificationP
 import { LeadsLoginPopup } from "@/components/shared/LeadsLoginPopup";
 import { Toaster } from "sonner";
 import { BranchProvider } from "@/context/BranchContext";
+import { GeofenceWatcher } from "@/components/shared/GeofenceWatcher";
 
 export const metadata: Metadata = {
   title: "ValuePlus ERP",
@@ -54,6 +55,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         {/* A salesman sees all his open leads at sign-in until he closes the list */}
         <LeadsLoginPopup />
+
+        {/* Time outside the store during the shift (geofence; reports only boundary crossings) */}
+        <GeofenceWatcher />
 
         {/* Offset below the top bar, so a pop-up never covers the bell or Logout. */}
         <Toaster position="top-right" richColors expand={false} offset={72} mobileOffset={{ top: 64 }} />

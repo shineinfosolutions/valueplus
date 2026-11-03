@@ -3,6 +3,7 @@
 import { BrandSalesCard } from "@/components/shared/BrandSalesCard";
 import { StockOrdersCard } from "@/components/dashboard/StockOrdersCard";
 import { TargetProgress } from "@/components/staff/TargetProgress";
+import { MyIncentiveCard } from "@/components/staff/MyIncentiveCard";
 import React, { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { 
@@ -48,14 +49,6 @@ export function SalesmanDashboardView({ session }: { session: any }) {
       const res = await fetch("/api/invoices");
       const json = await res.json();
       return json.success ? json.data : [];
-    },
-  });
-
-  const { data: incentive } = useQuery({
-    queryKey: ["salesman-incentive"],
-    queryFn: async () => {
-      const json = await (await fetch("/api/staff/my-incentive")).json();
-      return json.success ? (json.data as { earned: number; received: number; pending: number }) : null;
     },
   });
 
@@ -164,7 +157,7 @@ export function SalesmanDashboardView({ session }: { session: any }) {
   const periodIncentivesEarned = useMemo(() => {
     return filteredInvoices.reduce((sum: number, inv: any) => {
       const itemsIncentive = inv.items?.reduce((itemSum: number, item: any) => itemSum + (Number(item.incentiveEarned) || 0), 0) || 0;
-      return sum + itemsIncentive + (Number(inv.salesExecutiveIncentive) || 0);
+      return sum + itemsIncentive + (Number(inv.salesExecutiveIncentive) || 0) + (Number(inv.onsitegoIncentive) || 0);
     }, 0);
   }, [filteredInvoices]);
 
@@ -273,23 +266,8 @@ export function SalesmanDashboardView({ session }: { session: any }) {
 
             <StockOrdersCard mode="salesman" />
 
-            {/* Incentive: earned on my bills, and what has been paid out to me */}
-            {(() => {
-              return (
-                <div className="grid grid-cols-2 gap-2.5">
-                  <Link href="/staff/incentives" className="bg-white rounded-2xl p-3 border border-slate-200 shadow-sm block no-underline">
-                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1"><Sparkles className="w-3.5 h-3.5 text-amber-500" /> Incentive earned</p>
-                    <p className="text-2xl font-black text-emerald-700 mt-0.5">{formatCurrency(incentive?.earned || 0)}</p>
-                    <p className="text-xs text-slate-500">total on my bills</p>
-                  </Link>
-                  <Link href="/staff/incentives" className="bg-white rounded-2xl p-3 border border-slate-200 shadow-sm block no-underline">
-                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1"><DollarSign className="w-3.5 h-3.5 text-blue-600" /> Incentive received</p>
-                    <p className="text-2xl font-black text-blue-700 mt-0.5">{formatCurrency(incentive?.received || 0)}</p>
-                    <p className="text-xs text-slate-500">{(incentive?.pending || 0) > 0 ? `${formatCurrency(incentive?.pending || 0)} still to receive` : "paid with salary"}</p>
-                  </Link>
-                </div>
-              );
-            })()}
+            {/* Incentive: tap to see the bills and payouts behind it */}
+            <MyIncentiveCard />
 
             {/* Own brand against other brands (pieces only) */}
             <BrandSalesCard />
@@ -546,7 +524,7 @@ export function SalesmanDashboardView({ session }: { session: any }) {
                 </tr>
               ) : (
                 filteredInvoices.map((inv: any) => {
-                  const incAmount = Number(inv.salesExecutiveIncentive) || 0;
+                  const incAmount = (Number(inv.salesExecutiveIncentive) || 0) + (Number(inv.onsitegoIncentive) || 0);
                   return (
                     <tr key={inv._id || inv.id} className="hover:bg-slate-50 transition-colors">
                       <td className="p-3 font-mono font-bold text-[#30539C]">

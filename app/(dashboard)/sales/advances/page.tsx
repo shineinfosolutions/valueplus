@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { numberToWordsIndian } from "@/lib/number-to-words";
+import { printElement } from "@/lib/printUtility";
 import { useSession } from "next-auth/react";
 import { ExportMenu } from "@/components/shared/ExportMenu";
 
@@ -47,6 +48,7 @@ export default function CustomerAdvancesPage() {
     targetBrand: "Haier",
     targetCategory: "Air Conditioners",
     notes: "",
+    reason: "",
   });
 
   // Query Advances
@@ -112,6 +114,7 @@ export default function CustomerAdvancesPage() {
         targetBrand: "Haier",
         targetCategory: "Air Conditioners",
         notes: "",
+        reason: "",
       });
     },
     onError: (err: any) => {
@@ -180,6 +183,7 @@ export default function CustomerAdvancesPage() {
       `Customer: *${adv.customerName}*\n` +
       `Advance Paid: *₹${Number(adv.amount).toLocaleString("en-IN")}* (Mode: ${adv.paymentMode})\n` +
       (adv.productBooked ? `Item Booked: *${adv.productBooked}*\n` : "") +
+      (adv.reason || adv.notes ? `Reason: ${adv.reason || adv.notes}\n` : "") +
       `Available Balance: *₹${Number(adv.remainingBalance).toLocaleString("en-IN")}*\n\n` +
       `📌 *Note:* This token amount will be automatically deducted from your final Tax Invoice upon delivery.\n\n` +
       `For queries: 📞 9140860604 | Value Plus Kunraghat, Gorakhpur`
@@ -219,6 +223,7 @@ export default function CustomerAdvancesPage() {
               Phone: adv.customerPhone,
               "Product Booked": adv.productBooked || "General Store Credit",
               "Target Brand": adv.targetBrand || "",
+              Reason: adv.reason || adv.notes || "",
               "Advance Amount": adv.amount,
               "Payment Mode": adv.paymentMode,
               "Available Balance": adv.remainingBalance,
@@ -383,6 +388,11 @@ export default function CustomerAdvancesPage() {
                           <div className="text-[11px] text-amber-700 font-medium flex items-center gap-1 mt-0.5">
                             <Tag className="w-3 h-3" />
                             <span>Brand: {adv.targetBrand}</span>
+                          </div>
+                        )}
+                        {(adv.reason || adv.notes) && (
+                          <div className="text-[11px] text-slate-600 mt-0.5 max-w-[260px]">
+                            <span className="font-semibold">Reason:</span> {adv.reason || adv.notes}
                           </div>
                         )}
                       </td>
@@ -590,6 +600,18 @@ export default function CustomerAdvancesPage() {
             </div>
 
             <div>
+              <Label className="font-bold text-slate-700">Reason for advance *</Label>
+              <Input
+                placeholder="e.g. Booking for AC, delivery after stock arrives / Token to hold the price"
+                value={newAdvance.reason}
+                onChange={(e) => setNewAdvance({ ...newAdvance, reason: e.target.value })}
+                className={`mt-1 ${newAdvance.reason.trim().length >= 3 ? "bg-slate-50 border-slate-300" : "bg-rose-50 border-rose-300"}`}
+                required
+                minLength={3}
+              />
+            </div>
+
+            <div>
               <Label className="font-bold text-slate-700">Remarks / Pre-Booking Terms</Label>
               <Input
                 placeholder="e.g. Promised delivery by 28th Aug with standard installation"
@@ -680,6 +702,24 @@ export default function CustomerAdvancesPage() {
                     <span className="font-semibold text-slate-800">{selectedAdvanceForPrint.targetBrand}</span>
                   </div>
                 )}
+                {(selectedAdvanceForPrint.reason || selectedAdvanceForPrint.notes) && (
+                  <div className="flex justify-between items-start gap-3 text-[11px]">
+                    <span className="text-slate-600 shrink-0">Reason:</span>
+                    <span className="font-semibold text-slate-800 text-right">{selectedAdvanceForPrint.reason || selectedAdvanceForPrint.notes}</span>
+                  </div>
+                )}
+                {selectedAdvanceForPrint.reason && selectedAdvanceForPrint.notes && (
+                  <div className="flex justify-between items-start gap-3 text-[11px]">
+                    <span className="text-slate-600 shrink-0">Remarks:</span>
+                    <span className="text-slate-800 text-right">{selectedAdvanceForPrint.notes}</span>
+                  </div>
+                )}
+                {selectedAdvanceForPrint.receivedBy && (
+                  <div className="flex justify-between items-center text-[11px]">
+                    <span className="text-slate-600">Received by:</span>
+                    <span className="font-semibold text-slate-800">{selectedAdvanceForPrint.receivedBy}</span>
+                  </div>
+                )}
                 <div className="flex justify-between items-center text-[11px]">
                   <span className="text-slate-600">Payment Mode:</span>
                   <span className="font-bold uppercase text-slate-800">
@@ -733,7 +773,11 @@ export default function CustomerAdvancesPage() {
                 </Button>
                 <Button
                   size="sm"
-                  onClick={() => window.print()}
+                  onClick={() => {
+                    // Only the receipt, not the page behind the dialog.
+                    const slip = document.getElementById("advance-print-slip");
+                    if (slip) printElement(slip, `Advance_Receipt_${selectedAdvanceForPrint.receiptNumber}`);
+                  }}
                   className="bg-[#1B2537] hover:bg-[#2A3B5C] text-white flex items-center gap-1.5 text-xs font-bold"
                 >
                   <Printer className="w-3.5 h-3.5" /> Print Receipt

@@ -5,6 +5,7 @@ import cloudinary from "@/lib/cloudinary";
 import StoredDocument from "@/models/StoredDocument";
 import DocumentFolder from "@/models/DocumentFolder";
 import { getActor } from "@/lib/requirePermission";
+import { ONSITEGO_ONLY_ROLES, getOnsitegoFolder, isExcel, parseOnsitegoPlans, savePlans } from "@/lib/onsitego-server";
 
 /**
  * Office documents: upload a PDF (or a photo of one) with a date and a narration,
@@ -14,7 +15,11 @@ import { getActor } from "@/lib/requirePermission";
 
 export const maxDuration = 60;
 
-const ALLOWED_TYPES = ["application/pdf", "image/jpeg", "image/jpg", "image/png", "image/webp"];
+const ALLOWED_TYPES = [
+  "application/pdf", "image/jpeg", "image/jpg", "image/png", "image/webp",
+  // Excel / CSV (e.g. the Onsitego plan price list).
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel", "text/csv",
+];
 const MAX_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
 const VIEW_ROLES = ["admin", "superadmin", "manager", "accounts"];
 
@@ -28,7 +33,8 @@ async function requireViewer() {
   if (!actor) {
     return { error: NextResponse.json({ success: false, error: "You must be signed in to do this." }, { status: 401 }) };
   }
-  if (!VIEW_ROLES.includes(actor.role)) {
+  // Salesmen and cashiers see the On Site Go folder only (and cannot upload).
+  if (!VIEW_ROLES.includes(actor.role) && !ONSITEGO_ONLY_ROLES.includes(actor.role)) {
     return {
       error: NextResponse.json(
         { success: false, error: "Only the admin, manager and accounts can open the documents section." },
@@ -36,7 +42,7 @@ async function requireViewer() {
       ),
     };
   }
-  return { actor };
+  return { actor, onsitegoOnly: ONSITEGO_ONLY_ROLES.includes(actor.role) };
 }
 
 export async function GET() {
@@ -45,7 +51,9 @@ export async function GET() {
     if (gate.error) return gate.error;
 
     await connectToDatabase();
-    const documents = await StoredDocument.find({}).sort({ date: -1, createdAt: -1 }).lean();
+    const filter: any = {};
+    if (gate.onsitegoOnly) filter.folderId = String((await getOnsitegoFolder())._id);
+    const documents = await StoredDocument.find(filter).sort({ date: -1, createdAt: -1 }).lean();
     return NextResponse.json({ success: true, data: documents });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
@@ -57,6 +65,9 @@ export async function POST(req: Request) {
     const gate = await requireViewer();
     if (gate.error) return gate.error;
     const actor = gate.actor!;
+    if (gate.onsitegoOnly) {
+      return NextResponse.json({ success: false, error: "Only the admin, manager and accounts can upload documents." }, { status: 403 });
+    }
 
     const form = await req.formData();
     const file = form.get("file");
@@ -72,7 +83,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: "Write a narration that says what this document is." }, { status: 400 });
     }
     if (!ALLOWED_TYPES.includes(file.type)) {
-      return NextResponse.json({ success: false, error: "Only PDF, JPG, PNG or WEBP files are allowed." }, { status: 400 });
+      return NextResponse.json({ success: false, error: "Only PDF, JPG, PNG, WEBP or Excel files are allowed." }, { status: 400 });
     }
     if (file.size > MAX_SIZE_BYTES) {
       return NextResponse.json({ success: false, error: "The file must be smaller than 10 MB." }, { status: 400 });
@@ -118,7 +129,24 @@ export async function POST(req: Request) {
       uploadedByRole: actor.role,
     });
 
-    return NextResponse.json({ success: true, data: record, message: "Document saved." });
+    // An Excel put in the On Site Go folder is Onsitego's plan price list: it replaces the plans the bill
+    // form suggests.
+    let message = "Document saved.";
+    if (folderId && isExcel(file.name, file.type) && folderId === String((await getOnsitegoFolder(actor.name))._id)) {
+      try {
+        const { plans, sheet } = parseOnsitegoPlans(buffer);
+        if (plans.length > 0) {
+          await savePlans(plans, String(record._id), file.name);
+          message = `Document saved. ${plans.length} Onsitego plans read from sheet "${sheet}"; the bill form now suggests them.`;
+        } else {
+          message = "Document saved, but no Onsitego plans could be read from it. The sheet needs a price range (Min/Max or a range like 10001-20000) and a plan price column.";
+        }
+      } catch (e: any) {
+        message = `Document saved, but the Excel could not be read as a plan list (${e?.message || "unknown error"}).`;
+      }
+    }
+
+    return NextResponse.json({ success: true, data: record, message });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message || "Upload failed" }, { status: 500 });
   }

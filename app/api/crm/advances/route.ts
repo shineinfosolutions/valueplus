@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import CustomerAdvance from "@/models/CustomerAdvance";
 import Customer from "@/models/Customer";
+import { getActor } from "@/lib/requirePermission";
 
 export async function GET(req: Request) {
   try {
@@ -56,6 +57,7 @@ export async function POST(req: Request) {
       targetBrand = "",
       targetCategory = "",
       notes = "",
+      reason = "",
       branchName = "Ashoka Enterprises (Kunraghat Showroom)",
       receivedBy = "Store Staff",
     } = body;
@@ -63,6 +65,13 @@ export async function POST(req: Request) {
     if (!customerName || !customerPhone || !amount || Number(amount) <= 0) {
       return NextResponse.json(
         { success: false, error: "Customer Name, Mobile, and valid Amount (> 0) are required." },
+        { status: 400 }
+      );
+    }
+
+    if (String(reason || "").trim().length < 3) {
+      return NextResponse.json(
+        { success: false, error: "Write the reason for this advance (what the customer is paying it for)." },
         { status: 400 }
       );
     }
@@ -80,9 +89,12 @@ export async function POST(req: Request) {
     const count = await CustomerAdvance.countDocuments({});
     const receiptNumber = `ADV-${currentYear}-${String(count + 1).padStart(4, "0")}`;
 
+    // India time: on the server the clock is UTC, which gave the wrong time (and date before 5:30 am).
     const now = new Date();
-    const dateStr = now.toISOString().split("T")[0];
-    const timeStr = now.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+    const dateStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(now);
+    const timeStr = now.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" });
+    // Who took the money comes from the login, not the form.
+    const actor = await getActor().catch(() => null);
 
     const numAmount = Number(amount);
 
@@ -100,11 +112,12 @@ export async function POST(req: Request) {
       targetBrand: targetBrand.trim(),
       targetCategory: targetCategory.trim(),
       notes,
+      reason: String(reason).trim(),
       status: "Available",
       usedAmount: 0,
       remainingBalance: numAmount,
       branchName,
-      receivedBy,
+      receivedBy: actor?.name || receivedBy,
       date: dateStr,
       time: timeStr,
     });

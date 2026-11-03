@@ -21,6 +21,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import Link from "next/link";
 import { ExportMenu } from "@/components/shared/ExportMenu";
 import { todayInIndia } from "@/lib/today";
+import { fileViewUrl } from "@/lib/file-link";
 
 const FINANCE_PROVIDERS = [
   "Bajaj Finance Limited",
@@ -479,7 +480,7 @@ export default function FinanceLedgerStandalonePage() {
 
                             {rec.uploadedPdfUrl && (
                               <a
-                                href={rec.uploadedPdfUrl}
+                                href={fileViewUrl(rec.uploadedPdfUrl)}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="h-8 px-2.5 text-[11px] font-bold text-emerald-700 border border-emerald-200 bg-emerald-50/70 hover:bg-emerald-100 rounded-lg inline-flex items-center gap-1.5 transition-colors shadow-2xs whitespace-nowrap shrink-0"

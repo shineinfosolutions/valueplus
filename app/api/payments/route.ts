@@ -92,6 +92,13 @@ export async function POST(request: Request) {
       data.referenceId = bill.billNo;
     }
 
+    // A customer payment (an advance, money towards dues, or a refund) says why, and the receipt shows it.
+    if (data.partyType === "Customer" && String(data.notes || "").trim().length < 3) {
+      return NextResponse.json({ success: false, error: "Write the reason for this payment (e.g. advance for an AC booking)." }, { status: 400 });
+    }
+    // Who took the money comes from the login, never from the form.
+    data.receivedBy = gate.actor.name;
+
     // Find the customer/supplier to update balance
     if (data.partyType === "Customer") {
       const Customer = (await import("@/models/Customer")).default;
@@ -103,9 +110,13 @@ export async function POST(request: Request) {
       
       const multiplier = data.type === "paid" ? 1 : -1;
       // Decrease outstanding balance if received, increase if paid (refund)
-      await Customer.findByIdAndUpdate(data.partyId, {
-        $inc: { outstandingBalance: multiplier * Number(data.amount) }
-      });
+      const updated: any = await Customer.findByIdAndUpdate(
+        data.partyId,
+        { $inc: { outstandingBalance: multiplier * Number(data.amount) } },
+        { new: true }
+      ).select("outstandingBalance").lean();
+      // For the receipt: below 0 = advance the next bill will use.
+      data.balanceAfter = round2(Number(updated?.outstandingBalance) || 0);
     } else if (data.partyType === "Supplier") {
       const Supplier = (await import("@/models/Supplier")).default;
       const supplier = await Supplier.findById(data.partyId);

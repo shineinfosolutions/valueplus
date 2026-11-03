@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageShell } from "@/components/shared/page-shell";
@@ -11,6 +11,8 @@ import { FileText, UploadCloud, ExternalLink, Trash2, Search, ShieldAlert, Folde
 import { toast } from "sonner";
 
 const ALLOWED_ROLES = ["admin", "superadmin", "manager", "accounts"];
+/** Salesmen and cashiers see only the On Site Go folder (Onsitego plans and material), and cannot upload. */
+const ONSITEGO_ONLY_ROLES = ["salesman", "sales", "cashier"];
 
 function todayInIndia(): string {
   return new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -24,7 +26,8 @@ function formatSize(bytes: number): string {
 export default function DocumentsPage() {
   const { data: session, status } = useSession();
   const role = String((session?.user as any)?.role || "").toLowerCase();
-  const allowed = ALLOWED_ROLES.includes(role);
+  const onsitegoOnly = ONSITEGO_ONLY_ROLES.includes(role);
+  const allowed = ALLOWED_ROLES.includes(role) || onsitegoOnly;
   const isAdmin = role === "admin" || role === "superadmin";
   // Admin and manager make and rename folders and move documents between them.
   const canManage = isAdmin || role === "manager";
@@ -53,6 +56,11 @@ export default function DocumentsPage() {
   });
   const folders: any[] = folderData?.data || [];
   const folderName = (id: string) => folders.find((f) => String(f._id) === id)?.name || "";
+  // Salesmen and cashiers have only the On Site Go folder: open it straight away.
+  const onlyFolderId = onsitegoOnly && folders[0] ? String(folders[0]._id) : "";
+  useEffect(() => {
+    if (onlyFolderId) setActiveFolder(onlyFolderId);
+  }, [onlyFolderId]);
 
   const folderMutation = useMutation({
     mutationFn: async (b: { id?: string; name: string }) => {
@@ -130,10 +138,13 @@ export default function DocumentsPage() {
       const res = await fetch("/api/documents", { method: "POST", body: form });
       const json = await res.json();
       if (!json.success) throw new Error(json.error || "Upload failed");
-      return json.data;
+      return json;
     },
-    onSuccess: () => {
-      toast.success("Document saved.");
+    onSuccess: (json: any) => {
+      // An Onsitego price list says how many plans were read (or why none could be).
+      const msg = String(json?.message || "Document saved.");
+      if (/no Onsitego plans|could not be read/i.test(msg)) toast.warning(msg, { duration: 10000 });
+      else toast.success(msg, { duration: 6000 });
       setFile(null);
       setNarration("");
       setDate(todayInIndia());
@@ -208,8 +219,12 @@ export default function DocumentsPage() {
         {/* Folders */}
         <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-3 flex flex-wrap items-center gap-2">
           {[
-            { id: "all", label: "All documents", count: documents.length },
-            { id: "unfiled", label: "Not in a folder", count: folderData?.unfiled ?? 0 },
+            ...(onsitegoOnly
+              ? []
+              : [
+                  { id: "all", label: "All documents", count: documents.length },
+                  { id: "unfiled", label: "Not in a folder", count: folderData?.unfiled ?? 0 },
+                ]),
             ...folders.map((f) => ({ id: String(f._id), label: f.name, count: f.count })),
           ].map((f) => (
             <button
@@ -228,7 +243,7 @@ export default function DocumentsPage() {
               <FolderPlus className="w-3.5 h-3.5 mr-1" /> New folder
             </Button>
           )}
-          {active && canManage && (
+          {active && canManage && !active.fixed && (
             <div className="ml-auto flex items-center gap-1">
               <Button type="button" size="sm" variant="ghost" onClick={() => renameFolder(active)} className="h-8 text-xs"><Pencil className="w-3 h-3 mr-1" /> Rename</Button>
               {isAdmin && (
@@ -247,6 +262,12 @@ export default function DocumentsPage() {
         </div>
 
         {/* Upload */}
+        {onsitegoOnly && (
+          <p className="text-xs text-slate-500 px-1">
+            Onsitego plans, price lists and material from the Admin. You earn 10% of every Onsitego plan you sell.
+          </p>
+        )}
+        {!onsitegoOnly && (
         <form onSubmit={handleSubmit} className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-4 sm:p-5 space-y-4">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-blue-50 text-[#30539C] flex items-center justify-center">
@@ -254,7 +275,7 @@ export default function DocumentsPage() {
             </div>
             <div>
               <h3 className="text-sm font-bold text-slate-900">Upload a document</h3>
-              <p className="text-xs text-slate-500">PDF, JPG, PNG or WEBP, up to 10 MB.</p>
+              <p className="text-xs text-slate-500">PDF, JPG, PNG, WEBP or Excel, up to 10 MB.</p>
             </div>
           </div>
 
@@ -287,7 +308,7 @@ export default function DocumentsPage() {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*"
+              accept=".pdf,.jpg,.jpeg,.png,.webp,.xlsx,.xls,.csv,application/pdf,image/*"
               onChange={(e) => setFile(e.target.files?.[0] || null)}
               className="hidden"
             />
@@ -321,7 +342,14 @@ export default function DocumentsPage() {
               {uploadMutation.isPending ? "Uploading..." : "Upload & Save"}
             </Button>
           </div>
+          {folders.find((f) => String(f._id) === uploadFolder)?.fixed && (
+            <p className="text-[11px] text-slate-500">
+              On Site Go: an Excel price list put here (price range + plan price columns) becomes the Onsitego plans the bill form suggests.
+              Salesmen, cashiers and the manager can open everything in this folder.
+            </p>
+          )}
         </form>
+        )}
 
         {/* List */}
         <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden">

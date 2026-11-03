@@ -23,6 +23,7 @@ import { stampLineCosts } from "@/lib/sale-cost";
 import { fullEditInvoice, summariseInvoice } from "@/lib/invoice-full-edit";
 import { authoriseChange, auditChange, createChangeRequest, versionOf } from "@/lib/change-requests";
 import { publishChange } from "@/lib/realtime";
+import { onsitegoIncentiveOf } from "@/lib/onsitego";
 
 /**
  * What a plain update may change on a sales bill: contact and delivery details only.
@@ -478,6 +479,8 @@ export async function POST(req: Request) {
     const creditRequested = Math.max(0, Number(body.creditAdjusted) || 0);
     delete body.creditAdjusted;
 
+    // Onsitego plans sold on the bill: 10% to its salesman, worked out here (never taken from the form).
+    body.onsitegoIncentive = onsitegoIncentiveOf(body.items);
     const invoice = await Invoice.create(body);
 
     // A Store Manager's back-dated bill: the Admin is asked to approve it.

@@ -29,6 +29,29 @@ export interface IAttendance extends Document {
   checkInLat?: number;
   checkInLng?: number;
   checkInDistanceM?: number;
+  /** Geofence (lib/presence.ts): times the person was outside the store during the shift. */
+  awayPeriods?: IAwayPeriod[];
+  /** Minutes outside, not counting approved breaks or the time the app was closed. */
+  totalAwayMinutes?: number;
+  /** Minutes the app was closed / in the background during the shift (location unknown). */
+  unknownMinutes?: number;
+  lastPresence?: { state: "in" | "out"; at: Date; distanceM?: number; lat?: number; lng?: number };
+}
+
+export interface IAwayPeriod {
+  /** away = outside the store; break = outside during an approved break; unknown = app closed, location unknown. */
+  kind: "away" | "break" | "unknown";
+  leftAt: Date;
+  backAt?: Date;
+  minutes?: number;
+  leftDistanceM?: number;
+  maxDistanceM?: number;
+  /** For a break: when the approved break ends (the rest of the time outside counts as away). */
+  breakEndsAt?: Date;
+  /** The end is not exactly known (the app was closed meanwhile): the minutes are the least it can have been. */
+  endUncertain?: boolean;
+  /** Last "outside too long" alert sent for this period. */
+  lastAlertAt?: Date;
 }
 
 const AttendanceSchema = new Schema<IAttendance>(
@@ -76,6 +99,32 @@ const AttendanceSchema = new Schema<IAttendance>(
     checkInLat: { type: Number },
     checkInLng: { type: Number },
     checkInDistanceM: { type: Number },
+    awayPeriods: {
+      type: [
+        {
+          _id: false,
+          kind: { type: String, enum: ["away", "break", "unknown"], default: "away" },
+          leftAt: { type: Date, required: true },
+          backAt: { type: Date },
+          minutes: { type: Number },
+          leftDistanceM: { type: Number },
+          maxDistanceM: { type: Number },
+          breakEndsAt: { type: Date },
+          endUncertain: { type: Boolean },
+          lastAlertAt: { type: Date },
+        },
+      ],
+      default: undefined,
+    },
+    totalAwayMinutes: { type: Number, default: 0 },
+    unknownMinutes: { type: Number, default: 0 },
+    lastPresence: {
+      state: { type: String, enum: ["in", "out"] },
+      at: { type: Date },
+      distanceM: { type: Number },
+      lat: { type: Number },
+      lng: { type: Number },
+    },
   },
   { timestamps: true, collection: "attendance" }
 );

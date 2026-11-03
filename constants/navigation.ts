@@ -163,6 +163,8 @@ export const NAV_GROUPS: NavGroup[] = [
       { title: "Customer Queries", href: "/marketing/walk-in", icon: Users, roles: ["admin", "salesman", "cashier", "manager"] },
       { title: "Customer Complaints", href: "/marketing/complaints", icon: AlertCircle, roles: ["admin", "salesman", "cashier", "manager", "hr", "accounts", "warehouse"] },
       { title: "Sales Leads", href: "/marketing/leads", icon: Sparkles, roles: ["admin", "salesman", "manager", "cashier"] },
+      // The Documents page shows them only the On Site Go folder (Onsitego plans and material).
+      { title: "On Site Go (Plans)", href: "/documents", icon: ShieldCheck, roles: ["salesman", "cashier"] },
     ],
   },
   {

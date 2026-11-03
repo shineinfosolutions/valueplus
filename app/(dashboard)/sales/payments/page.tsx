@@ -4,7 +4,8 @@ import { PageShell } from "@/components/shared/page-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Search, WalletCards, ArrowDownLeft, Building2, User, Trash2 } from "lucide-react";
+import { Plus, Search, WalletCards, ArrowDownLeft, Building2, User, Trash2, Printer } from "lucide-react";
+import { PaymentReceiptDialog } from "@/components/payments/PaymentReceiptDialog";
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { formatCurrency, formatDate } from "@/lib/utils";
@@ -24,6 +25,7 @@ export default function ReceivePaymentPage() {
   const [dateRange, setDateRange] = useState(() => resolveDateRange("This Month"));
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("customers");
+  const [receiptFor, setReceiptFor] = useState<any | null>(null);
   const queryClient = useQueryClient();
 
 
@@ -170,6 +172,7 @@ export default function ReceivePaymentPage() {
                         {p.paymentMode}
                       </Badge>
                       {p.referenceId && <span className="text-[10px] text-slate-500 font-mono mt-1">Ref: {p.referenceId}</span>}
+                      {p.notes && <span className="text-[10px] text-slate-600 mt-0.5 max-w-[220px]">Reason: {p.notes}</span>}
                     </div>
                   </td>
                   <td className="px-4 py-3" data-label="Type">
@@ -183,6 +186,11 @@ export default function ReceivePaymentPage() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right" data-m="inline">
+                    {p.partyType === "Customer" && (
+                      <Button size="sm" variant="outline" onClick={() => setReceiptFor(p)} className="h-7 px-2 mr-1 text-[11px] font-bold" title="Payment receipt">
+                        <Printer className="w-3.5 h-3.5 mr-1" /> Receipt
+                      </Button>
+                    )}
                     <PaymentChangeControls payment={p} />
                   </td>
                 </tr>
@@ -193,6 +201,8 @@ export default function ReceivePaymentPage() {
       </div>
 
       </Tabs>
+
+      <PaymentReceiptDialog payment={receiptFor} onClose={() => setReceiptFor(null)} />
 
       <PaymentModal 
         isOpen={isFormOpen} 

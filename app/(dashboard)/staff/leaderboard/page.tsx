@@ -10,6 +10,7 @@ import { ExportMenu } from "@/components/shared/ExportMenu";
 import { Search, Trophy } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { cn } from "@/lib/utils";
+import { StaffFilter, useStaffParam, sameStaff } from "@/components/shared/StaffFilter";
 
 interface StaffRow {
   staffName: string;
@@ -45,10 +46,14 @@ export default function StaffLeaderboardPage() {
     [rows]
   );
 
+  // Staff-wise view (`?staff=`); the rank shown is still the person's place among everyone.
+  const [staffFilter, setStaffFilter] = useStaffParam("staff");
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return rows.map((r, i) => ({ ...r, rank: i + 1 })).filter((r) => !q || r.staffName.toLowerCase().includes(q));
-  }, [rows, search]);
+    return rows
+      .map((r, i) => ({ ...r, rank: i + 1 }))
+      .filter((r) => (!q || r.staffName.toLowerCase().includes(q)) && sameStaff(r.staffName, staffFilter));
+  }, [rows, search, staffFilter]);
 
   return (
     <PageShell
@@ -92,6 +97,7 @@ export default function StaffLeaderboardPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input placeholder="Search staff..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
           </div>
+          <StaffFilter value={staffFilter} onChange={setStaffFilter} roles={["salesman", "sales", "manager", "cashier"]} className="w-48 h-10" />
           <DateRangeFilter
             value={dateFilter}
             onChange={(val, s, e) => {

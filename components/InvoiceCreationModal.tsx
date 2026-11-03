@@ -24,6 +24,8 @@ import ValueplusInvoice from "@/app/invoice/page";
 import { useSession } from "next-auth/react";
 import { useBranch } from "@/context/BranchContext";
 import { useLive } from "@/components/providers/RealtimeProvider";
+import { fileViewUrl } from "@/lib/file-link";
+import { ONSITEGO_INCENTIVE_RATE, isOnsitego, plansFor, type OnsitegoPlanRow } from "@/lib/onsitego";
 
 function formatCurrency(val: number) {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(val || 0);
@@ -1046,6 +1048,38 @@ export function InvoiceCreationModal({
     }));
   };
 
+  // Onsitego plans (price list the Admin uploads to the On Site Go documents folder): each product line
+  // shows the plans that fit its price, ready to add with one tap. Refreshed when a new list is uploaded.
+  const { data: onsitegoPlans = [] } = useQuery({
+    queryKey: ["onsitego-plans"],
+    staleTime: 10 * 60 * 1000,
+    meta: { live: ["/api/documents"] },
+    queryFn: async () => {
+      const json = await (await fetch("/api/onsitego/plans")).json();
+      return (json.success ? json.data : []) as OnsitegoPlanRow[];
+    },
+  });
+  const onsitegoPlansForLine = (item: any): OnsitegoPlanRow[] => {
+    if (!onsitegoPlans.length) return [];
+    const cat: any = catalogItems.find((x: any) => (item.itemId && x._id === item.itemId) || (item.name && x.name === item.name));
+    const price = (Number(item.rate) || 0) - (Number(item.discount) || 0);
+    return plansFor(onsitegoPlans, { category: cat?.category || "", name: item.name, price });
+  };
+  const applyOnsitegoPlan = (idx: number, plan: OnsitegoPlanRow) => {
+    setBillingForm((prev) => {
+      const lineItems = [...prev.lineItems];
+      lineItems[idx] = {
+        ...lineItems[idx],
+        extendedWarrantyProvider: "Onsitego",
+        extendedWarrantyPlan: plan.planName,
+        extendedWarrantyAmount: plan.price,
+        extendedWarrantyDuration: plan.years || 1,
+      };
+      return { ...prev, lineItems };
+    });
+    toast.success(`${plan.planName} added (₹${plan.price.toLocaleString("en-IN")}).`);
+  };
+
   const handleLineItemChange = (idx: number, field: string, value: any) => {
     const updated = [...billingForm.lineItems];
     if (field === "qty" && mode === "invoice") {
@@ -1648,6 +1682,8 @@ export function InvoiceCreationModal({
               transactionRef: txnRef,
               productBooked: formattedItems.map(i => i.itemName).join(", "),
               notes: `Estimate Advance Token against #${billingForm.invoiceNo} (${billingForm.paymentMode})`,
+              // The advance API asks every advance for its reason: here it is the estimate itself.
+              reason: `Advance on estimate #${billingForm.invoiceNo}`,
               receivedBy: currentUserName,
             })
           }).catch(err => console.warn("Estimate advance logging:", err));
@@ -2741,6 +2777,41 @@ export function InvoiceCreationModal({
                             </div>
                           </div>
 
+                          {/* Onsitego plans that fit this product, shown automatically */}
+                          {(() => {
+                            const fits = onsitegoPlansForLine(item);
+                            if (fits.length === 0) return null;
+                            const chosenOnsitego = isOnsitego(item.extendedWarrantyProvider) && Number(item.extendedWarrantyAmount) > 0;
+                            return (
+                              <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-2">
+                                <p className="text-[11px] font-bold text-emerald-900">
+                                  Onsitego plans for this product
+                                  <span className="font-semibold text-emerald-700"> · salesman earns {Math.round(ONSITEGO_INCENTIVE_RATE * 100)}%</span>
+                                </p>
+                                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                                  {fits.map((p, pi) => {
+                                    const on = chosenOnsitego && item.extendedWarrantyPlan === p.planName && Number(item.extendedWarrantyAmount) === p.price;
+                                    return (
+                                      <button
+                                        key={pi}
+                                        type="button"
+                                        onClick={() => applyOnsitegoPlan(idx, p)}
+                                        title={`${p.planName}${p.category ? ` · ${p.category}` : ""} · for products ₹${p.minPrice.toLocaleString("en-IN")}${p.maxPrice ? ` – ₹${p.maxPrice.toLocaleString("en-IN")}` : "+"}`}
+                                        className={cn(
+                                          "h-7 px-2.5 rounded-md border text-[11px] font-bold",
+                                          on ? "bg-emerald-600 border-emerald-600 text-white" : "bg-white border-emerald-300 text-emerald-900 hover:bg-emerald-100"
+                                        )}
+                                      >
+                                        {p.years ? `${p.years} Yr` : p.planName} · ₹{p.price.toLocaleString("en-IN")}
+                                        <span className={on ? "text-emerald-100" : "text-emerald-600"}> (+₹{Math.round(p.price * ONSITEGO_INCENTIVE_RATE)})</span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })()}
+
                           {(item.extendedWarrantyAmount > 0 || (item.extendedWarrantyPlan && item.extendedWarrantyPlan !== "none")) && (
                             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 pt-1.5 border-t border-purple-200/80">
                               <div>
@@ -3532,7 +3603,7 @@ export function InvoiceCreationModal({
                       </div>
                       {billingForm.financePdfUrl && (
                         <a
-                          href={billingForm.financePdfUrl}
+                          href={fileViewUrl(billingForm.financePdfUrl)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-[11px] text-blue-600 hover:underline font-semibold mt-1 inline-block"

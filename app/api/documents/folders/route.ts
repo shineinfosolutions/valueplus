@@ -4,6 +4,7 @@ import connectToDatabase from "@/lib/db";
 import DocumentFolder from "@/models/DocumentFolder";
 import StoredDocument from "@/models/StoredDocument";
 import { getActor } from "@/lib/requirePermission";
+import { ONSITEGO_ONLY_ROLES, getOnsitegoFolder } from "@/lib/onsitego-server";
 
 /**
  * Folders for the office documents. Admin, manager and accounts can see them;
@@ -27,9 +28,15 @@ function cleanName(raw: any): string {
 
 export async function GET() {
   try {
-    const g = await gate(VIEW_ROLES, "Only the admin, manager and accounts can open the documents section.");
+    const g = await gate([...VIEW_ROLES, ...ONSITEGO_ONLY_ROLES], "Only the admin, manager and accounts can open the documents section.");
     if (g.error) return g.error;
     await connectToDatabase();
+    // The On Site Go folder always exists; salesmen and cashiers see only it.
+    const onsitego = await getOnsitegoFolder(g.actor!.name);
+    if (ONSITEGO_ONLY_ROLES.includes(g.actor!.role)) {
+      const count = await StoredDocument.countDocuments({ folderId: String(onsitego._id) });
+      return NextResponse.json({ success: true, data: [{ ...onsitego, count, fixed: true }], unfiled: 0, onsitegoOnly: true });
+    }
     const [folders, counts] = await Promise.all([
       DocumentFolder.find({}).sort({ nameKey: 1 }).lean(),
       StoredDocument.aggregate([{ $group: { _id: "$folderId", count: { $sum: 1 } } }]),
@@ -37,7 +44,7 @@ export async function GET() {
     const byId = new Map<string, number>(counts.map((c: any) => [String(c._id || ""), c.count]));
     return NextResponse.json({
       success: true,
-      data: (folders as any[]).map((f) => ({ ...f, count: byId.get(String(f._id)) || 0 })),
+      data: (folders as any[]).map((f) => ({ ...f, count: byId.get(String(f._id)) || 0, fixed: String(f._id) === String(onsitego._id) })),
       unfiled: byId.get("") || 0,
     });
   } catch (error: any) {
@@ -73,6 +80,9 @@ export async function PUT(req: Request) {
     if (name.length < 2) return NextResponse.json({ success: false, error: "Give the folder a name (at least 2 letters)." }, { status: 400 });
     await connectToDatabase();
     const nameKey = name.toLowerCase();
+    if (String((await getOnsitegoFolder())._id) === String(body.id)) {
+      return NextResponse.json({ success: false, error: "The On Site Go folder is used by the bill form and keeps its name." }, { status: 409 });
+    }
     const clash = await DocumentFolder.findOne({ nameKey, _id: { $ne: body.id } });
     if (clash) return NextResponse.json({ success: false, error: `A folder called "${name}" already exists.` }, { status: 409 });
     const folder = await DocumentFolder.findByIdAndUpdate(body.id, { $set: { name, nameKey } }, { new: true }).lean();
@@ -90,6 +100,9 @@ export async function DELETE(req: Request) {
     const id = new URL(req.url).searchParams.get("id") || "";
     if (!mongoose.isValidObjectId(id)) return NextResponse.json({ success: false, error: "Folder id is required." }, { status: 400 });
     await connectToDatabase();
+    if (String((await getOnsitegoFolder())._id) === id) {
+      return NextResponse.json({ success: false, error: "The On Site Go folder is used by the bill form and cannot be deleted." }, { status: 409 });
+    }
     const inside = await StoredDocument.countDocuments({ folderId: id });
     if (inside > 0) {
       return NextResponse.json(

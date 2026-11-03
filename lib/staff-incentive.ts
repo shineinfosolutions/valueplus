@@ -36,7 +36,7 @@ export interface IncentiveBook {
 export async function loadIncentiveBook(): Promise<IncentiveBook> {
   const bills: any[] = await Invoice.find(
     { type: { $nin: ["proforma", "sales-order", "credit-note"] }, status: { $ne: "cancelled" } },
-    { invoiceNumber: 1, date: 1, customerName: 1, total: 1, salesExecutive: 1, salesExecutiveIncentive: 1 }
+    { invoiceNumber: 1, date: 1, customerName: 1, total: 1, salesExecutive: 1, salesExecutiveIncentive: 1, onsitegoIncentive: 1 }
   )
     .sort({ date: -1, createdAt: -1 })
     .lean();
@@ -47,10 +47,13 @@ export async function loadIncentiveBook(): Promise<IncentiveBook> {
     const k = normName(b.salesExecutive);
     if (!k) continue;
     billCount.set(k, (billCount.get(k) || 0) + 1);
-    const inc = Number(b.salesExecutiveIncentive) || 0;
+    // Product incentive + 10% of the Onsitego plans on the bill (lib/onsitego.ts).
+    const productInc = Number(b.salesExecutiveIncentive) || 0;
+    const onsitego = Number(b.onsitegoIncentive) || 0;
+    const inc = productInc + onsitego;
     earned.set(k, (earned.get(k) || 0) + inc);
     const list = byName.get(k) || [];
-    list.push({ invoiceNumber: b.invoiceNumber, date: String(b.date || "").slice(0, 10), customerName: b.customerName, total: Number(b.total) || 0, incentive: inc });
+    list.push({ invoiceNumber: b.invoiceNumber, date: String(b.date || "").slice(0, 10), customerName: b.customerName, total: Number(b.total) || 0, incentive: inc, productIncentive: productInc, onsitegoIncentive: onsitego });
     byName.set(k, list);
   }
 

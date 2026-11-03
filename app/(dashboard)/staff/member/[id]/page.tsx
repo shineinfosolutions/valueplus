@@ -10,6 +10,7 @@ import { PageShell } from "@/components/shared/page-shell";
 import { Button } from "@/components/ui/button";
 import { BrandSalesCard } from "@/components/shared/BrandSalesCard";
 import { formatCurrency } from "@/lib/utils";
+import { awaySummary, periodLine } from "@/lib/away-format";
 
 const KIND_LABEL: Record<string, string> = { weekly_off: "Weekly Off", leave: "Leave", break: "Break", emergency: "Emergency Leave" };
 const STATUS_STYLE: Record<string, string> = {
@@ -126,6 +127,7 @@ export default function StaffMemberPage() {
                 <span>Half-day <b>{data.summary.halfDay}</b></span>
                 <span>Absent <b>{data.summary.absent}</b></span>
                 <span>On leave <b>{data.summary.onLeave}</b></span>
+                <span>Outside the store <b>{data.summary.awayTimes || 0}×</b> ({data.summary.awayMinutes || 0} min)</span>
               </div>
               {data.attendance.length === 0 ? (
                 <p className="p-6 text-center text-sm text-slate-500">No attendance recorded in this month.</p>
@@ -133,7 +135,7 @@ export default function StaffMemberPage() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead className="bg-slate-50 text-[10px] uppercase text-slate-500">
-                      <tr><th className="px-3 py-2 text-left">Date</th><th className="px-3 py-2 text-left">Status</th><th className="px-3 py-2 text-left">In</th><th className="px-3 py-2 text-left">Out</th><th className="px-3 py-2 text-right">Late</th><th className="px-3 py-2 text-right">Hours</th><th className="px-3 py-2 text-left">Photo</th></tr>
+                      <tr><th className="px-3 py-2 text-left">Date</th><th className="px-3 py-2 text-left">Status</th><th className="px-3 py-2 text-left">In</th><th className="px-3 py-2 text-left">Out</th><th className="px-3 py-2 text-right">Late</th><th className="px-3 py-2 text-right">Hours</th><th className="px-3 py-2 text-left">Outside the store</th><th className="px-3 py-2 text-left">Photo</th></tr>
                     </thead>
                     <tbody className="divide-y">
                       {data.attendance.map((a: any) => (
@@ -144,6 +146,18 @@ export default function StaffMemberPage() {
                           <td className="px-3 py-2">{a.checkOutTime && a.checkOutTime !== "--" ? a.checkOutTime : "-"}</td>
                           <td className={`px-3 py-2 text-right font-bold ${a.lateMinutes > 0 ? "text-amber-700" : "text-slate-400"}`}>{a.lateMinutes > 0 ? `${a.lateMinutes} min` : "-"}</td>
                           <td className="px-3 py-2 text-right font-mono">{a.workingDurationMinutes ? `${Math.floor(a.workingDurationMinutes / 60)}h ${a.workingDurationMinutes % 60}m` : "-"}</td>
+                          <td className="px-3 py-2 align-top">
+                            {(a.awayPeriods || []).length === 0 ? (
+                              <span className="text-slate-400">-</span>
+                            ) : (
+                              <div className="space-y-0.5">
+                                <p className={`font-bold ${awaySummary(a).includes("out now") ? "text-rose-700" : "text-slate-800"}`}>{awaySummary(a) || "only breaks / app closed"}</p>
+                                {(a.awayPeriods as any[]).map((p, i) => (
+                                  <p key={i} className={`text-[10px] ${p.kind === "away" ? "text-slate-600" : "text-slate-400"}`}>{periodLine(p)}</p>
+                                ))}
+                              </div>
+                            )}
+                          </td>
                           <td className="px-3 py-2">
                             {a.hasPhoto ? (
                               <button onClick={() => setPhotoId(a._id)} className="font-bold text-[#30539C] underline">View photo</button>

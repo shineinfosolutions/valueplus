@@ -7,6 +7,7 @@ import { getActor } from "@/lib/requirePermission";
 import { checkAtStore } from "@/lib/store-location";
 import { notifyRoles } from "@/lib/notify";
 import { getShift } from "@/lib/shift-settings";
+import { closeAwayAtCheckout } from "@/lib/presence";
 
 // Helper: Get IST Date string (YYYY-MM-DD)
 function getISTDate(d = new Date()): string {
@@ -279,6 +280,8 @@ export async function POST(req: Request) {
       }
 
       record.checkOutTime = currentISTTime;
+      // Still outside the store when checking out: that time outside ends here.
+      closeAwayAtCheckout(record, new Date());
 
       // Calculate working minutes
       const inMin = timeStringToMinutes(record.checkInTime);
