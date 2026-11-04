@@ -1,0 +1,268 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>ValuePlus ERP — Feature Checklist</title><style>
+@page { size: A4 landscape; margin: 14mm 14mm 14mm 14mm; }
+* { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+html, body { margin: 0; padding: 0; }
+body { font-family: "Segoe UI", Inter, Arial, sans-serif; color: #1b2537; font-size: 9.6pt; line-height: 1.45; }
+@media screen { body { max-width: 1123px; margin: 0 auto; padding: 24px 30px; } }
+.cover { background: #1B2537; color: #fff; padding: 20px 26px; border-radius: 10px; border-left: 8px solid #76C043; }
+.cover h1 { margin: 0; font-size: 20pt; }
+.cover p { margin: 6px 0 0; color: #cfd8e6; font-size: 10pt; }
+.meta { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 14px 0 10px; }
+.meta div { border: 1px solid #d5dce8; border-radius: 6px; padding: 8px 10px; min-height: 46px; }
+.meta b { display: block; font-size: 8.5pt; color: #5b6b85; text-transform: uppercase; letter-spacing: .3px; }
+.how { border: 1px solid #d5dce8; background: #f6f8fc; border-radius: 6px; padding: 10px 14px; margin: 0 0 6px; }
+.how ol { margin: 4px 0 0 18px; padding: 0; }
+.how li { margin: 2px 0; }
+h2 { font-size: 12.5pt; color: #1B2537; margin: 20px 0 6px; padding: 6px 10px; background: #eef2f8; border-left: 5px solid #76C043; border-radius: 4px;
+     display: flex; justify-content: space-between; align-items: baseline; page-break-after: avoid; break-after: avoid; }
+h2 small { font-size: 9pt; font-weight: 600; color: #30539C; }
+table { border-collapse: collapse; width: 100%; margin: 0 0 6px; }
+thead { display: table-header-group; }
+tr { page-break-inside: avoid; break-inside: avoid; }
+th, td { border: 1px solid #cfd7e4; padding: 6px 8px; vertical-align: top; text-align: left; }
+th { background: #1B2537; color: #fff; font-size: 8.8pt; font-weight: 600; }
+td.no { width: 46px; font-weight: 700; color: #30539C; white-space: nowrap; }
+td.chk { width: 30%; }
+td.exp { width: 31%; }
+td.ok, td.iss, th.ok, th.iss { width: 52px; text-align: center; }
+td.rem { width: auto; }
+.box { display: inline-block; width: 15px; height: 15px; border: 1.6px solid #1b2537; border-radius: 3px; margin-top: 1px; }
+.warn { display: block; margin-top: 4px; padding: 3px 6px; background: #fff7e6; border: 1px solid #f3c56b; border-radius: 4px; color: #8a5300; font-size: 8.4pt; }
+.summary td, .summary th { padding: 3px 10px; font-size: 9pt; }
+.summary tr { height: 21px; }
+.summary th { background: #1B2537; }
+.sign { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 30px; page-break-inside: avoid; }
+.sign div { border-top: 1.5px solid #1b2537; padding-top: 6px; font-size: 9.5pt; }
+.legend { font-size: 9pt; color: #44536b; margin: 6px 0 0; }
+.pb { page-break-before: always; break-before: page; }
+</style></head><body>
+<div class="cover"><h1>ValuePlus ERP — Feature Acceptance Checklist</h1>
+<p>Check every point with the client and tick OK or Issue · 127 points in 21 sections · Live site: valuplus.shineinfosolutions.in · Prepared 3 November 2026</p></div>
+<div class="meta">
+<div><b>Tested by (developer)</b></div><div><b>Client / Store representative</b></div><div><b>Date of testing</b></div><div><b>App version / Phone used</b></div>
+</div>
+<div class="how"><b>How to use this checklist</b>
+<ol>
+<li>Log in with the role shown on the right of each section heading (on the live site or the Android app).</li>
+<li>Do what the <b>What to check</b> column says and compare with <b>Expected result</b>.</li>
+<li>Tick <b>OK</b> when it works exactly as written, or <b>Issue</b> when anything differs, and write what happened in <b>Remarks</b>.</li>
+<li>Points marked <span class="warn" style="display:inline;padding:1px 5px">⚠</span> are already known issues (listed in BUGS.md, 33 points). Show them to the client as known and note the agreed fix date.</li>
+</ol></div>
+<p class="legend">☐ OK = works as expected &nbsp; · &nbsp; ☐ Issue = does not work / differs (write details in Remarks)</p>
+
+<h2><span>1. Login, roles and security</span><small>Test as: Each role</small></h2>
+<table><thead><tr><th>No.</th><th>What to check</th><th>Expected result</th><th class="ok">OK</th><th class="iss">Issue</th><th>Remarks</th></tr></thead><tbody>
+<tr><td class="no">1.1</td><td class="chk">Open the live site and log in with each role (Admin, Manager, Cashier, Salesman, Accounts, HR, Godown, Delivery, Supplier).</td><td class="exp">Each role lands on its own panel (/admin, /cashier, /salesman …) and sees only its own menu.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">1.2</td><td class="chk">Open another role&#x27;s panel address by hand (e.g. salesman opens /admin).</td><td class="exp">Redirected to their own panel.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">1.3</td><td class="chk">Log in with a wrong password.</td><td class="exp">Refused with a clear message.<span class="warn">⚠ BUGS 1.1: the shared password 123456 and the default role passwords still log in. Must be removed before handover.</span></td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">1.4</td><td class="chk">Settings → Security PIN: set your own PIN.</td><td class="exp">PIN saved; asked later for cancel / delete / edit.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">1.5</td><td class="chk">Log out on a shared phone, log in as another user.</td><td class="exp">Second user sees only their own data.<span class="warn">⚠ BUGS 1.13: offline data of the previous user can remain.</span></td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+</tbody></table>
+<h2><span>2. Dashboard — Admin / Manager / Cashier</span><small>Test as: Admin, Manager, Cashier</small></h2>
+<table><thead><tr><th>No.</th><th>What to check</th><th>Expected result</th><th class="ok">OK</th><th class="iss">Issue</th><th>Remarks</th></tr></thead><tbody>
+<tr><td class="no">2.1</td><td class="chk">Change the date filter (Today, Yesterday, 7 days, Month, Custom).</td><td class="exp">All cards and charts change to that period.<span class="warn">⚠ BUGS 5.1: revenue still counts cancelled bills and credit notes.</span></td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">2.2</td><td class="chk">Open the stock view: Brand → Category → Products.</td><td class="exp">Counts and quantities match at every level.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">2.3</td><td class="chk">Lead Pipeline card: use the Staff filter and the date filter.</td><td class="exp">Tiles, tabs and list show only that salesperson&#x27;s leads; counts beside each name.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">2.4</td><td class="chk">Lead Pipeline: change a lead status; press New Lead.</td><td class="exp">Status saves; new lead form opens and saves.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">2.5</td><td class="chk">Check cards: Bills from salesmen, Cash Available, Stock order requests, Outside the store now, Cash with the Cashier.</td><td class="exp">Each shows current figures; clicking opens the right page.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">2.6</td><td class="chk">Audit button under Profit &amp; Loss.</td><td class="exp">Asks Mobile / All products and opens that audit.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">2.7</td><td class="chk">Manager / Cashier / Accounts: Check-in card at the top.</td><td class="exp">Check in / out works from the dashboard.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+</tbody></table>
+<h2><span>3. Dashboard — Salesman (phone)</span><small>Test as: Salesman</small></h2>
+<table><thead><tr><th>No.</th><th>What to check</th><th>Expected result</th><th class="ok">OK</th><th class="iss">Issue</th><th>Remarks</th></tr></thead><tbody>
+<tr><td class="no">3.1</td><td class="chk">Open the dashboard on a phone.</td><td class="exp">Name, Check In button, today&#x27;s follow-ups with Call, tiles (sales, revenue, leads, tasks).</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">3.2</td><td class="chk">Tap Call on a follow-up.</td><td class="exp">Phone dialer opens; the call is recorded on the lead.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">3.3</td><td class="chk">Tap the Incentive card.</td><td class="exp">Earned / Received / To receive and every bill with incentive, Onsitego part, payouts.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">3.4</td><td class="chk">Check period tabs (Today / Week / Month).</td><td class="exp">Own invoices and figures change with the period.<span class="warn">⚠ BUGS 3.7–3.8: period incentive shows double; cancelled bills counted.</span></td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">3.5</td><td class="chk">Quick actions: New Estimate, New Bill, New Lead, Stock, New Stock.</td><td class="exp">Each opens the right form / page directly.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">3.6</td><td class="chk">Target progress on the dashboard.</td><td class="exp">Shows units and ₹ progress of assigned targets.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+</tbody></table>
+<h2><span>4. Tax Invoice — billing form</span><small>Test as: Cashier, Admin</small></h2>
+<table><thead><tr><th>No.</th><th>What to check</th><th>Expected result</th><th class="ok">OK</th><th class="iss">Issue</th><th>Remarks</th></tr></thead><tbody>
+<tr><td class="no">4.1</td><td class="chk">New bill: enter customer mobile of an existing customer.</td><td class="exp">Name, address, GSTIN fill automatically.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">4.2</td><td class="chk">New bill for a new mobile.</td><td class="exp">Customer is created when the bill is saved.<span class="warn">⚠ BUGS 2.8: once codes pass CUST-999 the new customer may not link.</span></td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">4.3</td><td class="chk">Choose billing company (Value Plus / Ashoka) and warehouse.</td><td class="exp">Bill number series and stock follow the choice.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">4.4</td><td class="chk">Add a product by name / VP code; pick a serial / IMEI.</td><td class="exp">Only available serials are offered; stock shown.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">4.5</td><td class="chk">Change qty, rate (GST-inclusive), discount, GST %.</td><td class="exp">Taxable, CGST/SGST (or IGST), total and round-off are correct.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">4.6</td><td class="chk">Leave Sales Executive empty and save.</td><td class="exp">Refused: Sales Executive is compulsory. Auto-filled when the customer has a lead.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">4.7</td><td class="chk">Pay by Cash, UPI, Card, Due, Split.</td><td class="exp">Paid / balance correct; Due goes to the customer&#x27;s khata.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">4.8</td><td class="chk">Pay by Finance (Bajaj / HDB / IDFC / TVS / Kotak) with down payment and DO; upload DO PDF.</td><td class="exp">Finance DO created; DO attachment opens later from Finance Ledger.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">4.9</td><td class="chk">Bajaj Finance bill without vehicle number.</td><td class="exp">Refused until a vehicle / driver is chosen.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">4.10</td><td class="chk">Price 1% or more below selling price.</td><td class="exp">Discount approval asked: 1–10% Manager, over 10% Admin; bill waits and saves after approval.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">4.11</td><td class="chk">Price below the floor / locked minimum price.</td><td class="exp">PIN asked; salesman can never go below a locked price.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">4.12</td><td class="chk">Customer with an advance or earlier payment: open a bill.</td><td class="exp">&quot;Payment Already Received&quot; / advance shown with a tick box; amount deducted when ticked.<span class="warn">⚠ BUGS 2.2: a partly used advance does not show.</span></td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">4.13</td><td class="chk">Extended warranty: choose provider, plan, years, amount.</td><td class="exp">Added to the bill total and printed.<span class="warn">⚠ BUGS 2.14: &quot;Custom Provider &amp; Price&quot; quick plan does not set the amount.</span></td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">4.14</td><td class="chk">Onsitego (after the PDF is uploaded): add an AC / TV / fridge.</td><td class="exp">Onsitego plans for that product&#x27;s price slab appear (EW / ADLD / AMC), with price and VP Code; one tap adds a plan.<span class="warn">⚠ BUGS 2.13: plan stays if price changes later.</span></td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">4.15</td><td class="chk">Delivery: counter vs later delivery; expected date; driver drop-down.</td><td class="exp">Driver name, phone, vehicle fill in; delivery challan made.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">4.16</td><td class="chk">Bill date field.</td><td class="exp">Always today; cannot be changed.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">4.17</td><td class="chk">Save the bill; check stock, serial, customer balance, lead, target.</td><td class="exp">Stock down, serial SOLD, balance updated, lead converted, target moved, incentive recorded.<span class="warn">⚠ BUGS 2.7: if a challan was ever deleted, later steps can be skipped.</span></td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">4.18</td><td class="chk">Print the invoice (A4) and share on WhatsApp.</td><td class="exp">Correct GST invoice; WhatsApp opens with the bill.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+</tbody></table>
+<h2><span>5. Tax Invoices — list, edit, cancel</span><small>Test as: Cashier, Manager, Admin</small></h2>
+<table><thead><tr><th>No.</th><th>What to check</th><th>Expected result</th><th class="ok">OK</th><th class="iss">Issue</th><th>Remarks</th></tr></thead><tbody>
+<tr><td class="no">5.1</td><td class="chk">Search, date filter, export Excel / PDF.</td><td class="exp">Correct bills; export downloads.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">5.2</td><td class="chk">Check Paid / Balance columns of a bill with an advance.</td><td class="exp">Advance shown separately; balance correct.<span class="warn">⚠ BUGS 2.6: balance wrong after collecting due on such a bill.</span></td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">5.3</td><td class="chk">Edit a saved bill (Admin): change qty / product; PIN + reason.</td><td class="exp">Bill, stock, serials, balance, receipt updated; audit log kept.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">5.4</td><td class="chk">Edit a saved bill as Manager.</td><td class="exp">Request goes to Admin with Before → After; applies only on approval.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">5.5</td><td class="chk">Cancel / delete a bill with PIN + reason.</td><td class="exp">Bill cancelled / archived with who and why; stock back.<span class="warn">⚠ BUGS 2.4: advance not given back, serial stays SOLD.</span></td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">5.6</td><td class="chk">Delivered later-delivery bill.</td><td class="exp">&quot;Delivered &lt;date&gt;&quot; badge and delivery photos visible.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+</tbody></table>
+<h2><span>6. Receive Payment (Counter)</span><small>Test as: Cashier</small></h2>
+<table><thead><tr><th>No.</th><th>What to check</th><th>Expected result</th><th class="ok">OK</th><th class="iss">Issue</th><th>Remarks</th></tr></thead><tbody>
+<tr><td class="no">6.1</td><td class="chk">Record Payment: search customer by name / mobile.</td><td class="exp">Customer found with balance.<span class="warn">⚠ BUGS 2.1: a customer with an advance switches to &quot;Refund&quot; by itself. Check the type before saving.</span></td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">6.2</td><td class="chk">Add a new customer from the payment form.</td><td class="exp">Customer saved with all details, then payment recorded.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">6.3</td><td class="chk">Save without a reason.</td><td class="exp">Refused: reason is compulsory.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">6.4</td><td class="chk">Save with a reason.</td><td class="exp">Receipt opens: number, customer, reason, mode, received by, amount in words, advance left / due / settled.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">6.5</td><td class="chk">Print Receipt; WhatsApp.</td><td class="exp">Only the receipt prints; WhatsApp opens with the text.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">6.6</td><td class="chk">Receipt button on an old payment.</td><td class="exp">Receipt opens for that payment.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">6.7</td><td class="chk">Next bill for that customer.</td><td class="exp">Payment shown as &quot;Payment Already Received&quot; and deducted.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">6.8</td><td class="chk">Edit / delete a payment (Admin with PIN; Manager → approval).</td><td class="exp">Works as per rule; logged.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+</tbody></table>
+<h2><span>7. Customer Advances (Advance Booking)</span><small>Test as: Cashier</small></h2>
+<table><thead><tr><th>No.</th><th>What to check</th><th>Expected result</th><th class="ok">OK</th><th class="iss">Issue</th><th>Remarks</th></tr></thead><tbody>
+<tr><td class="no">7.1</td><td class="chk">New advance without a reason.</td><td class="exp">Refused: reason is compulsory.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">7.2</td><td class="chk">New advance with reason.</td><td class="exp">Receipt ADV-YYYY-#### opens with reason, received by, India time.<span class="warn">⚠ BUGS 2.9: for a brand-new customer an error can appear after saving; do not save twice.</span></td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">7.3</td><td class="chk">Print Receipt and WhatsApp.</td><td class="exp">Only the receipt prints; text includes the reason.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">7.4</td><td class="chk">Bill for that mobile.</td><td class="exp">Advance shown and deducted.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">7.5</td><td class="chk">Refund an advance.</td><td class="exp">Status Refunded; note saved.<span class="warn">⚠ BUGS 1.14: any login can refund, no PIN / log.</span></td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+</tbody></table>
+<h2><span>8. Estimates and salesman Bills</span><small>Test as: Salesman, Cashier</small></h2>
+<table><thead><tr><th>No.</th><th>What to check</th><th>Expected result</th><th class="ok">OK</th><th class="iss">Issue</th><th>Remarks</th></tr></thead><tbody>
+<tr><td class="no">8.1</td><td class="chk">Salesman: New Estimate; print / WhatsApp.</td><td class="exp">Quotation saved and shared, no approval needed.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">8.2</td><td class="chk">Salesman: New Bill for a customer buying now.</td><td class="exp">Cashier / Manager / Admin get a popup and phone notification.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">8.3</td><td class="chk">Cashier: Make Invoice from the salesman&#x27;s bill.</td><td class="exp">Invoice made under the salesman&#x27;s name; salesman notified.<span class="warn">⚠ BUGS 2.5: two people pressing Make Invoice makes two invoices.</span></td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">8.4</td><td class="chk">Reject a salesman&#x27;s bill with reason.</td><td class="exp">Salesman sees the reason.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">8.5</td><td class="chk">Price below locked minimum on an estimate.</td><td class="exp">Needs Price Unlock PIN (not possible for a salesman).</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+</tbody></table>
+<h2><span>9. Other sales pages</span><small>Test as: Cashier, Manager, Godown</small></h2>
+<table><thead><tr><th>No.</th><th>What to check</th><th>Expected result</th><th class="ok">OK</th><th class="iss">Issue</th><th>Remarks</th></tr></thead><tbody>
+<tr><td class="no">9.1</td><td class="chk">Credit Notes: create a sales return.</td><td class="exp">Credit note saved and printable.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">9.2</td><td class="chk">GIDA Warehouse Order: upload today&#x27;s supplier stock sheet.</td><td class="exp">Products listed with NEW / +N; salesmen notified.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">9.3</td><td class="chk">Salesman: order from GIDA list; Admin approves and sends on WhatsApp.</td><td class="exp">Request SO-YYYY-#### moves Pending → Approved → Sent.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">9.4</td><td class="chk">Order Dispatch: out for delivery → delivered.</td><td class="exp">Status moves; photos visible.<span class="warn">⚠ BUGS 4.8: cancelled bills still listed.</span></td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">9.5</td><td class="chk">Delivery Challan tabs (Challans / Pending / Delivered).</td><td class="exp">Correct lists.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">9.6</td><td class="chk">E-Way Bill: prepare for a bill over ₹50,000.</td><td class="exp">Details saved.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+</tbody></table>
+<h2><span>10. Purchase &amp; Expenses</span><small>Test as: Cashier, Godown, Admin</small></h2>
+<table><thead><tr><th>No.</th><th>What to check</th><th>Expected result</th><th class="ok">OK</th><th class="iss">Issue</th><th>Remarks</th></tr></thead><tbody>
+<tr><td class="no">10.1</td><td class="chk">Purchase Entry: manual bill with products and serials.</td><td class="exp">Stock up per warehouse; supplier balance up; serials saved.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">10.2</td><td class="chk">Purchase Entry: import a supplier PDF / Excel invoice.</td><td class="exp">Products matched by VP code / model; serials read; supplier details filled.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">10.3</td><td class="chk">Add Serial Numbers to a saved bill; Replace option.</td><td class="exp">Serials saved / replaced; Admin can correct a line rate.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">10.4</td><td class="chk">Correct a purchase bill (date / due date / GSTIN) with PIN.</td><td class="exp">Saved (Manager → Admin approval).</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">10.5</td><td class="chk">Cancel / delete a purchase bill.</td><td class="exp">Stock and supplier balance reversed.<span class="warn">⚠ BUGS 4.3: its serials stay available.</span></td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">10.6</td><td class="chk">Purchase Orders, Debit Notes, Low Stock.</td><td class="exp">Create / list works; low-stock items shown.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">10.7</td><td class="chk">Expenses: add an expense.</td><td class="exp">Shows in cash register and P&amp;L.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+</tbody></table>
+<h2><span>11. Products &amp; Masters</span><small>Test as: Admin, Manager</small></h2>
+<table><thead><tr><th>No.</th><th>What to check</th><th>Expected result</th><th class="ok">OK</th><th class="iss">Issue</th><th>Remarks</th></tr></thead><tbody>
+<tr><td class="no">11.1</td><td class="chk">Items: add / edit a product (VP code, prices, VSP, GST, incentive).</td><td class="exp">Saved; Manager&#x27;s edit waits for Admin.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">11.2</td><td class="chk">Items: open Product Ledger.</td><td class="exp">Every purchase and sale with profit; invoice links open.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">11.3</td><td class="chk">Price-sheet (V+NLC / VSP) upload; Sample sheet.</td><td class="exp">Prices updated; missing products listed.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">11.4</td><td class="chk">Stock Report: brand / product type / stock filter, search, export.</td><td class="exp">Correct products and stock value.<span class="warn">⚠ BUGS 4.6: location filter uses where the item was created.</span></td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">11.5</td><td class="chk">Categories, Brands (Bill Now), Units, Warehouses, Customers, Suppliers.</td><td class="exp">Add / edit / list works.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+</tbody></table>
+<h2><span>12. Finance &amp; EMI Hub</span><small>Test as: Accounts, Admin</small></h2>
+<table><thead><tr><th>No.</th><th>What to check</th><th>Expected result</th><th class="ok">OK</th><th class="iss">Issue</th><th>Remarks</th></tr></thead><tbody>
+<tr><td class="no">12.1</td><td class="chk">Customer Dues &amp; Overdue: send WhatsApp reminder; collect.</td><td class="exp">Reminder opens; payment recorded.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">12.2</td><td class="chk">Monthly EMI Cycles.</td><td class="exp">Schedules and payments shown.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">12.3</td><td class="chk">Finance Ledger: open DO Attachment (PDF).</td><td class="exp">PDF opens (it used to fail).</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">12.4</td><td class="chk">Bank NACH &amp; Payouts: enter bank and UTR.</td><td class="exp">Saved; reminder stops.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+</tbody></table>
+<h2><span>13. Suppliers &amp; Ledgers</span><small>Test as: Accounts, Admin</small></h2>
+<table><thead><tr><th>No.</th><th>What to check</th><th>Expected result</th><th class="ok">OK</th><th class="iss">Issue</th><th>Remarks</th></tr></thead><tbody>
+<tr><td class="no">13.1</td><td class="chk">All Ledgers: open a supplier statement; print / export.</td><td class="exp">Purchases, payments, balance correct.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">13.2</td><td class="chk">Supplier Payments; Outstanding &amp; Ageing.</td><td class="exp">Payment recorded; ageing buckets correct.<span class="warn">⚠ BUGS 4.7: supplier names with brackets may duplicate.</span></td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+</tbody></table>
+<h2><span>14. Godown &amp; Logistics</span><small>Test as: Godown, Manager</small></h2>
+<table><thead><tr><th>No.</th><th>What to check</th><th>Expected result</th><th class="ok">OK</th><th class="iss">Issue</th><th>Remarks</th></tr></thead><tbody>
+<tr><td class="no">14.1</td><td class="chk">Godown Hub; Stock Flow (In / Out).</td><td class="exp">All movements by date.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">14.2</td><td class="chk">Stock Transfer: create → receive.</td><td class="exp">Stock leaves source, arrives at destination.<span class="warn">⚠ BUGS 4.1: deleting a transfer loses the stock.</span></td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">14.3</td><td class="chk">Live Audit (All / Mobile): several people count; finalise.</td><td class="exp">Counts saved live with who counted; history with differences.<span class="warn">⚠ BUGS 4.5: expected stock uses all locations.</span></td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">14.4</td><td class="chk">Audit: click a product.</td><td class="exp">Full product history opens.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+</tbody></table>
+<h2><span>15. Delivery Boy Portal</span><small>Test as: Delivery boy</small></h2>
+<table><thead><tr><th>No.</th><th>What to check</th><th>Expected result</th><th class="ok">OK</th><th class="iss">Issue</th><th>Remarks</th></tr></thead><tbody>
+<tr><td class="no">15.1</td><td class="chk">My Assigned Deliveries: expected date shown.</td><td class="exp">Overdue in red, today amber.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">15.2</td><td class="chk">Out for delivery → customer&#x27;s OTP → Delivered with 3 camera photos.</td><td class="exp">Gallery not allowed; 3 photos compulsory; Admin can view them.<span class="warn">⚠ BUGS 1.5–1.6: OTP visible on tracking page and delivery screen.</span></td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">15.3</td><td class="chk">My Salary &amp; Advances; My Profile &amp; Vehicle.</td><td class="exp">Own records shown.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+</tbody></table>
+<h2><span>16. Leads, CRM and On Site Go</span><small>Test as: Salesman, Cashier, Admin</small></h2>
+<table><thead><tr><th>No.</th><th>What to check</th><th>Expected result</th><th class="ok">OK</th><th class="iss">Issue</th><th>Remarks</th></tr></thead><tbody>
+<tr><td class="no">16.1</td><td class="chk">Sales Leads: add lead, follow-up with note and next date, Call.</td><td class="exp">Saved; every call recorded with who / when; history cannot be edited.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">16.2</td><td class="chk">Salesman sees only own leads; Admin uses Staff filter and Staff Activity.</td><td class="exp">Correct per person and per day.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">16.3</td><td class="chk">Bill a customer who has a lead.</td><td class="exp">Lead becomes Converted with the invoice number.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">16.4</td><td class="chk">Customer Queries and Complaints.</td><td class="exp">Add / update / close works.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">16.5</td><td class="chk">Admin: upload Onsitego price list PDF in Documents → On Site Go.</td><td class="exp">Message: &quot;153 Onsitego plans read&quot;.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">16.6</td><td class="chk">Salesman / Cashier / Godown: open On Site Go (Plans).</td><td class="exp">Folder opens; PDF viewable; cannot upload.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+</tbody></table>
+<h2><span>17. Staff &amp; Attendance</span><small>Test as: Salesman, Manager, HR, Admin</small></h2>
+<table><thead><tr><th>No.</th><th>What to check</th><th>Expected result</th><th class="ok">OK</th><th class="iss">Issue</th><th>Remarks</th></tr></thead><tbody>
+<tr><td class="no">17.1</td><td class="chk">Check in outside the store.</td><td class="exp">Refused (must be within 100 m).<span class="warn">⚠ BUGS 3.4: godown staff cannot check in at the godown.</span></td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">17.2</td><td class="chk">Check in inside the store with selfie.</td><td class="exp">Checked in; late minutes recorded after 10:00 + grace.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">17.3</td><td class="chk">Do not check out.</td><td class="exp">Checked out automatically at 9:00 PM.<span class="warn">⚠ BUGS 3.2–3.3: auto check-out can turn Half-Day into Present.</span></td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">17.4</td><td class="chk">Late alert.</td><td class="exp">Manager / Admin get one alert per late person (10:00–12:00).</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">17.5</td><td class="chk">Geofence: with app open, walk more than 200 m away, come back.</td><td class="exp">&quot;Outside the store now&quot; card shows the person; away time on Directory / member page / attendance.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">17.6</td><td class="chk">Stay outside 15+ minutes (app open).</td><td class="exp">Manager and Admin get an alert.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">17.7</td><td class="chk">Leave &amp; Breaks: apply Weekly Off / Leave / Emergency / Break; approve.</td><td class="exp">Popup to approver; approved history; break timer and &quot;I am back&quot;.<span class="warn">⚠ BUGS 3.11: a forgotten &quot;I am back&quot; alerts every day.</span></td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">17.8</td><td class="chk">Tasks: give one task to several people.</td><td class="exp">Each person gets their own copy and notification.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">17.9</td><td class="chk">Sales target task: make a matching bill.</td><td class="exp">Progress (units / ₹) moves automatically.<span class="warn">⚠ BUGS 3.5: people with the same first name both get progress.</span></td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">17.10</td><td class="chk">Staff Directory, member page, Leaderboard, Salary.</td><td class="exp">Figures per person; Staff filter works on each page.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">17.11</td><td class="chk">Sales Incentives: Onsitego plan sold on a bill.</td><td class="exp">10% of the plan amount added to that bill&#x27;s salesman.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">17.12</td><td class="chk">Request salary Advance.</td><td class="exp">Should need approval.<span class="warn">⚠ BUGS 3.1: added at once without approval.</span></td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+</tbody></table>
+<h2><span>18. GST &amp; Financial Reports</span><small>Test as: Accounts, Admin</small></h2>
+<table><thead><tr><th>No.</th><th>What to check</th><th>Expected result</th><th class="ok">OK</th><th class="iss">Issue</th><th>Remarks</th></tr></thead><tbody>
+<tr><td class="no">18.1</td><td class="chk">Profit &amp; Loss: Today / period; product-wise profit; GST box; Print.</td><td class="exp">Figures shown; A4 print.<span class="warn">⚠ BUGS 5.4–5.5: credit notes and GST-on-margin; owner to confirm the basis.</span></td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">18.2</td><td class="chk">GST Reports: GSTR-1 (B2B / B2C), GSTR-2, GSTR-3B; Excel.</td><td class="exp">Correct month figures.<span class="warn">⚠ BUGS 5.3: cancelled bills included.</span></td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">18.3</td><td class="chk">HSN Summary: month; drill-down; 2-sheet Excel.</td><td class="exp">Matches GSTR-1 B2C / B2B totals.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">18.4</td><td class="chk">Sales Out Report; All Reports.</td><td class="exp">Lists and totals shown.<span class="warn">⚠ BUGS 5.2: cancelled bills included.</span></td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+</tbody></table>
+<h2><span>19. Documents</span><small>Test as: Admin, Manager, Accounts</small></h2>
+<table><thead><tr><th>No.</th><th>What to check</th><th>Expected result</th><th class="ok">OK</th><th class="iss">Issue</th><th>Remarks</th></tr></thead><tbody>
+<tr><td class="no">19.1</td><td class="chk">Upload a PDF / photo with date and narration into a folder.</td><td class="exp">Saved; opens through the app.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">19.2</td><td class="chk">Create / rename / delete (empty) folder; move a document.</td><td class="exp">Works per role; On Site Go folder cannot be renamed or deleted.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+</tbody></table>
+<h2><span>20. Settings, Cash and Approvals</span><small>Test as: Admin, Manager, Cashier</small></h2>
+<table><thead><tr><th>No.</th><th>What to check</th><th>Expected result</th><th class="ok">OK</th><th class="iss">Issue</th><th>Remarks</th></tr></thead><tbody>
+<tr><td class="no">20.1</td><td class="chk">Store Activity Approvals: approve / reject a Manager request.</td><td class="exp">Before → After shown; change applies only on approval.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">20.2</td><td class="chk">Users &amp; Staff KYC: add user, role, salary, vehicle (delivery).</td><td class="exp">Saved (Admin only).<span class="warn">⚠ BUGS 1.2: any logged-in user can currently add users.</span></td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">20.3</td><td class="chk">Role Permissions, Price Locks, Price Unlock PIN, Company Profile.</td><td class="exp">Saved and applied.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">20.4</td><td class="chk">Cash Register: Set actual cash; daily in / out.</td><td class="exp">Balance correct.<span class="warn">⚠ BUGS 2.12: advance cash not in the register.</span></td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">20.5</td><td class="chk">Daily Cash Audit (day-close) with notes count.</td><td class="exp">Sales / cash pages lock until the previous day is closed.<span class="warn">⚠ BUGS 5.6: day-close date uses UTC before 5:30 AM.</span></td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">20.6</td><td class="chk">Admin Cash Book: cashier handover confirmed by Admin; deposit.</td><td class="exp">Cash with Admin and deposits correct.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+</tbody></table>
+<h2><span>21. Across the whole app</span><small>Test as: Any</small></h2>
+<table><thead><tr><th>No.</th><th>What to check</th><th>Expected result</th><th class="ok">OK</th><th class="iss">Issue</th><th>Remarks</th></tr></thead><tbody>
+<tr><td class="no">21.1</td><td class="chk">Live updates: save a bill on one device with another device open.</td><td class="exp">The other screen updates within a second, without refresh.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">21.2</td><td class="chk">Phone notifications: turn on alerts from the bell; send a test; close the app.</td><td class="exp">Notification arrives with sound.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">21.3</td><td class="chk">Unread notification popup.</td><td class="exp">Shows once per device; one popup at a time.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">21.4</td><td class="chk">Phone layout: bottom bar, Menu tiles, card lists.</td><td class="exp">Usable on a phone without sideways scrolling.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">21.5</td><td class="chk">Offline billing: make a bill without internet, reconnect.</td><td class="exp">Bill syncs with its own date.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+<tr><td class="no">21.6</td><td class="chk">Android app (APK): install and open.</td><td class="exp">Opens the live site full-screen; notifications work.</td><td class="ok"><span class="box"></span></td><td class="iss"><span class="box"></span></td><td class="rem"></td></tr>
+</tbody></table>
+<h2 class="pb"><span>Summary</span><small>Fill in after testing</small></h2>
+<table class="summary"><thead><tr><th>No.</th><th>Section</th><th>Points</th><th>OK</th><th>Issue</th><th>Notes / agreed fix date</th></tr></thead><tbody>
+<tr><td class="no">1</td><td>Login, roles and security</td><td>5</td><td></td><td></td><td></td></tr>
+<tr><td class="no">2</td><td>Dashboard — Admin / Manager / Cashier</td><td>7</td><td></td><td></td><td></td></tr>
+<tr><td class="no">3</td><td>Dashboard — Salesman (phone)</td><td>6</td><td></td><td></td><td></td></tr>
+<tr><td class="no">4</td><td>Tax Invoice — billing form</td><td>18</td><td></td><td></td><td></td></tr>
+<tr><td class="no">5</td><td>Tax Invoices — list, edit, cancel</td><td>6</td><td></td><td></td><td></td></tr>
+<tr><td class="no">6</td><td>Receive Payment (Counter)</td><td>8</td><td></td><td></td><td></td></tr>
+<tr><td class="no">7</td><td>Customer Advances (Advance Booking)</td><td>5</td><td></td><td></td><td></td></tr>
+<tr><td class="no">8</td><td>Estimates and salesman Bills</td><td>5</td><td></td><td></td><td></td></tr>
+<tr><td class="no">9</td><td>Other sales pages</td><td>6</td><td></td><td></td><td></td></tr>
+<tr><td class="no">10</td><td>Purchase &amp; Expenses</td><td>7</td><td></td><td></td><td></td></tr>
+<tr><td class="no">11</td><td>Products &amp; Masters</td><td>5</td><td></td><td></td><td></td></tr>
+<tr><td class="no">12</td><td>Finance &amp; EMI Hub</td><td>4</td><td></td><td></td><td></td></tr>
+<tr><td class="no">13</td><td>Suppliers &amp; Ledgers</td><td>2</td><td></td><td></td><td></td></tr>
+<tr><td class="no">14</td><td>Godown &amp; Logistics</td><td>4</td><td></td><td></td><td></td></tr>
+<tr><td class="no">15</td><td>Delivery Boy Portal</td><td>3</td><td></td><td></td><td></td></tr>
+<tr><td class="no">16</td><td>Leads, CRM and On Site Go</td><td>6</td><td></td><td></td><td></td></tr>
+<tr><td class="no">17</td><td>Staff &amp; Attendance</td><td>12</td><td></td><td></td><td></td></tr>
+<tr><td class="no">18</td><td>GST &amp; Financial Reports</td><td>4</td><td></td><td></td><td></td></tr>
+<tr><td class="no">19</td><td>Documents</td><td>2</td><td></td><td></td><td></td></tr>
+<tr><td class="no">20</td><td>Settings, Cash and Approvals</td><td>6</td><td></td><td></td><td></td></tr>
+<tr><td class="no">21</td><td>Across the whole app</td><td>6</td><td></td><td></td><td></td></tr>
+<tr><td></td><td><b>Total</b></td><td><b>127</b></td><td></td><td></td><td></td></tr></tbody></table>
+<div class="sign"><div>Developer signature</div><div>Client / Owner signature</div><div>Date</div></div>
+</body></html>

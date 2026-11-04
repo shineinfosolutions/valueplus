@@ -1,178 +1,317 @@
-# ValuePlus ERP - Product Requirement Document (PRD)
+# ValuePlus ERP — Product Requirement Document (PRD)
 
-> **Version:** 1.0.0  
-> **Status:** Active / Living Document  
-> **Project Name:** ValuePlus ERP (`valueplus-erp`)  
-> **Target Market:** Indian Micro, Small, and Medium Enterprises (MSMEs), Retailers, Wholesalers, Distributors & Enterprise Accounting.
+**As built and live, 3 November 2026**
 
----
-
-## 1. Executive Summary & Vision
-
-**ValuePlus ERP** is a modern, enterprise-grade Enterprise Resource Planning (ERP) application engineered specifically for the Indian business ecosystem. It brings together end-to-end sales lifecycle, procurement management, multi-warehouse inventory tracking, double-entry accounting, banking, GST compliance, marketing automation, and AI-driven business intelligence into a single intuitive interface.
-
-### Key Objectives
-* **Streamline Operations:** Eliminate manual bookkeeping and disconnected spreadsheets by providing a unified workspace.
-* **GST & Tax Compliance:** Full support for Indian GST rules, automated HSN/SAC tax engine, CGST/SGST/IGST auto-calculation, and GSTR report generation.
-* **Real-time Inventory Control:** Multi-warehouse tracking, stock journals, adjustments, stock transfers, and Bill of Material (BOM) assembly.
-* **AI-Assisted Operations:** Integrated ValuePlus Assistant and AI Insights for automated sales forecasts, stock reorder alerts, and quick querying.
-* **Scalable Tech Stack:** Built with Next.js 15, React 19, TypeScript, and Tailwind CSS for blazingly fast, responsive performance.
+| Item | Details |
+|---|---|
+| **Business** | M/S Ashoka Enterprises (Value Plus Showroom), H. No. 116, Deoria Road, Kunraghat, Gorakhpur (UP) · GSTIN 09ANHPJ7242D1Z2 · Ph 9140860604 |
+| **Billing companies** | Value Plus and Ashoka Enterprises (a bill is raised under one of them) |
+| **Live site** | https://valuplus.shineinfosolutions.in |
+| **Test copy (staging)** | https://valueplus-erp-staging.shineinfosolutions1.workers.dev (its own test database) |
+| **Android app** | `valuplus.shineinfosolutions.in/downloads/valueplus.apk` (opens the live site full-screen, with phone notifications) |
+| **What it is** | One system for the showroom's billing, payments, finance (EMI) sales, stock and godown, purchases, delivery, staff attendance and incentives, customer leads, GST reports and profit. |
 
 ---
 
-## 2. Technology Stack & Architecture
+## 1. Users and what each one sees
 
-| Layer | Technology / Library | Version / Details |
-| :--- | :--- | :--- |
-| **Framework** | Next.js (App Router with Turbopack) | `15.3.6` |
-| **UI Core** | React | `^19.0.0` |
-| **Language** | TypeScript | `^5.0.0` |
-| **Styling** | Tailwind CSS + `tailwindcss-animate` | `^3.4.1` |
-| **Component Primitives** | Radix UI / Shadcn UI | Accordion, Dialog, Popover, Select, Tabs, Toast, etc. |
-| **Icons** | Lucide React | `^0.446.0` |
-| **State & Data Fetching** | TanStack Query (React Query) | `^5.56.2` |
-| **Data Tables** | TanStack Table (React Table) | `^8.20.5` |
-| **Form & Validation** | React Hook Form + Zod + `@hookform/resolvers` | Zod `^3.23.8`, RHF `^7.53.0` |
-| **Visualizations & Charts** | Recharts | `^3.1.0` |
-| **Animations** | Framer Motion | `^11.9.0` |
-| **Notifications** | Sonner | `^1.5.0` |
+Every staff member signs in with email / mobile and password. Each role has its own **panel address** (e.g. `/salesman`, `/cashier`) and lands on its own home screen. The menu shows only that role's pages.
 
----
+| Role | Panel | Main work |
+|---|---|---|
+| **Super Admin (Owner)** | `/admin` | Everything. Approves the Store Manager's changes, discounts over 10%, leaves; sees all money, profit, staff and reports. |
+| **Store Manager** | `/manager` | Every page, but changes to bills, payments, stock and masters go to the Admin for approval. Approves breaks and discounts up to 10%. |
+| **Cashier** | `/cashier` | Tax invoices (POS), receive payments, advances, expenses, estimates from salesmen, day-close cash audit, purchase entry. |
+| **Salesman** | `/salesman` | Own dashboard, leads and follow-ups, estimates and "bills" for the cashier, stock check, GIDA warehouse orders, own incentive, Onsitego plans. |
+| **Accounts** | `/accounts` | Finance ledger, payouts, GST and P&L reports, supplier ledgers, documents. |
+| **HR & Payroll** | `/hr` | Attendance, leave, salary, staff profiles. |
+| **Godown Incharge** | `/warehouse` | Godown hub, stock flow, transfers, dispatch, challans, e-way bills, audit. |
+| **Delivery Boy** | `/driver` | His assigned deliveries (OTP + 3 photos), salary and advance, profile and vehicle. |
+| **Supplier** | `/supplier` | Purchase orders and debit notes (outside supplier login). |
 
-## 3. User Roles & Permission Matrix
-
-ValuePlus ERP supports role-based access control (RBAC) to ensure security across departments:
-
-1. **Administrator:** Full access to all modules, system configurations, user management, and company settings.
-2. **Finance / Accountant:** Access to Accounting (Journal, Ledger, Trial Balance, P&L, Balance Sheet), Banking, GST Reports, and Invoicing.
-3. **Sales Manager / Rep:** Access to Masters (Customers, Items), Sales (Estimates, Orders, Invoices, Delivery Challans, Credit Notes, Payments).
-4. **Purchase Manager:** Access to Suppliers, Purchase Orders, Purchase Entries, Debit Notes, and Expenses.
-5. **Inventory / Warehouse Manager:** Access to Warehouse masters, Stock Adjustments, Transfers, Journals, Requests, Returns, and BOM.
-6. **Marketing Executive:** Access to Customer Loyalty programs, WhatsApp campaigns, and Customer master.
+**Security PIN and approvals (all roles):** cancelling or deleting a bill, editing a saved payment or bill, and back-dated entries need the person's own **Security PIN + a reason**. The Admin's change is applied at once and logged; the Store Manager's change waits for the Admin (**Store Activity Approvals**, showing every field Before → After).
 
 ---
 
-## 4. Comprehensive Module Breakdown
+## 2. Dashboard (Overview)
 
-```
-ValuePlus ERP Architecture
- ├── 📊 Overview (Dashboard)
- ├── 📦 Masters (Items, Categories, Brands, Units, Variants, Warehouses, Customers, Suppliers)
- ├── 🛒 Sales (Estimates, Sales Orders, Challan, Invoices, Payments, Credit Notes)
- ├── 🛍️ Purchase (Purchase Orders, Purchase Entries, Debit Notes, Expenses)
- ├── 🏬 Inventory (Adjustment, Transfer, Journal, Request, Return, BOM)
- ├── 🏦 Banking (Receipts, Payments, Bank Accounts)
- ├── 📒 Accounting (Journal Entries, Ledger, Trial Balance, P&L, Balance Sheet, Cash Flow)
- ├── 🧾 GST (GSTR-1, GSTR-2, GSTR-3B Reports)
- ├── 📢 Marketing (Loyalty Program, WhatsApp Campaigns)
- ├── 📈 Reports (Custom Analytics & Downloads)
- ├── 🤖 AI Features (AI Insights, ValuePlus Assistant)
- └── ⚙️ Settings (Company, Users, Profile, General Settings)
-```
+**Admin / Manager / Cashier / Accounts dashboard**
 
-### Module Details
+- Universal date filter (Today, Yesterday, 7 days, Month, custom) that updates every widget.
+- Revenue, collections, dues, expenses, profit cards; payment-mode split; category and brand stock (**Brand → Category → Products** drill-down with quantity and value).
+- **Profit & Loss** summary card and the **Audit** button (Mobile phones only / All products).
+- **Lead Pipeline & Conversion** card with date filter, **Staff filter** (lead counts per salesperson), New / Follow-up / Converted tabs, quick status change, "Open Full CRM Leads".
+- **Task delegation** card, **Staff leaderboard** (top 4 + View all).
+- **Bills from salesmen** (waiting to be invoiced), **Cash Available** card (cash in register, cash with Admin, deposited in bank, total given by cashier by period), **Stock order requests**, **Outside the store now** (geofence).
+- **Cash with the Cashier**: cash to collect since the last handover; Supplier ledger summary.
+- Check-in card at the top for Manager, Cashier and Accounts.
 
-#### 4.1 Overview & Dashboard (`/dashboard`)
-* **Key Metrics Widgets:** Total Revenue, Expenses, Net Profit, Outstanding Receivables, Outstanding Payables.
-* **Interactive Charts:** Revenue vs Expense monthly comparison, Sales trends, Inventory distribution.
-* **Action Launcher & Alerts:** Low stock notifications, pending approvals, recent transaction logs.
+**Salesman dashboard (phone first)**
 
-#### 4.2 Masters Management (`/masters/*`)
-* **Items Master (`/masters/items`):** Item code, name, category, brand, unit, HSN/SAC code, GST rate (0%, 5%, 12%, 18%, 28%), purchase price, selling price, MRP, opening stock, current stock, reorder level, warehouse assignment.
-* **Categories (`/masters/categories`):** Hierarchical category & subcategory management.
-* **Brands (`/masters/brands`):** Brand list with logo uploading and brand-wise reporting.
-* **Units of Measurement (`/masters/units`):** Unit definitions (Pcs, Kg, Ltr, Mtr, Box, etc.) classified by type.
-* **Variants (`/masters/variants`):** Attribute sets (Size, Color, Material) for product variant generation.
-* **Warehouses (`/masters/warehouses`):** Multi-location storage tracking with address, pincode, state, contact person, default status.
-* **Customers (`/masters/customers`):** Customer directory with GSTIN, PAN, billing/shipping addresses, credit limit, credit days, outstanding balance, loyalty points.
-* **Suppliers (`/masters/suppliers`):** Supplier directory with GSTIN, PAN, bank details (IFSC, Account Number), credit terms, outstanding payables.
-
-#### 4.3 Sales Cycle (`/sales/*`)
-* **Estimates / Quotations (`/sales/estimates`):** Quotation creation with expiry dates, line item tax calculations, and status tracking (Draft, Sent, Accepted, Rejected, Expired).
-* **Sales Orders (`/sales/orders`):** Confirmed customer orders linked to warehouse inventory.
-* **Delivery Challan (`/sales/challan`):** Goods dispatch note with vehicle & driver details.
-* **Tax Invoices (`/sales/invoices`):** GST compliant tax invoice generation, Proforma invoice support, auto-calculation of CGST, SGST, IGST based on customer state vs company state.
-* **Payment Receipts (`/sales/payments`):** Collection logging via Cash, Bank Transfer, UPI, Cheque, Card. Auto-reconciliation with unpaid invoices.
-* **Credit Notes (`/sales/credit-notes`):** Sales return and invoice adjustments with reason recording.
-
-#### 4.4 Purchase Cycle (`/purchase/*`)
-* **Purchase Orders (`/purchase/orders`):** Procurement orders sent to suppliers with expected delivery dates.
-* **Purchase Entries / Bills (`/purchase/entries`):** Inward bill entries updating stock and supplier accounts payable.
-* **Debit Notes (`/purchase/debit-notes`):** Purchase returns and bill reductions.
-* **Expenses (`/purchase/expenses`):** Operational expenses logging categorized by expense heads with GST taxability support.
-
-#### 4.5 Inventory & Stock Control (`/inventory/*`)
-* **Stock Adjustment (`/inventory/adjustment`):** Quantity additions or reductions due to physical audit, damage, or discrepancy.
-* **Stock Transfer (`/inventory/transfer`):** Inter-warehouse inventory movement tracking (Draft -> In-Transit -> Received).
-* **Stock Journal (`/inventory/journal`):** Automated ledger for all stock movements.
-* **Stock Request (`/inventory/request`):** Internal requisition requests from store managers.
-* **Stock Return (`/inventory/return`):** Stock returns handling.
-* **Bill of Materials (BOM) (`/inventory/bom`):** Assembly and manufacturing recipe definitions for composite items.
-
-#### 4.6 Banking & Cash (`/banking/*`)
-* **Bank Accounts (`/banking/accounts`):** Registry of Current, Savings, and Cash accounts with real-time balance.
-* **Receipts & Payments (`/banking/receipts`, `/banking/payments`):** Direct bank ledger credits and debits.
-
-#### 4.7 Accounting & Financial Statements (`/accounting/*`)
-* **Journal Entries (`/accounting/journal`):** Double-entry accounting system with automated Debit/Credit balancing.
-* **General Ledger (`/accounting/ledger`):** Account-wise transaction history.
-* **Trial Balance (`/accounting/trial-balance`):** Debit vs Credit verification report.
-* **Profit & Loss Statement (`/accounting/profit-loss`):** Income vs Expense statement for financial periods.
-* **Balance Sheet (`/accounting/balance-sheet`):** Assets, Liabilities, and Equity overview.
-* **Cash Flow (`/accounting/cash-flow`):** Operating, investing, and financing cash movement tracking.
-
-#### 4.8 GST Compliance (`/gst/*`)
-* **GSTR-1 Reports:** Outward supplies summary categorized by B2B, B2C Large, B2C Small, HSN Summary.
-* **GSTR-2 Reports:** Inward supplies and Input Tax Credit (ITC) tracking.
-* **GSTR-3B Summary:** Monthly consolidated tax liability statement.
-
-#### 4.9 Marketing & Retainership (`/marketing/*`)
-* **Loyalty Program (`/marketing/loyalty`):** Points accrual, redemption rules, and customer tiers.
-* **WhatsApp Integration (`/marketing/whatsapp`):** Automated WhatsApp notifications for order confirmation, invoice PDFs, and payment reminders.
-
-#### 4.10 AI-Powered Features (`/ai/*`)
-* **AI Insights (`/ai/insights`):** Smart anomaly detection, low-stock reorder forecasts, slow-moving item alerts.
-* **ValuePlus Assistant (`/ai/assistant`):** Natural Language conversational AI bot for instant reporting, creation shortcuts, and queries.
-
-#### 4.11 System Settings & Admin (`/settings/*`)
-* **Company Profile (`/settings/company`):** Business Name, Legal Name, GSTIN, PAN, CIN, Address, State Code, Financial Year, Logo upload.
-* **User Management (`/settings/users`):** System user creation, role assignment, status toggle.
-* **User Profile (`/settings/profile`):** Personal profile management.
+- Name, full-width **Check In / Check Out**, Apply Leave, break control.
+- **Today's follow-ups** with one-tap Call; tiles for sales today, revenue today, my leads, pending tasks.
+- **Incentive** card (Earned / Received / To receive; tap for every bill, the Onsitego part and payouts).
+- Target progress (by product units and by amount), Stock orders card, own brand vs other brands sales, quick actions (New Estimate, New Bill, New Lead, Stock, New Stock).
+- Period tabs (Today / Week / Month / custom) with own invoices, estimates and deals closed.
 
 ---
 
-## 5. Indian Business Localization & Rules
+## 3. Sales & Billing
 
-1. **GST Calculation Engine:**
-   * **Intra-State Sale (Same State):** split GST equally into **CGST** and **SGST** (e.g., 18% GST -> 9% CGST + 9% SGST).
-   * **Inter-State Sale (Different State):** apply **IGST** (e.g., 18% GST -> 18% IGST).
-   * Standard GST Slab rates: `[0%, 5%, 12%, 18%, 28%]`.
-2. **Currency Formatting:**
-   * INR (`₹`) symbol.
-   * Indian Numbering System (`1,00,000` for 1 Lakh, `1,00,00,000` for 1 Crore).
-3. **Financial Year Cycle:**
-   * Defaults to April 1st to March 31st (e.g., FY 2026-27).
-4. **State Code Mapping:**
-   * Pre-configured lookup for all 36 Indian States & Union Territories.
+### 3.1 Tax Invoices (POS)
+
+- **Billing form:** customer by mobile (auto-fill from the customer master, or added as a new customer on save); billing company (Value Plus / Ashoka); warehouse; product search by name / VP code; serial / IMEI pick from available stock; qty, rate (GST-inclusive), discount, GST rate per line; HSN.
+- **Sales Executive is compulsory.** It fills by itself from the customer's open lead or the salesman's bill.
+- **Payment modes:** Cash, UPI, Card, Due (credit), Finance (Bajaj, HDB, IDFC, TVS, Kotak … with down payment, DO details, DO / approval attachment upload) and **Split** payment.
+- **Advance and credit:** the customer's advance booking receipts and money already received through Receive Payment are shown ("Payment Already Received"), with a tick box to use them on this bill.
+- **Extended warranty per line:** OneAssist, **Onsitego**, Zopper and others; plan, years, amount, policy number. **Onsitego plans are shown automatically for each product**, grouped (EW / ADLD / AMC / LTC), with price and VP Code, according to the product type and price slab; one tap adds the plan.
+- **Price control:**
+  - a line 1% or more below the selling price needs **discount approval** (1–10% Store Manager, over 10% Admin), and the counter waits with a live popup;
+  - a price below the product's **floor / locked minimum price** needs a PIN.
+- **Delivery:** counter handover or later delivery; expected delivery date; **Driver / Vehicle** drop-down (fills the driver's name, phone and vehicle); vehicle number compulsory for **Bajaj Finance** bills; delivery challan made automatically.
+- **Bill date is always today** (no back-dating); offline bills keep their own date when they sync.
+- **On save:** stock goes down per warehouse, serials become SOLD, customer balance and khata update, leads convert, sales-target tasks move, the finance DO is created, the salesman's incentive is recorded (+10% of Onsitego plans).
+- **Print / share:** GST tax invoice (A4), WhatsApp share; delivery photos viewable on the bill.
+- **Invoice list:** search, date filter, Paid / Balance (advance shown), "Delivered" badge, delivery photos, export to Excel / PDF; phone card view.
+- **Edit a saved bill (full edit):** same form, Security PIN + reason; stock, serials, balance, receipt, warranty, challan and finance DO are redone. The Manager's edit waits for the Admin, who sees every change.
+- **Cancel / delete** with PIN + reason; deleted bills are archived (who, when, why).
+- **GSTIN bills keep real GST.** An Admin-only tool fixes old 0% GSTIN bills.
+
+### 3.2 Receive Payment (Counter)
+
+- Type-to-search customer, or **add a new customer right there** (name, mobile, address, GSTIN, credit limit …).
+- Receive (In) or Refund (Out); amount, date, mode, reference / UTR.
+- **Reason is compulsory** for customer payments.
+- After saving, a **payment receipt** opens: receipt no., customer, reason, mode, received by, amount in words, and **"Advance with us ₹X — will be taken off the next bill"** / still due / settled. It can be printed or sent on WhatsApp. Every past payment has a **Receipt** button.
+- Money received without a bill becomes the customer's credit, used on the next bill (and given back if that bill is deleted).
+- Editing or deleting a payment needs PIN + reason (Manager → Admin approval). Supplier payouts are on the same screen.
+
+### 3.3 Customer Advances (Advance Booking / Token)
+
+- Customer, mobile, amount, mode, ref, product booked, brand, **reason (compulsory)**, remarks.
+- Receipt `ADV-YYYY-####` with reason and received by, in India time; **print (receipt only)** and WhatsApp.
+- Status: Available → Partially Used → Fully Adjusted / Refunded; refund with notes.
+- The bill form finds the advance by mobile and deducts it.
+
+### 3.4 Estimates / Quotes and salesman "Bills"
+
+- **Estimate** = quotation for the customer (print / WhatsApp), no approval needed.
+- **Bill (salesman):** a sale the salesman makes when the customer is buying now. It goes to the Cashier / Manager / Admin with a **popup and phone notification**; the cashier presses **Make Invoice**, confirms payment and delivery, and the invoice is made under the salesman's name. The salesman is told when it is invoiced or rejected.
+- **Deal amount** recorded for the salesman; **locked minimum price** per product; below it needs the Admin's **Price Unlock PIN** (a salesman can never go below it).
+- Advance can be taken on an estimate (makes an advance receipt).
+
+### 3.5 Other sales pages
+
+- **Credit Notes:** sales returns and adjustments.
+- **Sales Orders:** customer orders.
+- **GIDA WAREHOUSE ORDER:**
+  - Admin / Manager / Cashier upload the supplier warehouse's daily stock sheet; products show NEW and +N markers;
+  - salesmen pick quantities and send an order request (`SO-YYYY-####`);
+  - the Admin approves or rejects it and sends the products list on WhatsApp to the supplier;
+  - only today's sheet is used.
+- **Order Dispatch & Deliveries:** bills waiting for delivery, out for delivery, delivered, with OTP and photos.
+- **Delivery Challan:** tabs Delivery Challans / Pending Delivery / Delivered; return and transfer challans.
+- **E-Way Bills:** prepare e-way bill details for consignments over ₹50,000.
+- **Finance DO** page.
 
 ---
 
-## 6. Non-Functional Requirements (NFRs)
+## 4. Purchase & Expenses
 
-* **Performance:** Page load under 1.5 seconds, optimized with Next.js Turbopack and client-side caching.
-* **Responsiveness:** Dynamic fluid layouts that work seamlessly on Desktop, Tablet, and Mobile screens.
-* **Security:** Input validation using Zod schemas, standard HTTP security headers, role-based protection.
-* **Data Integrity:** Strict mathematical checks for line items, invoice totals, tax calculations, and round-offs.
+- **Purchase Entry (GRN / supplier bills):**
+  - manual entry, or **import from the supplier's PDF / Excel invoice** (products matched by VP code / model, serials read from the PDF, supplier details read from the letterhead);
+  - warehouse, GST, payment made at entry, due date;
+  - stock and the supplier balance go up; serial numbers saved.
+- **Add Serial Numbers** later (paste a list; replace if wrong); the Admin can correct a line rate.
+- **Purchase bill correction** (date, due date, GSTIN) with PIN + reason; cancel / delete with PIN (Manager → Admin approval); record a bill payment.
+- **Purchase Orders** to suppliers (the supplier login can see them); **Debit Notes & Return Claims**.
+- **Low Stock / Auto Reorder:** items below their reorder level.
+- **Expenses (Petty Cash):** expense heads, GST, mode, analytics; counted in the cash register and P&L.
+
+---
+
+## 5. Products & Masters
+
+- **Items (Master Stock):**
+  - VP code, model, brand, category, HSN, GST, purchase price, selling price, MRP, **VSP**, floor price, incentive setting (fixed ₹ or % above a target price);
+  - stock per warehouse (showroom / godown);
+  - Product Ledger (every purchase and sale with profit; invoice links);
+  - price-sheet (V+NLC / VSP) upload by brand with a sample sheet; bulk incentive; assign brands; GST and purchase-GST fix tools (Admin);
+  - phone view: compact list with role-based detail.
+- **Stock Report (Price & VSP):** brand, product type, stock filter, search; stock value at selling price and VSP; export.
+- **Categories, Brands** (brand → product catalog with "Bill Now"), **Units, Warehouses & Godowns, Customers** (GSTIN, credit limit, balance / khata, ledger), **Suppliers**.
 
 ---
 
-## 7. Future System Enhancements Roadmap
+## 6. Finance & EMI Hub
 
-- [ ] Real-time Database Persistence (Prisma ORM + PostgreSQL / Supabase).
-- [ ] Direct GST Portal Sync (NIC E-Way Bill & E-Invoice API Integration).
-- [ ] Payment Gateway Integration (Razorpay, Cashfree, PhonePe Payment Gateway).
-- [ ] Offline-first POS (Point of Sale) terminal support.
-- [ ] Multi-currency support for export/import trade.
+- **Customer Dues & Overdue:** pending dues and EMIs, WhatsApp reminders, collect payment.
+- **Monthly EMI Cycles:** repayment schedules, due dates, progress, counter / auto-debit payments.
+- **Finance Ledger & Delivery Orders:**
+  - finance company, DO / DA numbers, down payment, disbursement;
+  - the uploaded **DO attachment (PDF / image) opens** through the app.
+- **Bank NACH & Payouts:** finance payouts, bank account and UTR entry; reminders until the UTR is filled in.
 
 ---
-*End of PRD*
+
+## 7. Suppliers & Ledgers
+
+- **Supplier Master** and supplier profile.
+- **All Ledgers:** every supplier's purchases, payments and balance, with statements to print / export.
+- **Supplier Payments.**
+- **Outstanding & Ageing:** what is owed and for how long.
+
+---
+
+## 8. Godown & Logistics Hub
+
+- **Godown Master Hub:** inward (GRN), serial tracking, transfers, dispatch, audits in one place, with check-in for godown staff.
+- **Stock Flow (In / Out):** every stock movement by date.
+- **Stock Transfer:** inter-godown / showroom transfers (in transit → received). The Manager's transfer waits for the Admin.
+- **Live Audit (daily):**
+  - count every product (or phones only: **Mobile Audit**); several people count at the same time, each count saved live with who counted;
+  - finalise only when all are counted; history with differences, export;
+  - click a product for its full history;
+  - Admin decides who may audit.
+- **Dispatch, Delivery Challan, E-Way Bills** (as in section 3).
+
+---
+
+## 9. Delivery Boy Portal
+
+- **My Assigned Deliveries:** expected date (overdue / today), customer and address; **Out for delivery → OTP from the customer → Delivered** with **3 compulsory photos from the in-app camera** (no gallery); the photos are viewable by the Admin / Manager.
+- **My Salary & Advances**, **My Profile & Vehicle**.
+
+---
+
+## 10. CRM & Customer Service
+
+- **Sales Leads:**
+  - customer, mobile, product(s), value, source, assigned salesman (a salesman's own leads only), status;
+  - follow-ups with notes and next date; **every Call press recorded** (who / when) and shown per day; history cannot be edited;
+  - WhatsApp; leads pop-up at sign-in; phone cards view;
+  - **Staff filter**; Admin **Staff Activity** (calls and follow-ups per salesman per day);
+  - a lead converts automatically when the customer is billed.
+- **Customer Queries (walk-in enquiries)** and **Customer Complaints** (tickets: product issues, transit damage, staff conduct).
+- **On Site Go (Plans):** the Onsitego folder for every staff member (see section 13).
+- **WhatsApp notifications** outbox page (customer messages and their status).
+
+---
+
+## 11. Staff & Attendance
+
+- **Check-in / Check-out:**
+  - only **inside the store (within 100 m)**, with a **selfie** and location;
+  - shift 10:00 AM – 9:00 PM; late minutes recorded; Late / Half-Day rules;
+  - **automatic check-out at 9:00 PM**;
+  - "Office time has started" notification at 10:00.
+  - Late alerts to the Manager and Admin: one per person, every 15 minutes, 10:00–12:00.
+- **Geofence (time outside the store):** while the staff app is open it records when the person leaves (over 150 m) and comes back, how long and how far. Breaks are counted separately, and app-closed time is shown as "unknown". **After 15 minutes outside, the Manager and Admin are alerted.**
+  - Shown on: the dashboard "Outside the store now", Staff Directory "Away today", the staff member page, and the attendance page.
+- **Daily Attendance & Shifts:** day / staff / date filter, selfie view, manual entry, shift settings.
+- **Leave & Breaks:**
+  - Weekly Off, Leave, Emergency Leave, Break;
+  - approval popup for the Admin / Manager;
+  - approved history with period filter;
+  - break timer with "I am back" (checked inside the store) and a break-over alert.
+- **Staff Tasks Delegation:**
+  - general tasks and **sales targets** (by product / brand units and / or by amount, with progress bars that move automatically on every bill);
+  - **one task to several people at once** (each gets their own copy);
+  - "Read by", priority, due date, notifications.
+- **Staff Directory (Admin / Manager):** each person's bills, **incentive earned / paid / to pay**, payouts, away today; the member page shows attendance, time off, away time and sales by month.
+- **Staff Leaderboard:** ranking by sales, bills, units, collected, average bill and share.
+- **Sales Incentives:** per-bill incentive ledger; **10% of every Onsitego plan sold** is added automatically to the bill's salesman.
+- **Salary & Payroll:** monthly salary, incentives, deductions, payment.
+- **Staff filter** on Tasks, Leave & Breaks, Leaderboard, Salary and Directory.
+- **My Profile & KYC.**
+
+---
+
+## 12. GST & Financial Reports
+
+- **Profit & Loss:**
+  - opens on Today; sales and purchases GST included; product-wise profit using the cost frozen on each bill line;
+  - "GST this period (not part of profit)" box;
+  - expenses; A4 print.
+- **GST Reports:** GSTR-1 (B2B / B2C), GSTR-2, GSTR-3B, HSN tab; Excel export.
+- **HSN Summary Report** (GSTR-1 Table 12): B2B and B2C, by HSN + rate, drill-down to bills, 2-sheet Excel in portal format.
+- **Sales Out Report:** sales register with dues, payment modes, finance status.
+- **All Reports & Analytics**, **Documents**.
+
+---
+
+## 13. Documents and On Site Go
+
+- **Documents:**
+  - office documents (PDF / photos) with date and narration, in **folders** (Admin / Manager create; the Admin deletes empty folders);
+  - files open only through the app (private storage).
+- **On Site Go folder (always present):**
+  - the Admin / Manager upload Onsitego material;
+  - **every staff role can open it**;
+  - **uploading Onsitego's price list PDF reads all plans** (e.g. 153 plans: SKU name, VP Code, price slab, price) and replaces the old list; the bill then shows these plans per product;
+  - a newer PDF replaces the plans automatically.
+
+---
+
+## 14. Store Profile & Settings
+
+- **Store Activity Approvals:** every change waiting for the Admin, with Before → After and Approve / Reject (phone card view).
+- **Users & Staff KYC Master:** logins, roles, KYC, salary, advance, brand (vehicle number for delivery staff).
+- **Role Permissions:** who can open ledgers, record payments, cancel / delete.
+- **Security PIN** (each person's own), **Price Locks**, **Price Unlock PIN**.
+- **Company / Store Profile:** GSTIN, address, bank accounts on invoices.
+- **Bank Accounts Master & Cash Register:**
+  - showroom cash register with daily in / out;
+  - **Daily Cash Audit (day-close)** with notes count; Sales and Cash pages lock until the previous day is closed;
+  - Admin "Set actual cash" and "Recalculate old audits".
+- **Admin Cash Book:** cash received from the cashier (handover confirmed by the Admin), deposits, cash with the Admin.
+- **System Settings.**
+
+---
+
+## 15. Across the whole app
+
+- **Live updates:** every screen refreshes the moment its data changes anywhere (WebSocket), with no repeated polling: lighter and faster.
+- **Notifications:** bell + **phone push notifications even when the app is closed** (approvals, tasks, bills from salesmen, leaves, discounts, late / away alerts), with sound; unread popup once per device; one popup at a time.
+- **Phone-first design:** bottom bar, Menu as tiles, card layouts for tables, 44 px buttons, Android app (APK).
+- **Offline billing:** bills can be made without internet and sync later.
+- **Exports:** Excel / PDF on most lists; WhatsApp sharing for bills, receipts, reminders.
+- **Audit trail:** cancels, deletes, edits, payment changes, price locks and more are logged with who and why.
+- **External portals:** Value Plus Retail customer portal (embedded) and Gmail.
+
+---
+
+## 16. Built pages not in the menu (kept hidden)
+
+These pages exist and can be switched on later:
+
+- Journal Entries, General Ledger, Trial Balance, Balance Sheet, Cash Flow;
+- Bank Receipts / Payments;
+- Loyalty Program;
+- Variants, Bill of Material;
+- Stock Adjustment, Stock Journal, Stock Request, Stock Return.
+
+---
+
+## 17. Technology and hosting
+
+- **Next.js 15 + React 19 + TypeScript**, Tailwind / shadcn UI; **MongoDB Atlas** (Mumbai) database.
+- Hosted on **Cloudflare Workers** (custom domain), with a separate staging copy and database.
+- Files: Cloudinary (documents, DO attachments) and Cloudflare R2 (delivery photos, selfies).
+- Live updates: Cloudflare Durable Object (WebSocket hub).
+- A background job runs every 5 minutes (late, break and away alerts, auto check-out).
+
+---
+
+## 18. Known issues and next steps
+
+A full code review on 3 November 2026 listed the open bugs in **BUGS.md** and the improvement ideas for each user in **SUGGESTIONS.md**. The most important:
+
+1. **Security:** remove the master passwords at login; only the Admin may create users or change passwords; take the database password out of the code; hide the delivery OTP from the tracking page and the delivery screen; role checks on salary / stock / money APIs.
+2. **Money:**
+   - Receive Payment must not switch to "Refund" by itself;
+   - a partly used advance must show on the next bill;
+   - cancelling a bill must return its advance and free its serial numbers;
+   - a salesman's bill must not be invoiced twice.
+3. **Reports:** leave cancelled bills out of the dashboard, Sales-out and GST reports, and subtract credit notes.
+4. **Staff:** a salary advance request needs approval; check-in for godown staff at the godown; sales targets matched by the person, not the first name.

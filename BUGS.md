@@ -8,11 +8,11 @@
 
 ---
 
-## 0. Already fixed (not deployed yet)
+## 0. Already fixed
 
 | # | Bug | Where | Status |
 |---|-----|-------|--------|
-| 0.1 | ✔ **The bill form crashes once the Onsitego PDF is uploaded.** The plans API left out the product type, plan kind and VP Code, so matching a product to its plans failed while the form was showing. | `app/api/onsitego/plans/route.ts:17`, `lib/onsitego.ts` | **Fixed in code today. Must be deployed before the PDF is uploaded.** |
+| 0.1 | ✔ **The bill form crashes once the Onsitego PDF is uploaded.** The plans API left out the product type, plan kind and VP Code, so matching a product to its plans failed while the form was showing. | `app/api/onsitego/plans/route.ts:17`, `lib/onsitego.ts` | **Fixed and live (version `2e6d7cd5`, 3 Nov 2026).** The PDF can be uploaded now. |
 
 ---
 
