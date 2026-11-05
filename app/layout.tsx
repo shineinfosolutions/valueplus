@@ -34,6 +34,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="manifest" href="/manifest.json" />
         <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
         <meta name="theme-color" content="#1B2537" />
+        {/* After a deploy, a page opened from an older build can ask for CSS / JS files that no longer exist and
+            open unstyled ("AUTHENTICATING" forever). If one of the app's own files fails to load, reload once. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){var K="vp-reloaded-at";function again(){try{var t=+sessionStorage.getItem(K)||0;if(Date.now()-t<30000)return;sessionStorage.setItem(K,String(Date.now()));}catch(e){}location.reload();}
+window.addEventListener("error",function(e){var el=e&&e.target;var src=el&&(el.src||el.href)||"";if(src&&src.indexOf("/_next/")>-1&&(el.tagName==="SCRIPT"||el.tagName==="LINK"))again();},true);
+window.addEventListener("unhandledrejection",function(e){var m=String(e&&e.reason&&(e.reason.message||e.reason.name)||"");if(/ChunkLoadError|Loading chunk|Loading CSS chunk|Failed to fetch dynamically imported module/i.test(m))again();});})();`,
+          }}
+        />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />

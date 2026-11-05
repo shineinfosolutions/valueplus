@@ -50,9 +50,14 @@ export default function OrderDispatchHubPage() {
   // Dispatch Modal State
   const [dispatchModalOpen, setDispatchModalOpen] = useState(false);
   const [activeDispatchItem, setActiveDispatchItem] = useState<any | null>(null);
-  const [driverName, setDriverName] = useState("Ramesh Yadav");
-  const [driverPhone, setDriverPhone] = useState("9876543210");
-  const [vehicleNo, setVehicleNo] = useState("UP53 BT 4589");
+  // No sample driver: a made-up name would be counted as a delivery boy on Delivery Boy Status.
+  const [driverName, setDriverName] = useState("");
+  const [driverPhone, setDriverPhone] = useState("");
+  const [vehicleNo, setVehicleNo] = useState("");
+  const [drivers, setDrivers] = useState<any[]>([]);
+  useEffect(() => {
+    fetch("/api/delivery/drivers").then((r) => r.json()).then((j) => { if (j.success) setDrivers(j.data || []); }).catch(() => {});
+  }, []);
   const [isSubmittingDispatch, setIsSubmittingDispatch] = useState(false);
 
   // OTP Verification Modal State
@@ -117,11 +122,16 @@ export default function OrderDispatchHubPage() {
       const curStatus = inv.deliveryStatus || "pending_dispatch";
       const matchStatus = statusFilter === "all" || curStatus === statusFilter;
 
-      // Date filter
-      const matchDate = isDateInRange(inv.date, dateRange.start, dateRange.end);
+      // The date filter is only for the Delivered list (when it was delivered); every other list shows everything.
+      const matchDate = statusFilter !== "delivered" || isDateInRange(inv.deliveredAt || inv.date, dateRange.start, dateRange.end);
 
       return matchSearch && matchStatus && matchDate;
-    });
+    })
+      // Most recent first: delivered ones by when they were delivered, the rest by when they were billed.
+      .sort((a, b) => {
+        const t = (inv: any) => new Date((statusFilter === "delivered" && inv.deliveredAt) || inv.createdAt || inv.date || 0).getTime() || 0;
+        return t(b) - t(a);
+      });
   }, [delayedDeliveryInvoices, search, statusFilter, dateRange]);
 
   // Summary Metrics for Delayed Deliveries
@@ -136,10 +146,9 @@ export default function OrderDispatchHubPage() {
   // Action: Open Dispatch Dialog
   const handleOpenDispatch = (inv: any) => {
     setActiveDispatchItem(inv);
-    setDriverName(inv.driverName || "Ramesh Yadav");
-    setDriverPhone(inv.driverPhone || "9876543210");
-    // A Bajaj Finance bill needs the real vehicle number, so no sample number is filled in.
-    setVehicleNo(inv.driverVehicleNo || inv.vehicleNumber || (isBajajBill(inv) ? "" : "UP53 BT 4589"));
+    setDriverName(inv.driverName || "");
+    setDriverPhone(inv.driverPhone || "");
+    setVehicleNo(inv.driverVehicleNo || inv.vehicleNumber || "");
     setDispatchModalOpen(true);
   };
 
@@ -390,15 +399,17 @@ export default function OrderDispatchHubPage() {
               </SelectContent>
             </Select>
 
-            <DateRangeFilter
-              value={dateFilter}
-              onChange={(val, s, e) => {
-                setDateFilter(val);
-                if (s && e) setDateRange({ start: s, end: e });
-              }}
-              className="w-40 h-9 rounded-xl"
-              showIcon={true}
-            />
+            {statusFilter === "delivered" && (
+              <DateRangeFilter
+                value={dateFilter}
+                onChange={(val, s, e) => {
+                  setDateFilter(val);
+                  if (s && e) setDateRange({ start: s, end: e });
+                }}
+                className="w-40 h-9 rounded-xl"
+                showIcon={true}
+              />
+            )}
           </div>
         </div>
 
@@ -654,10 +665,29 @@ export default function OrderDispatchHubPage() {
 
               <div className="space-y-1">
                 <Label className="text-xs font-semibold text-slate-700">Driver / Delivery Boy Name *</Label>
-                <Input 
+                {drivers.length > 0 && (
+                  <select
+                    aria-label="Choose a delivery boy"
+                    value={drivers.find((d: any) => d.name === driverName)?.id || ""}
+                    onChange={(e) => {
+                      const d = drivers.find((x: any) => x.id === e.target.value);
+                      if (!d) return;
+                      setDriverName(d.name);
+                      setDriverPhone(String(d.phone || "").replace(/\D/g, "").slice(-10));
+                      if (d.vehicleNumber) setVehicleNo(d.vehicleNumber);
+                    }}
+                    className="h-9 w-full rounded-md border border-slate-300 bg-slate-50 px-2 text-xs font-semibold"
+                  >
+                    <option value="">Choose a delivery boy</option>
+                    {drivers.map((d: any) => (
+                      <option key={d.id} value={d.id}>{d.name}{d.vehicleNumber ? ` · ${d.vehicleNumber}` : ""}</option>
+                    ))}
+                  </select>
+                )}
+                <Input
                   value={driverName} 
                   onChange={(e) => setDriverName(e.target.value)} 
-                  placeholder="e.g. Ramesh Yadav / Amit" 
+                  placeholder="or type the name"
                   className="h-9 text-xs font-semibold"
                 />
               </div>

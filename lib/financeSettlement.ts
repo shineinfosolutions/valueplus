@@ -63,7 +63,9 @@ export async function recordFinancePayout(input: FinancePayoutInput) {
   const financeRecord: any = input.doId
     ? await FinanceTransaction.findOne({ doId: input.doId })
     : input.invoiceNumber
-      ? await FinanceTransaction.findOne({ invoiceNumber: input.invoiceNumber })
+      ? await FinanceTransaction.findOne({
+          $or: [{ invoiceNumber: input.invoiceNumber }, { "linkedInvoices.invoiceNumber": input.invoiceNumber }],
+        })
       : null;
 
   const invoiceNumber = input.invoiceNumber || financeRecord?.invoiceNumber || "";
@@ -90,13 +92,22 @@ export async function recordFinancePayout(input: FinancePayoutInput) {
   // Finance bills used to be closed through the khata "Clear Due" flow, which left
   // a TXN-DUE-* receipt behind. That receipt IS this payout, so it is reused (and
   // relabelled below) rather than joined by a second one for the same money.
+  // A bill whose loan is split across several DOs keeps one payout receipt per DO (matched by the DO number in
+  // its note), so a second DO's payout never overwrites the first one's.
+  const sisterDOs: any[] =
+    financeRecord && invoice
+      ? await FinanceTransaction.find({ invoiceNumber: financeRecord.invoiceNumber, _id: { $ne: financeRecord._id } }).lean()
+      : [];
+  const escRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const existingReceipt: any = invoiceNumber
     ? await PaymentTransaction.findOne({
         referenceId: invoiceNumber,
         type: "received",
         $or: [{ paymentMode: "Finance Disbursement" }, { transactionId: /^TXN-(DUE|FIN)-/ }],
+        ...(sisterDOs.length && financeRecord?.doId ? { notes: new RegExp(`DO ${escRe(String(financeRecord.doId))}\\b`) } : {}),
       })
     : null;
+  const wasDisbursed = financeRecord?.approvalStatus === "Disbursed" || financeRecord?.approvalStatus === "Reconciled";
 
   // Undo the previous credit before applying the new one, so correcting the
   // amount or the account on an already-recorded payout never double-credits.
@@ -121,7 +132,22 @@ export async function recordFinancePayout(input: FinancePayoutInput) {
     await financeRecord.save();
   }
 
-  if (invoice) {
+  // A bill whose loan is split across several DOs is closed only when every one of its DOs is paid out; until then
+  // each payout takes its own DO's loan off the bill.
+  const sistersPending = sisterDOs.filter((d) => d.approvalStatus !== "Disbursed" && d.approvalStatus !== "Reconciled");
+  if (invoice && sistersPending.length > 0) {
+    const part = Math.min(outstanding, Math.max(0, Number(financeRecord?.grossLoanAmount) || 0));
+    if (!wasDisbursed && part > 0) {
+      invoice.paidAmount = Math.round(((Number(invoice.paidAmount) || 0) + part) * 100) / 100;
+      invoice.balanceAmount = Math.round((outstanding - part) * 100) / 100;
+      if (invoice.status !== "cancelled" && invoice.status !== "draft") invoice.status = "partial";
+      invoice.lastModifiedReason = "finance-sync";
+      await invoice.save();
+      if (invoice.customerId && mongoose.isValidObjectId(invoice.customerId)) {
+        await Customer.findByIdAndUpdate(invoice.customerId, { $inc: { outstandingBalance: -part } });
+      }
+    }
+  } else if (invoice) {
     invoice.paidAmount = Number(invoice.total) || 0;
     invoice.balanceAmount = 0;
     if (invoice.status !== "cancelled" && invoice.status !== "draft") invoice.status = "paid";
@@ -137,6 +163,30 @@ export async function recordFinancePayout(input: FinancePayoutInput) {
     // The loan portion was added to the customer's outstanding at billing time.
     if (outstanding > 0 && invoice.customerId && mongoose.isValidObjectId(invoice.customerId)) {
       await Customer.findByIdAndUpdate(invoice.customerId, { $inc: { outstandingBalance: -outstanding } });
+    }
+  }
+
+  // Bills linked to this DO (the same customer's one loan covering several bills) are settled by the same payout.
+  const otherBills: string[] = financeRecord
+    ? [financeRecord.invoiceNumber, ...(financeRecord.linkedInvoices || []).map((l: any) => l?.invoiceNumber)]
+        .filter((n: any) => n && n !== invoiceNumber)
+    : [];
+  for (const otherNo of otherBills) {
+    const linked: any = await Invoice.findOne({ invoiceNumber: otherNo });
+    if (!linked || linked.status === "cancelled") continue;
+    const owed = Math.max(0, Number(linked.balanceAmount) || 0);
+    linked.paidAmount = Number(linked.total) || 0;
+    linked.balanceAmount = 0;
+    if (linked.status !== "draft") linked.status = "paid";
+    linked.financeApprovalStatus = "Disbursed";
+    if (utr) linked.financeBankRef = utr;
+    linked.financeBankAccountId = bankAccountId;
+    linked.financeBankAccount = bankAccountRef;
+    linked.financePayoutDate = date;
+    linked.lastModifiedReason = "finance-sync";
+    await linked.save();
+    if (owed > 0 && linked.customerId && mongoose.isValidObjectId(linked.customerId)) {
+      await Customer.findByIdAndUpdate(linked.customerId, { $inc: { outstandingBalance: -owed } });
     }
   }
 

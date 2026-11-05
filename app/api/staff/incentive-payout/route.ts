@@ -4,6 +4,7 @@ import connectToDatabase from "@/lib/db";
 import User from "@/models/User";
 import IncentivePayout from "@/models/IncentivePayout";
 import AuditLog from "@/models/AuditLog";
+import Expense from "@/models/Expense";
 import { getActor } from "@/lib/requirePermission";
 import { loadIncentiveBook, summarise } from "@/lib/staff-incentive";
 import { notifyAssignee } from "@/lib/notify";
@@ -50,6 +51,23 @@ export async function POST(req: Request) {
       paidBy: actor.name,
       paidByUserId: actor.id,
     });
+    // The payout is a company expense under the "Incentive" head (Expenses page, P&L, cash out when paid in cash).
+    let expenseNo = "";
+    try {
+      expenseNo = `EXP-INC-${String(payout._id).slice(-8).toUpperCase()}`;
+      await Expense.create({
+        expenseNo,
+        category: "Incentive",
+        description: `Incentive paid to ${user.name}${payout.note ? ` — ${payout.note}` : ""}`,
+        amount,
+        date,
+        paymentMode: payout.paymentMode || "Cash",
+        status: "paid",
+      });
+    } catch (e) {
+      expenseNo = "";
+      console.warn("Notice: could not add the incentive payout as an expense:", e);
+    }
     try {
       await AuditLog.create({
         action: "incentive.payout",
@@ -62,7 +80,7 @@ export async function POST(req: Request) {
         performedBy: actor.name,
         performedByUserId: actor.id,
         performedByRole: actor.role,
-        metadata: { date, mode: payout.paymentMode, balanceBefore: s.balance },
+        metadata: { date, mode: payout.paymentMode, balanceBefore: s.balance, expenseNo },
       });
     } catch (e) {
       console.warn("Notice: audit log for incentive payout:", e);
@@ -74,7 +92,7 @@ export async function POST(req: Request) {
       link: "/dashboard",
       createdBy: actor.name,
     });
-    return NextResponse.json({ success: true, data: payout });
+    return NextResponse.json({ success: true, data: payout, expenseNo });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }

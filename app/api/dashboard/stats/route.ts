@@ -1454,6 +1454,14 @@ export async function GET(request: Request) {
         totalExpenses,
         netProfit: (totalRevenue || 0) - totalExpenses,
         totalOrders: filteredInvoices.length || 0,
+        // Pieces sold on the period's bills (cancelled bills, credit notes, estimates and orders left out).
+        totalUnits: filteredInvoices
+          .filter((inv: any) => inv.status !== "cancelled" && !["credit-note", "proforma", "sales-order"].includes(inv.type))
+          .reduce(
+            (t: number, inv: any) =>
+              t + (Array.isArray(inv.items) ? inv.items.reduce((n: number, it: any) => n + (Number(it.quantity ?? it.qty) || 0), 0) : 0),
+            0
+          ),
         // Purchase-side counterpart to Average Order Value: what a typical
         // supplier bill costs in this window, and how many were recorded.
         totalPurchaseAmount,

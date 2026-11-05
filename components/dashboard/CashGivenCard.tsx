@@ -12,9 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { formatCurrency } from "@/lib/utils";
 import { todayInIndia } from "@/lib/today";
 import { CASH_LIVE_PATHS } from "@/components/providers/RealtimeProvider";
-
-type Period = "today" | "week" | "month" | "all";
-const PERIOD_LABEL: Record<Period, string> = { today: "Today", week: "Last 7 days", month: "This month", all: "All time" };
+import { DateRangeFilter, resolveDateRange } from "@/components/shared/date-range-filter";
 
 /**
  * Admin dashboard: how much cash the cashier has handed over (today, the last handover, and a
@@ -25,7 +23,8 @@ const PERIOD_LABEL: Record<Period, string> = { today: "Today", week: "Last 7 day
 export function CashGivenCard() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const [period, setPeriod] = useState<Period>("all");
+  // Same date filter as the rest of the dashboard.
+  const [period, setPeriod] = useState<{ value: string; start: string; end: string }>(() => ({ value: "This Month", ...resolveDateRange("This Month") }));
   const [depositOpen, setDepositOpen] = useState(false);
   const [deposit, setDeposit] = useState({ amount: "", bankAccountId: "", referenceNo: "" });
   const [refusing, setRefusing] = useState<any | null>(null);
@@ -103,16 +102,8 @@ export function CashGivenCard() {
 
   const inPeriod = useMemo(() => {
     const day = (e: any) => String(e.date).slice(0, 10);
-    if (period === "today") return handovers.filter((e) => day(e) === today);
-    if (period === "week") {
-      const from = new Date(`${today}T00:00:00+05:30`);
-      from.setDate(from.getDate() - 6);
-      const fromStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(from);
-      return handovers.filter((e) => day(e) >= fromStr);
-    }
-    if (period === "month") return handovers.filter((e) => day(e).slice(0, 7) === today.slice(0, 7));
-    return handovers;
-  }, [handovers, period, today]);
+    return handovers.filter((e) => day(e) >= period.start && day(e) <= period.end);
+  }, [handovers, period]);
   const periodTotal = inPeriod.reduce((t, e) => t + (Number(e.amount) || 0), 0);
   const byPerson = useMemo(() => {
     const map = new Map<string, number>();
@@ -180,17 +171,18 @@ export function CashGivenCard() {
         <div>
           <div className="flex items-center justify-between gap-1">
             <p className="text-[10px] font-bold text-slate-500 uppercase">Total given</p>
-            <select
-              value={period}
-              onClick={(e) => e.stopPropagation()}
-              onChange={(e) => setPeriod(e.target.value as Period)}
-              aria-label="Period for total cash given"
-              className="text-[10px] font-bold text-slate-700 bg-white border border-slate-300 rounded px-1 py-0.5"
-            >
-              {(Object.keys(PERIOD_LABEL) as Period[]).map((p) => (
-                <option key={p} value={p}>{PERIOD_LABEL[p]}</option>
-              ))}
-            </select>
+            {/* Clicks inside the filter (and its pop-ups) must not open the cash ledger. */}
+            <span onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+              <DateRangeFilter
+                value={period.value}
+                onChange={(value, start, end) => {
+                  const r = start && end ? { start, end } : resolveDateRange(value);
+                  setPeriod({ value, start: r.start, end: r.end });
+                }}
+                showIcon={false}
+                className="w-[104px] h-6 text-[10px] px-1.5"
+              />
+            </span>
           </div>
           <p className="text-lg font-black text-emerald-900 font-mono">{formatCurrency(periodTotal)}</p>
           <p className="text-[10px] text-slate-500">

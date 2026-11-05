@@ -25,6 +25,7 @@ import { authoriseChange, auditChange, createChangeRequest, versionOf } from "@/
 import { publishChange } from "@/lib/realtime";
 import { onsitegoIncentiveOf } from "@/lib/onsitego";
 import { stampLineIncentives } from "@/lib/incentive-server";
+import { checkDoId, checkExtraDos, createExtraDOs, extraDosOf, financeFilesOf, linkBillToDO } from "@/lib/finance-do";
 
 /**
  * What a plain update may change on a sales bill: contact and delivery details only.
@@ -480,6 +481,34 @@ export async function POST(req: Request) {
     const creditRequested = Math.max(0, Number(body.creditAdjusted) || 0);
     delete body.creditAdjusted;
 
+    // A DO ID typed on a finance bill may be this customer's existing DO (one loan, several bills: the bill is linked
+    // to it below) but never another customer's — refused here, before the bill is saved.
+    {
+      const doId = String(body.financeDoId || "").trim();
+      const isFinanceBill =
+        body.paymentMode === "Finance" ||
+        (Array.isArray(body.payments) && body.payments.some((p: any) => classifyPaymentMode(p?.mode) === "finance"));
+      if (doId && isFinanceBill) {
+        const check = await checkDoId(doId, { invoiceNumber: String(body.invoiceNumber || ""), customerPhone: body.customerPhone, customerName: body.customerName });
+        if (check && "error" in check) return NextResponse.json({ success: false, error: check.error }, { status: 400 });
+      }
+      // More DOs on this bill (the loan split across several DOs).
+      const extras = isFinanceBill ? extraDosOf(body) : [];
+      if (extras.length) {
+        const splitLoan = (Array.isArray(body.payments) ? body.payments : [])
+          .filter((p: any) => classifyPaymentMode(p?.mode) === "finance")
+          .reduce((t: number, p: any) => t + (Number(p?.amount) || 0), 0);
+        const totalLoan = splitLoan > 0 ? splitLoan : Number(body.financeGrossLoan || 0);
+        const err = await checkExtraDos(extras, doId, totalLoan, {
+          invoiceNumber: String(body.invoiceNumber || ""),
+          customerPhone: body.customerPhone,
+          customerName: body.customerName,
+        });
+        if (err) return NextResponse.json({ success: false, error: err }, { status: 400 });
+      }
+      body.financeDos = extras;
+    }
+
     // Onsitego plans sold on the bill: 10% to its salesman, worked out here (never taken from the form).
     body.onsitegoIncentive = onsitegoIncentiveOf(body.items);
     // A line's own salesman (a shared lead) is kept only when he is not the bill's Sales Executive.
@@ -496,6 +525,11 @@ export async function POST(req: Request) {
       body.items = stamped.items;
       body.salesExecutiveIncentive = stamped.total;
     }
+    // Who pays the delivery. Older clients send only an amount: a charge on the bill means the customer paid it.
+    body.freightPaidBy =
+      body.freightPaidBy === "customer" || (body.freightPaidBy !== "us" && (Number(body.freightCharges) || Number(body.shippingCharges) || 0) > 0)
+        ? "customer"
+        : "us";
     const invoice = await Invoice.create(body);
 
     // A Store Manager's back-dated bill: the Admin is asked to approve it.
@@ -699,8 +733,13 @@ export async function POST(req: Request) {
         const doId = body.financeDoId || `DO-2026-${Math.floor(100000000 + Math.random() * 900000000)}`;
 
         const existingDO = await FinanceTransaction.findOne({ doId });
-        if (!existingDO) {
-          const grossLoan = financeSplitAmount > 0 ? financeSplitAmount : Number(body.financeGrossLoan || body.total || 0);
+        if (existingDO) {
+          // This customer's existing DO (checked above): the bill joins it — one loan, several bills.
+          await linkBillToDO(doId, invoice.invoiceNumber, Number(invoice.balanceAmount) || 0, financeFilesOf(body));
+        } else {
+          // DO 1 carries what is left of the loan after the bill's other DOs (made just below).
+          const extraSum = extraDosOf(body).reduce((t, r) => t + r.amount, 0);
+          const grossLoan = Math.max(0, (financeSplitAmount > 0 ? financeSplitAmount : Number(body.financeGrossLoan || body.total || 0)) - extraSum);
           const downPayment = financeSplitAmount > 0 ? 0 : Number(body.downPayment || body.financeDownPayment || 0);
           const subsidy = Number(body.financeDealerSubsidy || Math.round(grossLoan * 0.0354));
           const deductions = downPayment + subsidy + 270; // Matching typical DO calculations
@@ -735,9 +774,22 @@ export async function POST(req: Request) {
             // The finance form is hidden while Split Payment is on, so whatever status
             // it last held is not something the cashier chose for this bill.
             approvalStatus: financeSplitAmount > 0 ? "Pending" : body.financeApprovalStatus || "Pending",
-            uploadedPdfUrl: body.financePdfUrl || "",
+            uploadedPdfUrl: financeFilesOf(body)[0] || "",
+            uploadedPdfUrls: financeFilesOf(body).length ? financeFilesOf(body) : undefined,
           });
         }
+        // The bill's other DOs (checked before the bill was saved): one DO record each.
+        await createExtraDOs(
+          {
+            invoiceNumber: invoice.invoiceNumber,
+            customerName: invoice.customerName,
+            customerPhone: invoice.customerPhone,
+            customerAddress: (invoice as any).customerAddress,
+            date: String(invoice.date),
+          },
+          extraDosOf(body),
+          body
+        );
       }
 
       // 5. Update Estimate Status & Auto-Attribute Sale to Salesperson

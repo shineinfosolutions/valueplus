@@ -68,6 +68,10 @@ export interface IFinanceTransaction extends Document {
   // Verification and disbursement workflow
   approvalStatus: "Pending" | "Under Review" | "Approved" | "Disbursed" | "Reconciled";
   uploadedPdfUrl?: string;
+  /** Every DO / approval file uploaded for this DO (uploadedPdfUrl is the first). */
+  uploadedPdfUrls?: string[];
+  /** Other bills of the same customer financed under this same DO (one loan, several bills). */
+  linkedInvoices?: { invoiceNumber: string; amount?: number; linkedAt?: Date }[];
   approvedBy?: string;
   approvalDate?: string;
   actualReceivedAmount?: number;
@@ -158,6 +162,11 @@ const FinanceTransactionSchema = new Schema<IFinanceTransaction>(
       index: true,
     },
     uploadedPdfUrl: { type: String },
+    uploadedPdfUrls: { type: [String], default: undefined },
+    linkedInvoices: {
+      type: [{ _id: false, invoiceNumber: { type: String, required: true }, amount: { type: Number, default: 0 }, linkedAt: { type: Date, default: Date.now } }],
+      default: undefined,
+    },
     approvedBy: { type: String },
     approvalDate: { type: String },
     actualReceivedAmount: { type: Number, default: 0 },

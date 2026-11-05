@@ -30,6 +30,7 @@ import { ONSITEGO_INCENTIVE_RATE, isOnsitego, plansFor, slabLabel, type Onsitego
 import { hsnCategoryName } from "@/lib/purchase-import/hsn-category";
 import { lineIncentive, liveRulesOf, rulesOf, ruleText } from "@/lib/incentive-rules";
 import { lineSalesmanFor, normPerson } from "@/lib/lead-share";
+import { ExtraDoRows, type ExtraDo } from "@/components/sales/ExtraDoRows";
 
 function formatCurrency(val: number) {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(val || 0);
@@ -284,6 +285,11 @@ export function InvoiceCreationModal({
     financeInterestRate: 0,
     financeApprovalStatus: "Approved" as "Pending" | "Under Review" | "Approved" | "Disbursed" | "Reconciled",
     financePdfUrl: "",
+    // Several DO / approval files can be attached (financePdfUrl stays the first, for older screens).
+    financePdfUrls: [] as string[],
+    financeLinkInput: "",
+    // More DOs on the same bill (the loan split across several DOs); the main fields are DO 1.
+    financeDos: [] as ExtraDo[],
     financeRemarks: "",
 
     // Due / Credit specifics
@@ -295,6 +301,8 @@ export function InvoiceCreationModal({
     downPaymentMode: "Cash",
     shippingCharges: 0,
     freightCharges: 0,
+    // Delivery paid by the store (default; counted on the driver's Delivery Boy Status) or by the customer (amount added to the bill).
+    freightPaidBy: "us" as "us" | "customer",
     // Empty on purpose: the lead's salesman fills it in, otherwise the cashier picks one
     // (and an untouched box falls back to the person billing, at save time).
     salesExecutive: "",
@@ -500,7 +508,8 @@ export function InvoiceCreationModal({
     const igst = isIntraState ? 0 : totalGst;
     
     // Product grand total + warranty + freight/shipping
-    const freight = Number(billingForm.freightCharges || billingForm.shippingCharges || 0);
+    // Freight is charged on the bill only when the customer pays for the delivery.
+    const freight = billingForm.freightPaidBy === "customer" ? Number(billingForm.freightCharges || billingForm.shippingCharges || 0) : 0;
     const rawTotal = totalTaxable + totalGst + warrantyTotal + freight;
     const grandTotal = Math.round(rawTotal);
     const roundOff = Number((grandTotal - rawTotal).toFixed(2));
@@ -912,11 +921,14 @@ export function InvoiceCreationModal({
       financeInterestRate: Number(inv.financeInterestRate) || 0,
       financeApprovalStatus: inv.financeApprovalStatus || prev.financeApprovalStatus,
       financePdfUrl: inv.financePdfUrl || "",
+      financeDos: Array.isArray(inv.financeDos) ? inv.financeDos.map((d: any) => ({ provider: d.provider || "", doId: d.doId || "", amount: d.amount ?? "" })) : [],
+      financePdfUrls: Array.isArray(inv.financePdfUrls) && inv.financePdfUrls.length ? inv.financePdfUrls : inv.financePdfUrl ? [inv.financePdfUrl] : [],
       dueAdvanceAmount: Number(inv.dueAdvanceAmount) || 0,
       advanceAmount: Number(inv.dueAdvanceAmount) || 0,
       dueAdvanceMode: inv.dueAdvanceMode || prev.dueAdvanceMode,
       shippingCharges: Number(inv.shippingCharges) || 0,
       freightCharges: Number(inv.freightCharges) || 0,
+      freightPaidBy: inv.freightPaidBy === "customer" || (!inv.freightPaidBy && (Number(inv.freightCharges) || Number(inv.shippingCharges) || 0) > 0) ? "customer" : "us",
       salesExecutive: inv.salesExecutive || prev.salesExecutive,
       linkedEstimateNumber: "",
       [remarksKey]: inv.notes || "",
@@ -1478,31 +1490,56 @@ export function InvoiceCreationModal({
     onError: (error: any) => setEditAuthError(error.message || "Could not update the invoice"),
   });
 
+  /** The extra DO rows that are filled in, with their amounts as numbers. */
+  const cleanExtraDos = (rows: any[]) =>
+    (Array.isArray(rows) ? rows : [])
+      .map((r) => ({ provider: String(r.provider || ""), doId: String(r.doId || "").trim(), amount: Number(r.amount) || 0 }))
+      .filter((r) => r.doId && r.amount > 0);
+
+  // Add a DO file (uploaded or pasted link) to the bill's list; the first one is also kept as financePdfUrl.
+  const addFinanceFile = (url: string) =>
+    setBillingForm((f: any) => {
+      const list: string[] = [...new Set([...(f.financePdfUrls || []), url].filter(Boolean))];
+      return { ...f, financePdfUrls: list, financePdfUrl: list[0] || "" };
+    });
+  const removeFinanceFile = (url: string) =>
+    setBillingForm((f: any) => {
+      const list: string[] = (f.financePdfUrls || []).filter((u: string) => u !== url);
+      return { ...f, financePdfUrls: list, financePdfUrl: list[0] || "" };
+    });
+
+  // Several DO / approval files can be picked at once; each is uploaded and added to the list.
   const handleFinanceDocUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const files = Array.from(e.target.files || []);
     e.target.value = ""; // allow re-selecting the same file again later
-    if (!file) return;
+    if (files.length === 0) return;
 
     const allowed = ["image/jpeg", "image/png", "image/webp", "image/jpg", "application/pdf"];
-    if (!allowed.includes(file.type)) {
-      toast.error("Sirf JPG, PNG, WEBP image ya PDF file upload kar sakte hain.");
-      return;
-    }
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error("The file must be smaller than 10 MB.");
-      return;
-    }
-
     setIsUploadingFinanceDoc(true);
+    let done = 0;
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      fd.append("folder", "valueplus/finance-docs");
-      const res = await fetch("/api/upload", { method: "POST", body: fd });
-      const json = await res.json();
-      if (!json.success) throw new Error(json.error || "Upload failed");
-      setBillingForm((f: any) => ({ ...f, financePdfUrl: json.data.url }));
-      toast.success("DO attachment uploaded.");
+      for (const file of files) {
+        if (!allowed.includes(file.type)) {
+          toast.error(`${file.name}: sirf JPG, PNG, WEBP image ya PDF file upload kar sakte hain.`);
+          continue;
+        }
+        if (file.size > 10 * 1024 * 1024) {
+          toast.error(`${file.name}: the file must be smaller than 10 MB.`);
+          continue;
+        }
+        const fd = new FormData();
+        fd.append("file", file);
+        fd.append("folder", "valueplus/finance-docs");
+        const res = await fetch("/api/upload", { method: "POST", body: fd });
+        const json = await res.json();
+        if (!json.success) {
+          toast.error(`${file.name}: ${json.error || "upload failed"}`);
+          continue;
+        }
+        addFinanceFile(json.data.url);
+        done++;
+      }
+      if (done > 0) toast.success(`${done} DO file${done === 1 ? "" : "s"} uploaded.`);
     } catch (err: any) {
       toast.error(err.message || "Upload failed, please try again.");
     } finally {
@@ -1550,6 +1587,10 @@ export function InvoiceCreationModal({
     }
     if (mode !== "estimate" && billingForm.dispatchType === "delayed_delivery" && !billingForm.expectedDeliveryDate) {
       toast.error("Confirm the delivery date with the customer and enter it — the bill then shows in Order Dispatch.");
+      return;
+    }
+    if (billingForm.freightPaidBy === "customer" && !(Number(billingForm.freightCharges) > 0)) {
+      toast.error("Delivery is paid by the customer — enter the delivery charge amount (or choose Paid by us).");
       return;
     }
     if (bajajVehicleRequired && mode === "invoice" && !isEditingInvoice && !String(billingForm.vehicleNumber || "").trim()) {
@@ -1810,8 +1851,9 @@ export function InvoiceCreationModal({
       sgst: billCalculations.sgst,
       igst: billCalculations.igst,
       extendedWarrantyTotal: billCalculations.warrantyTotal,
-      shippingCharges: Number(billingForm.freightCharges || billingForm.shippingCharges || 0),
-      freightCharges: Number(billingForm.freightCharges || billingForm.shippingCharges || 0),
+      shippingCharges: billCalculations.freight,
+      freightCharges: billCalculations.freight,
+      freightPaidBy: billingForm.freightPaidBy === "customer" ? "customer" : "us",
       roundOff: billCalculations.roundOff,
       total: billCalculations.grandTotal,
 
@@ -1848,7 +1890,9 @@ export function InvoiceCreationModal({
             financeDoId: billingForm.financeDoId || "",
             financeAppId: billingForm.financeAppId || "",
             financeApprovalStatus: billingForm.financeApprovalStatus,
-            financePdfUrl: billingForm.financePdfUrl || "",
+            financePdfUrl: (billingForm.financePdfUrls || [])[0] || billingForm.financePdfUrl || "",
+            financePdfUrls: billingForm.financePdfUrls || [],
+            financeDos: cleanExtraDos(billingForm.financeDos),
             financeDownPayment: paidAmt,
             financeDownPaymentMode: "Split",
             financeGrossLoan: splitFinanceAmount,
@@ -1858,6 +1902,10 @@ export function InvoiceCreationModal({
             financeProvider: isFinance ? billingForm.financeProvider : "",
             financeDoId: isFinance ? billingForm.financeDoId : "",
             financeAppId: isFinance ? billingForm.financeAppId : "",
+            financeApprovalStatus: isFinance ? billingForm.financeApprovalStatus : undefined,
+            financePdfUrl: isFinance ? (billingForm.financePdfUrls || [])[0] || billingForm.financePdfUrl || "" : "",
+            financePdfUrls: isFinance ? billingForm.financePdfUrls || [] : [],
+            financeDos: isFinance ? cleanExtraDos(billingForm.financeDos) : [],
             financeDownPayment: isFinance ? (Number(billingForm.financeDownPayment) || 0) : 0,
             financeDownPaymentMode: isFinance ? (billingForm.financeDownPaymentMode || "Cash") : "",
             financeGrossLoan: isFinance ? (billCalculations.grandTotal - downPay) : 0,
@@ -2013,13 +2061,27 @@ export function InvoiceCreationModal({
                   <Input value={billingForm.invoiceNo} readOnly={isEditingInvoice} onChange={e => setBillingForm({ ...billingForm, invoiceNo: e.target.value })} className="font-mono text-xs font-bold text-[#3F63AD] bg-blue-50/60 border-blue-200" />
                 </div>
 
-                {/* 3b. BILL DATE: always today's date (or, on an edit, the bill's own date). Back-dating is not allowed. */}
+                {/* 3b. BILL DATE: today's date on a new bill. On an edit, the Admin may move it to an earlier day
+                    (the invoice number stays the same); everyone else sees the bill's own date. */}
                 {mode === "invoice" && (
                   <div className="space-y-1.5 md:col-span-1">
                     <Label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Bill Date</Label>
-                    <div className="h-9 px-3 bg-slate-100 border border-slate-300 rounded-md flex items-center font-mono text-xs font-bold text-slate-700 select-none">
-                      {billingForm.invoiceDate}
-                    </div>
+                    {isEditingInvoice && isSuperAdmin ? (
+                      <>
+                        <Input
+                          type="date"
+                          max={todayInIndia()}
+                          value={billingForm.invoiceDate}
+                          onChange={(e) => e.target.value && setBillingForm({ ...billingForm, invoiceDate: e.target.value })}
+                          className="h-9 font-mono text-xs font-bold bg-amber-50 border-amber-300"
+                        />
+                        <p className="text-[10px] text-amber-700">Admin: date can be moved back; invoice no. stays the same.</p>
+                      </>
+                    ) : (
+                      <div className="h-9 px-3 bg-slate-100 border border-slate-300 rounded-md flex items-center font-mono text-xs font-bold text-slate-700 select-none">
+                        {billingForm.invoiceDate}
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -2254,19 +2316,45 @@ export function InvoiceCreationModal({
                 {/* 10. FREIGHT / SHIPPING CHARGES (OPTIONAL) */}
                 <div className="space-y-1.5 md:col-span-1">
                   <Label className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
-                    <Truck className="w-3.5 h-3.5 text-emerald-600" /> Freight / Delivery Fee <span className="text-[10px] text-slate-400 font-normal">(Optional)</span>
+                    <Truck className="w-3.5 h-3.5 text-emerald-600" /> Freight / Delivery Charge
                   </Label>
-                  <Input 
-                    type="number"
-                    min="0"
-                    placeholder="0.00 (Optional)" 
-                    value={billingForm.freightCharges || billingForm.shippingCharges || ""} 
-                    onChange={(e) => {
-                      const val = Math.max(0, Number(e.target.value) || 0);
-                      setBillingForm({ ...billingForm, freightCharges: val, shippingCharges: val });
-                    }} 
-                    className="font-mono bg-slate-50 border-slate-300 text-xs font-bold text-slate-800"
-                  />
+                  <div className="grid grid-cols-2 gap-1 rounded-md bg-slate-100 p-0.5" role="radiogroup" aria-label="Who pays the delivery">
+                    {([["us", "Paid by us"], ["customer", "Paid by customer"]] as const).map(([v, label]) => (
+                      <button
+                        key={v}
+                        type="button"
+                        role="radio"
+                        aria-checked={billingForm.freightPaidBy === v}
+                        onClick={() =>
+                          setBillingForm({
+                            ...billingForm,
+                            freightPaidBy: v,
+                            // Paid by us: nothing is charged on the bill.
+                            ...(v === "us" ? { freightCharges: 0, shippingCharges: 0 } : {}),
+                          })
+                        }
+                        className={`h-8 rounded text-[11px] font-bold transition-colors ${billingForm.freightPaidBy === v ? "bg-white text-[#30539C] shadow-sm border border-slate-300" : "text-slate-500 hover:text-slate-800"}`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  {billingForm.freightPaidBy === "customer" ? (
+                    <Input
+                      type="number"
+                      min="0"
+                      placeholder="Delivery charge (₹)"
+                      aria-label="Delivery charge paid by the customer"
+                      value={billingForm.freightCharges || billingForm.shippingCharges || ""}
+                      onChange={(e) => {
+                        const val = Math.max(0, Number(e.target.value) || 0);
+                        setBillingForm({ ...billingForm, freightCharges: val, shippingCharges: val });
+                      }}
+                      className={`font-mono bg-slate-50 text-xs font-bold text-slate-800 ${(Number(billingForm.freightCharges) || 0) > 0 ? "border-slate-300" : "border-rose-400 bg-rose-50"}`}
+                    />
+                  ) : (
+                    <p className="text-[10px] text-slate-500">Not charged on the bill. Counted as a delivery for the driver chosen below.</p>
+                  )}
                 </div>
 
                 {/* 11. VEHICLE NUMBER */}
@@ -3317,6 +3405,14 @@ export function InvoiceCreationModal({
                               </Select>
                             </div>
                           </div>
+                          <div className="mt-3">
+                            <ExtraDoRows
+                              rows={billingForm.financeDos || []}
+                              onChange={(rows) => setBillingForm((f: any) => ({ ...f, financeDos: rows }))}
+                              totalLoan={splitFinanceAmount}
+                              defaultProvider={billingForm.financeProvider}
+                            />
+                          </div>
                         </div>
                       )}
 
@@ -3651,17 +3747,35 @@ export function InvoiceCreationModal({
                       </Select>
                     </div>
                     <div>
-                      <Label className="font-bold text-orange-950">DO / Approval Attachment (Link, Image or PDF)</Label>
+                      <Label className="font-bold text-orange-950">DO / Approval Files (one or more: image, PDF or link)</Label>
                       <div className="flex items-center gap-2 mt-1">
-                        <Input placeholder="Attachment link or scan ref" value={billingForm.financePdfUrl} onChange={(e) => setBillingForm({ ...billingForm, financePdfUrl: e.target.value })} className="bg-white border-orange-300" />
+                        <Input
+                          placeholder="Paste a link, then Add"
+                          value={billingForm.financeLinkInput || ""}
+                          onChange={(e) => setBillingForm({ ...billingForm, financeLinkInput: e.target.value })}
+                          className="bg-white border-orange-300"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const link = String(billingForm.financeLinkInput || "").trim();
+                            if (!link) return;
+                            addFinanceFile(link);
+                            setBillingForm((f: any) => ({ ...f, financeLinkInput: "" }));
+                          }}
+                          className="shrink-0 h-9 px-3 rounded-md border border-orange-300 bg-white text-orange-800 text-xs font-bold hover:bg-orange-50"
+                        >
+                          Add
+                        </button>
                         <label className={cn(
                           "shrink-0 h-9 px-3 rounded-md border border-orange-300 bg-white text-orange-800 text-xs font-bold flex items-center gap-1.5 cursor-pointer hover:bg-orange-50",
                           isUploadingFinanceDoc && "opacity-60 pointer-events-none"
                         )}>
                           <Upload className="w-3.5 h-3.5" />
-                          {isUploadingFinanceDoc ? "Uploading..." : "Upload"}
+                          {isUploadingFinanceDoc ? "Uploading..." : "Upload files"}
                           <input
                             type="file"
+                            multiple
                             accept="image/jpeg,image/png,image/webp,image/jpg,application/pdf"
                             className="hidden"
                             onChange={handleFinanceDocUpload}
@@ -3669,17 +3783,29 @@ export function InvoiceCreationModal({
                           />
                         </label>
                       </div>
-                      {billingForm.financePdfUrl && (
-                        <a
-                          href={fileViewUrl(billingForm.financePdfUrl)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-[11px] text-blue-600 hover:underline font-semibold mt-1 inline-block"
-                        >
-                          📎 View attached file
-                        </a>
+                      {(billingForm.financePdfUrls || []).length > 0 && (
+                        <div className="mt-1.5 flex flex-wrap gap-1.5">
+                          {(billingForm.financePdfUrls || []).map((url: string, i: number) => (
+                            <span key={url} className="inline-flex items-center gap-1 rounded-md border border-orange-200 bg-white px-2 py-0.5 text-[11px]">
+                              <a href={fileViewUrl(url)} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-semibold">
+                                📎 File {i + 1}
+                              </a>
+                              <button type="button" onClick={() => removeFinanceFile(url)} className="text-rose-500 hover:text-rose-700 font-bold" aria-label="Remove file">
+                                ×
+                              </button>
+                            </span>
+                          ))}
+                        </div>
                       )}
                     </div>
+                  </div>
+                  <div className="pt-1">
+                    <ExtraDoRows
+                      rows={billingForm.financeDos || []}
+                      onChange={(rows) => setBillingForm((f: any) => ({ ...f, financeDos: rows }))}
+                      totalLoan={Math.max(0, (billCalculations.grandTotal || 0) - (Number(billingForm.financeDownPayment) || 0))}
+                      defaultProvider={billingForm.financeProvider}
+                    />
                   </div>
                 </div>
               )}

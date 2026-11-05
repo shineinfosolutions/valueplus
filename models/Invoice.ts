@@ -148,6 +148,8 @@ export interface IInvoice extends Document {
   financeActualDisbursement?: number;
   financeApprovalStatus?: "Pending" | "Under Review" | "Approved" | "Disbursed" | "Reconciled";
   financePdfUrl?: string;
+  financePdfUrls?: string[];
+  financeDos?: { provider?: string; doId: string; amount?: number }[];
   financeApprovedBy?: string;
   financeApprovalDate?: string;
   financeBankRef?: string;
@@ -159,6 +161,7 @@ export interface IInvoice extends Document {
   downPaymentMode?: string;
   shippingCharges?: number;
   freightCharges?: number;
+  freightPaidBy?: "us" | "customer";
   financeTenureMonths?: number;
   financeSchemeType?: string;
   financeInterestRate?: number;
@@ -356,6 +359,13 @@ const InvoiceSchema = new Schema<IInvoice>(
       default: "Pending",
     },
     financePdfUrl: String,
+    // Every DO / approval file uploaded on the bill (financePdfUrl is the first).
+    financePdfUrls: { type: [String], default: undefined },
+    // More DOs on this bill (the loan split across several DOs); financeDoId is DO 1.
+    financeDos: {
+      type: [{ _id: false, provider: { type: String, default: "" }, doId: { type: String, required: true }, amount: { type: Number, default: 0 } }],
+      default: undefined,
+    },
     financeApprovedBy: String,
     financeApprovalDate: String,
     financeBankRef: String,
@@ -368,6 +378,9 @@ const InvoiceSchema = new Schema<IInvoice>(
     downPaymentMode: String,
     shippingCharges: { type: Number, default: 0 },
     freightCharges: { type: Number, default: 0 },
+    // Who pays the delivery: "us" (the store's own delivery boy, counted on his Delivery Boy Status) or
+    // "customer" (the freight amount is charged on the bill).
+    freightPaidBy: { type: String, enum: ["us", "customer"], default: "us" },
     financeTenureMonths: Number,
     financeSchemeType: String,
     financeInterestRate: Number,

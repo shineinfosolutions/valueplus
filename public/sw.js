@@ -1,8 +1,10 @@
 // ValuePlus ERP Service Worker
-const CACHE_NAME = "valueplus-v2.5";
+//
+// v3: pages (HTML) and the build's own files (/_next/) always come from the network. Serving a cached page after a
+// deploy made it ask for CSS / JS files of the old build that no longer exist, so the app opened unstyled and stuck
+// on "AUTHENTICATING". Only icons and the manifest are kept for offline use; a new name clears every old cache.
+const CACHE_NAME = "valueplus-v3";
 const STATIC_ASSETS = [
-  "/",
-  "/dashboard",
   "/manifest.json",
   "/favicon.ico",
   "/icons/icon-192.png",
@@ -31,23 +33,25 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
-  // Pass through non-GET and API requests directly to network
-  if (event.request.method !== "GET" || event.request.url.includes("/api/")) {
-    return;
-  }
+  const req = event.request;
+  // API calls, pages and the build's files go straight to the network (the browser handles them as usual).
+  if (req.method !== "GET") return;
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin) return;
+  if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/_next/") || req.mode === "navigate") return;
+  if (!/\.(png|jpg|jpeg|svg|ico|webp|json)$/i.test(url.pathname)) return;
 
+  // Icons and the manifest: network first, the cached copy when offline.
   event.respondWith(
-    fetch(event.request)
-      .then((networkResponse) => {
-        if (networkResponse && networkResponse.status === 200) {
-          const responseClone = networkResponse.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseClone);
-          });
+    fetch(req)
+      .then((res) => {
+        if (res && res.status === 200) {
+          const copy = res.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
         }
-        return networkResponse;
+        return res;
       })
-      .catch(() => caches.match(event.request))
+      .catch(() => caches.match(req).then((hit) => hit || Response.error()))
   );
 });
 

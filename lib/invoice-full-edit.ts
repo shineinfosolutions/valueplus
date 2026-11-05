@@ -11,6 +11,7 @@ import { entityOf, entityLabel } from "@/lib/billing-entity";
 import { publishChange } from "@/lib/realtime";
 import { onsitegoIncentiveOf } from "@/lib/onsitego";
 import { stampLineIncentives } from "@/lib/incentive-server";
+import { checkDoId, checkExtraDos, createExtraDOs, createFinanceDO, extraDosOf, financeFilesOf } from "@/lib/finance-do";
 
 /**
  * Full edit of a saved tax invoice from the billing form: products, rates,
@@ -128,8 +129,9 @@ export async function fullEditInvoice(
   const dateChanged = billDate !== oldDate;
   const dateUpdate: any = {};
   let backdateNeedsApproval = false;
-  if (dateChanged) {
-    return { ok: false, status: 403, error: "A bill's date cannot be changed. Back-dating is not allowed." };
+  // Only the Admin may move a bill's date (e.g. back to the day before); the invoice number stays the same.
+  if (dateChanged && !["admin", "superadmin"].includes(String(actor.role || "").toLowerCase())) {
+    return { ok: false, status: 403, error: "Only the Admin can change a bill's date." };
   }
   if (dateChanged) {
     if (billDate > todayIst) {
@@ -200,17 +202,50 @@ export async function fullEditInvoice(
     }))
     .filter((p: any) => p.amount > 0);
   const isSplit = splitRows.length > 1;
-  const oldIsFinance = await FinanceTransaction.exists({ invoiceNumber: existing.invoiceNumber });
+  // A bill is a finance bill when it has its own DO, or is linked to another bill's DO (one loan, several bills).
+  const oldIsFinance = await FinanceTransaction.exists({
+    $or: [{ invoiceNumber: existing.invoiceNumber }, { "linkedInvoices.invoiceNumber": existing.invoiceNumber }],
+  });
   const newIsFinance =
     incoming.paymentMode === "Finance" || splitRows.some((p: any) => classifyPaymentMode(p.mode) === "finance");
-  if (Boolean(oldIsFinance) !== Boolean(newIsFinance)) {
+  const actorIsAdmin = ["admin", "superadmin"].includes(String(actor.role || "").toLowerCase());
+  // The Admin may turn an existing bill into a finance bill (its DO is made below, dated with the bill);
+  // a finance bill cannot be turned back, because its DO may already be with the bank.
+  const addingFinance = !oldIsFinance && Boolean(newIsFinance);
+  if (oldIsFinance && !newIsFinance) {
     return {
       ok: false,
       status: 400,
-      error: oldIsFinance
-        ? "This is a finance bill with a DO — its payment mode cannot be changed away from Finance. Cancel it and make a new bill instead."
-        : "Finance cannot be added to an existing bill. Cancel it and make a new finance bill instead.",
+      error: "This is a finance bill with a DO — its payment mode cannot be changed away from Finance. Cancel it and make a new bill instead.",
     };
+  }
+  if (addingFinance && !actorIsAdmin) {
+    return { ok: false, status: 403, error: "Only the Admin can add finance to an existing bill." };
+  }
+  // A DO ID typed here may be this customer's existing DO (the bill joins it) but never another customer's.
+  // Checked before anything is written, so a clash never leaves half an edit.
+  if (addingFinance) {
+    const check = await checkDoId(String(incoming.financeDoId || ""), {
+      invoiceNumber: existing.invoiceNumber,
+      customerPhone: incoming.customerPhone || existing.customerPhone,
+      customerName: incoming.customerName || existing.customerName,
+    });
+    if (check && "error" in check) return { ok: false, status: 400, error: check.error };
+  }
+  // More DOs on the bill (the loan split across several DOs): checked here too, before anything is written.
+  const extraDos = newIsFinance ? extraDosOf(incoming) : [];
+  let extraDosLoan = 0;
+  if (extraDos.length) {
+    const ownDo: any = await FinanceTransaction.findOne({ invoiceNumber: existing.invoiceNumber }, { doId: 1 }).lean();
+    const splitLoan = splitRows.filter((p: any) => classifyPaymentMode(p.mode) === "finance").reduce((t: number, p: any) => t + p.amount, 0);
+    extraDosLoan = splitLoan > 0 ? splitLoan : Number(incoming.financeGrossLoan || 0);
+    const err = await checkExtraDos(
+      extraDos,
+      String(incoming.financeDoId || ownDo?.doId || ""),
+      extraDosLoan,
+      { invoiceNumber: existing.invoiceNumber, customerPhone: incoming.customerPhone || existing.customerPhone, customerName: incoming.customerName || existing.customerName }
+    );
+    if (err) return { ok: false, status: 400, error: err };
   }
 
   // ── 2. Money ─────────────────────────────────────────────────────────────
@@ -503,6 +538,55 @@ export async function fullEditInvoice(
         },
       }
     );
+  } else if (addingFinance) {
+    // Finance added by the Admin on an edit: the DO is made the same way as on a new bill, dated with the bill.
+    await createFinanceDO(
+      {
+        invoiceNumber: existing.invoiceNumber,
+        customerName,
+        customerPhone: incoming.customerPhone || existing.customerPhone,
+        customerAddress: incoming.customerAddress || existing.customerAddress,
+        date: billDate,
+        total,
+        balance: balanceAmount,
+      },
+      incoming,
+      splitRows
+    );
+  }
+  // Extra DOs written on the edit that do not exist yet get their own DO record.
+  if (extraDos.length) {
+    await createExtraDOs(
+      {
+        invoiceNumber: existing.invoiceNumber,
+        customerName,
+        customerPhone: incoming.customerPhone || existing.customerPhone,
+        customerAddress: incoming.customerAddress || existing.customerAddress,
+        date: billDate,
+      },
+      extraDos,
+      incoming
+    );
+    // DO 1 (the bill's first DO) carries what is left of the loan after the other DOs.
+    const extraIds = extraDos.map((r) => r.doId);
+    const main: any = await FinanceTransaction.findOne({ invoiceNumber: existing.invoiceNumber, doId: { $nin: extraIds } }).sort({ createdAt: 1 });
+    if (main && extraDosLoan > 0) {
+      const rest = Math.max(0, round2(extraDosLoan - extraDos.reduce((t, r) => t + r.amount, 0)));
+      main.grossLoanAmount = rest;
+      main.netLoanAmount = rest;
+      main.netDisbursement = Math.max(0, round2(rest - (Number(main.totalDeductions) || 0)));
+      await main.save();
+    }
+  }
+  // DO files added on the edit go onto the bill's DO (its own, or the one it is linked to).
+  {
+    const files = financeFilesOf(incoming);
+    if (files.length && oldIsFinance) {
+      await FinanceTransaction.updateOne(
+        { $or: [{ invoiceNumber: existing.invoiceNumber }, { "linkedInvoices.invoiceNumber": existing.invoiceNumber }] },
+        { $addToSet: { uploadedPdfUrls: { $each: files } } }
+      );
+    }
   }
 
   // 4h. The invoice itself.

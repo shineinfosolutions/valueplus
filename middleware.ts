@@ -116,6 +116,7 @@ export const config = {
     "/finance/:path*",
     "/staff/:path*",
     "/driver/:path*",
+    "/delivery/:path*",
     "/admin/:path*",
     "/marketing/:path*",
     "/banking/:path*",

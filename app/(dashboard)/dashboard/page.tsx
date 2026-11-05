@@ -318,6 +318,9 @@ export default function DashboardPage() {
     kpi: "Today",
     expenses: "Today",
     products: "Today",
+    // Top Mobiles / Top Electronics each have their own date filter too.
+    mobiles: "Today",
+    electronics: "Today",
     customers: "Today",
     logs: "Today",
     recent: "Today",
@@ -1156,7 +1159,18 @@ export default function DashboardPage() {
   }, [activeLocation?.name]);
 
   const handleWidgetFilterChange = (widgetName: string, val: string, customStart?: string, customEnd?: string) => {
-    setWidgetFilters(prev => ({ ...prev, [widgetName]: val }));
+    // The Top Selling card's filter also sets its Mobiles and Electronics filters.
+    if (widgetName === "products") {
+      setWidgetFilters(prev => ({ ...prev, products: val, mobiles: val, electronics: val }));
+      setWidgetData((prev: any) => {
+        const next = { ...prev };
+        delete next.mobiles;
+        delete next.electronics;
+        return next;
+      });
+    } else {
+      setWidgetFilters(prev => ({ ...prev, [widgetName]: val }));
+    }
     fetchWidgetData(widgetName, val, customStart, customEnd);
   };
 
@@ -1171,12 +1185,21 @@ export default function DashboardPage() {
       kpi: val,
       expenses: val,
       products: val,
+      mobiles: val,
+      electronics: val,
       customers: val,
       logs: val,
       recent: val,
       staff: val
     };
     setWidgetFilters(newFilters);
+    // Drop the Top Mobiles / Top Electronics own-filter results so they follow the new range.
+    setWidgetData((prev: any) => {
+      const next = { ...prev };
+      delete next.mobiles;
+      delete next.electronics;
+      return next;
+    });
     setPlFilter({ value: val, start: customStart, end: customEnd });
     setPurchaseFilter({ value: val, start: customStart, end: customEnd });
     loadAllDashboardData(s, e, val);
@@ -1643,6 +1666,9 @@ export default function DashboardPage() {
                   <p className="text-sm font-bold text-slate-900 group-hover:text-[#3F63AD] transition-colors">Total Sales</p>
                   <p className="text-xs text-slate-500 font-medium mt-0.5">
                     {pieRangeLabel} • {totalBilledCount} {totalBilledCount === 1 ? "order" : "orders"}
+                    {currentPieMetrics.totalUnits !== undefined && (
+                      <> • <span className="font-bold text-slate-700">{Number(currentPieMetrics.totalUnits) || 0} {Number(currentPieMetrics.totalUnits) === 1 ? "unit" : "units"}</span></>
+                    )}
                   </p>
                   <p className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight mt-2 leading-none">
                     ₹ {formatNumber(Math.round(totalCollectedAmount))}
@@ -3189,7 +3215,7 @@ export default function DashboardPage() {
           <div className={cn("grid gap-3 pt-3", topSellingCategoryTab === "all" ? "grid-cols-[repeat(auto-fit,minmax(230px,1fr))]" : "grid-cols-1")}>
             {/* 📱 CARD 1: TOP SELLING MOBILES (COMPACT) */}
             {(topSellingCategoryTab === "all" || topSellingCategoryTab === "mobiles") && (() => {
-              const mobilesList: any[] = (widgetData.products?.topMobiles ?? data?.topMobiles ?? []).slice(0, 4);
+              const mobilesList: any[] = (widgetData.mobiles?.topMobiles ?? widgetData.products?.topMobiles ?? data?.topMobiles ?? []).slice(0, 4);
 
               const totalMobileRev = mobilesList.reduce((sum, m) => sum + (m.revenue || 0), 0);
               const totalMobileUnits = mobilesList.reduce((sum, m) => sum + (m.sales || 0), 0);
@@ -3202,7 +3228,14 @@ export default function DashboardPage() {
                         <Smartphone className="w-3.5 h-3.5" />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <h4 className="text-xs font-black text-slate-900 tracking-tight truncate">Top Mobiles</h4>
+                        <div className="flex items-center justify-between gap-2">
+                          <h4 className="text-xs font-black text-slate-900 tracking-tight truncate">Top Mobiles</h4>
+                          <DateRangeFilter
+                            value={widgetFilters.mobiles}
+                            onChange={(val, start, end) => handleWidgetFilterChange("mobiles", val, start, end)}
+                            className="w-[118px] h-7 text-[11px] font-semibold"
+                          />
+                        </div>
                         <div className="flex items-center justify-between gap-2 mt-0.5">
                           <span className="text-[10px] font-bold text-purple-700 bg-purple-50 px-1.5 rounded border border-purple-200 whitespace-nowrap">
                             {totalMobileUnits} Units
@@ -3281,7 +3314,7 @@ export default function DashboardPage() {
 
             {/* 📺 CARD 2: TOP SELLING ELECTRONICS (COMPACT) */}
             {(topSellingCategoryTab === "all" || topSellingCategoryTab === "electronics") && (() => {
-              const electronicsList: any[] = (widgetData.products?.topElectronics ?? data?.topElectronics ?? []).slice(0, 4);
+              const electronicsList: any[] = (widgetData.electronics?.topElectronics ?? widgetData.products?.topElectronics ?? data?.topElectronics ?? []).slice(0, 4);
 
               const totalElecRev = electronicsList.reduce((sum, e) => sum + (e.revenue || 0), 0);
               const totalElecUnits = electronicsList.reduce((sum, e) => sum + (e.sales || 0), 0);
@@ -3294,7 +3327,14 @@ export default function DashboardPage() {
                         <Tv className="w-3.5 h-3.5" />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <h4 className="text-xs font-black text-slate-900 tracking-tight truncate">Top Electronics</h4>
+                        <div className="flex items-center justify-between gap-2">
+                          <h4 className="text-xs font-black text-slate-900 tracking-tight truncate">Top Electronics</h4>
+                          <DateRangeFilter
+                            value={widgetFilters.electronics}
+                            onChange={(val, start, end) => handleWidgetFilterChange("electronics", val, start, end)}
+                            className="w-[118px] h-7 text-[11px] font-semibold"
+                          />
+                        </div>
                         <div className="flex items-center justify-between gap-2 mt-0.5">
                           <span className="text-[10px] font-bold text-[#3F63AD] bg-blue-50 px-1.5 rounded border border-blue-200 whitespace-nowrap">
                             {totalElecUnits} Units

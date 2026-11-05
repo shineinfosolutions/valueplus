@@ -17,6 +17,8 @@ export default function SecurityPinPage() {
   const [password, setPassword] = useState("");
   const [newPin, setNewPin] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
+  // Forgot PIN: set a new one with the login password instead of the old PIN.
+  const [forgot, setForgot] = useState(false);
 
   const { data: status, isLoading } = useQuery({
     queryKey: ["security-pin-status"],
@@ -42,6 +44,7 @@ export default function SecurityPinPage() {
           currentPin: currentPin.trim(),
           password: password.trim(),
           newPin: newPin.trim(),
+          forgot: forgot && !!status?.hasPin,
         }),
       });
       const json = await res.json();
@@ -49,7 +52,8 @@ export default function SecurityPinPage() {
       return json;
     },
     onSuccess: () => {
-      toast.success("Security PIN updated");
+      toast.success(forgot ? "New Security PIN set" : "Security PIN updated");
+      setForgot(false);
       setCurrentPin("");
       setPassword("");
       setNewPin("");
@@ -62,8 +66,8 @@ export default function SecurityPinPage() {
   const handleSubmit = () => {
     if (newPin.trim().length < 4) return toast.error("The new PIN must be at least 4 digits");
     if (newPin.trim() !== confirmPin.trim()) return toast.error("The two PINs do not match");
-    if (status?.hasPin && !currentPin.trim()) return toast.error("Enter your current PIN");
-    if (!status?.hasPin && !password.trim())
+    if (status?.hasPin && !forgot && !currentPin.trim()) return toast.error("Enter your current PIN");
+    if ((!status?.hasPin || forgot) && !password.trim())
       return toast.error("Enter your account password to set a PIN for the first time");
     save.mutate();
   };
@@ -128,9 +132,14 @@ export default function SecurityPinPage() {
             </div>
 
             <div className="p-5 space-y-4">
-              {status?.hasPin ? (
+              {status?.hasPin && !forgot ? (
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-slate-700">Current PIN *</Label>
+                  <div className="flex items-center justify-between max-w-[300px]">
+                    <Label className="text-xs font-semibold text-slate-700">Current PIN *</Label>
+                    <button type="button" onClick={() => { setForgot(true); setCurrentPin(""); }} className="text-[11px] font-bold text-[#30539C] hover:underline">
+                      Forgot PIN?
+                    </button>
+                  </div>
                   <Input
                     type="password"
                     inputMode="numeric"
@@ -142,9 +151,16 @@ export default function SecurityPinPage() {
                 </div>
               ) : (
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-slate-700">
-                    Your account password *
-                  </Label>
+                  <div className="flex items-center justify-between max-w-[300px]">
+                    <Label className="text-xs font-semibold text-slate-700">
+                      Your account (login) password *
+                    </Label>
+                    {forgot && (
+                      <button type="button" onClick={() => { setForgot(false); setPassword(""); }} className="text-[11px] font-bold text-slate-500 hover:underline">
+                        I remember my PIN
+                      </button>
+                    )}
+                  </div>
                   <Input
                     type="password"
                     value={password}
@@ -152,7 +168,9 @@ export default function SecurityPinPage() {
                     className="bg-slate-50 border-slate-300 max-w-[300px]"
                   />
                   <p className="text-[10px] text-slate-400">
-                    Asked once, so nobody can claim a PIN at an unattended screen.
+                    {forgot
+                      ? "Forgot your PIN: your login password proves it is you, then set a new PIN below."
+                      : "Asked once, so nobody can claim a PIN at an unattended screen."}
                   </p>
                 </div>
               )}
@@ -188,7 +206,7 @@ export default function SecurityPinPage() {
 
             <div className="px-5 py-3.5 border-t border-slate-100 flex justify-end">
               <Button onClick={handleSubmit} disabled={save.isPending}>
-                {save.isPending ? "Saving…" : status?.hasPin ? "Change PIN" : "Set PIN"}
+                {save.isPending ? "Saving…" : forgot ? "Reset PIN" : status?.hasPin ? "Change PIN" : "Set PIN"}
               </Button>
             </div>
           </div>

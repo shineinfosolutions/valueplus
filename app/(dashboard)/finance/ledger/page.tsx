@@ -478,18 +478,35 @@ export default function FinanceLedgerStandalonePage() {
                               </Link>
                             )}
 
-                            {rec.uploadedPdfUrl && (
-                              <a
-                                href={fileViewUrl(rec.uploadedPdfUrl)}
+                            {(() => {
+                              // Every DO file (several can be uploaded); older DOs have only uploadedPdfUrl.
+                              const files: string[] = [...new Set([...(rec.uploadedPdfUrls || []), rec.uploadedPdfUrl].filter(Boolean))] as string[];
+                              return files.map((url, i) => (
+                                <a
+                                  key={url}
+                                  href={fileViewUrl(url)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="h-8 px-2.5 text-[11px] font-bold text-emerald-700 border border-emerald-200 bg-emerald-50/70 hover:bg-emerald-100 rounded-lg inline-flex items-center gap-1.5 transition-colors shadow-2xs whitespace-nowrap shrink-0"
+                                  title="View uploaded DO attachment"
+                                >
+                                  <Paperclip className="w-3.5 h-3.5 text-emerald-600" />
+                                  <span>{files.length > 1 ? `File ${i + 1}` : "Attachment"}</span>
+                                </a>
+                              ));
+                            })()}
+                            {(rec.linkedInvoices || []).map((l: any) => (
+                              <Link
+                                key={l.invoiceNumber}
+                                href={`/invoice?billid=${encodeURIComponent(l.invoiceNumber)}`}
                                 target="_blank"
-                                rel="noopener noreferrer"
-                                className="h-8 px-2.5 text-[11px] font-bold text-emerald-700 border border-emerald-200 bg-emerald-50/70 hover:bg-emerald-100 rounded-lg inline-flex items-center gap-1.5 transition-colors shadow-2xs whitespace-nowrap shrink-0"
-                                title="View uploaded DO attachment"
+                                className="h-8 px-2.5 text-[11px] font-bold text-indigo-700 border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 rounded-lg inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
+                                title="Another bill on this same DO"
                               >
-                                <Paperclip className="w-3.5 h-3.5 text-emerald-600" />
-                                <span>Attachment</span>
-                              </a>
-                            )}
+                                <Receipt className="w-3.5 h-3.5" />
+                                <span>+ {l.invoiceNumber}</span>
+                              </Link>
+                            ))}
                           </div>
                         </td>
                       </tr>

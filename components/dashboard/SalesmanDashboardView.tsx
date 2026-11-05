@@ -28,6 +28,7 @@ import { toast } from "sonner";
 import ValueplusInvoice from "@/app/invoice/page";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { todayInIndia } from "@/lib/today";
+import { DateRangeFilter, resolveDateRange } from "@/components/shared/date-range-filter";
 
 /** "Amit Kumar Singh (Sales Executive)" -> "amit kumar singh", so the same person matches however the name was typed. */
 const normName = (n: any) => String(n || "").replace(/\s*\(.*\)\s*$/, "").replace(/\s+/g, " ").trim().toLowerCase();
@@ -42,8 +43,9 @@ export function SalesmanDashboardView({ session }: { session: any }) {
   const userRole = ((session?.user as any)?.role || "salesman").toLowerCase();
 
   // Period / Date Filtering State
-  const [periodTab, setPeriodTab] = useState<"today" | "yesterday" | "week" | "month" | "all" | "custom">("today");
-  const [customDate, setCustomDate] = useState(() => todayInIndia());
+  // Same date filter as the admin dashboard.
+  const [period, setPeriod] = useState<{ value: string; start: string; end: string }>(() => ({ value: "Today", ...resolveDateRange("Today") }));
+  const periodTab = period.value === "Custom Date" ? `${period.start} to ${period.end}` : period.value;
   const [viewInvoice, setViewInvoice] = useState<any | null>(null);
   // Lead pipeline bucket open in a popup (New / Follow-up / Converted / Lost).
   const [leadPopup, setLeadPopup] = useState<LeadBucket | null>(null);
@@ -111,18 +113,7 @@ export function SalesmanDashboardView({ session }: { session: any }) {
 
   // Filter Invoices by Salesman and Selected Period
   const filteredInvoices = useMemo(() => {
-    const now = new Date();
     const todayStr = todayInIndia();
-
-    const yesterdayObj = new Date(`${todayStr}T00:00:00Z`);
-    yesterdayObj.setUTCDate(yesterdayObj.getUTCDate() - 1);
-    const yesterdayStr = yesterdayObj.toISOString().split("T")[0];
-
-    const oneWeekAgo = new Date(now);
-    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-
-    const currentYear = now.getFullYear();
-    const currentMonth = now.getMonth();
 
     const me = normName(userName);
 
@@ -137,16 +128,9 @@ export function SalesmanDashboardView({ session }: { session: any }) {
       if (!isMyInvoice) return false;
 
       const invDateStr = inv.date ? new Date(inv.date).toISOString().split("T")[0] : todayStr;
-      const invDate = inv.date ? new Date(inv.date) : now;
-
-      if (periodTab === "today") return invDateStr === todayStr;
-      if (periodTab === "yesterday") return invDateStr === yesterdayStr;
-      if (periodTab === "week") return invDate >= oneWeekAgo;
-      if (periodTab === "month") return invDate.getFullYear() === currentYear && invDate.getMonth() === currentMonth;
-      if (periodTab === "custom") return invDateStr === customDate;
-      return true; // "all"
+      return invDateStr >= period.start && invDateStr <= period.end;
     });
-  }, [invoices, userName, periodTab, customDate]);
+  }, [invoices, userName, period]);
 
   // The salesman's own bills made today (the top summary always shows today).
   const todayInvoices = useMemo(() => {
@@ -163,19 +147,18 @@ export function SalesmanDashboardView({ session }: { session: any }) {
 
   // Target Configuration based on period
   const targetConfig = useMemo(() => {
-    switch (periodTab) {
-      case "today":
-      case "yesterday":
-      case "custom":
-        return { label: "Daily Sales Target", targetAmount: 25000 };
-      case "week":
-        return { label: "Weekly Sales Target", targetAmount: 125000 };
-      case "month":
-      case "all":
-      default:
-        return { label: "Monthly Sales Target", targetAmount: 500000 };
-    }
-  }, [periodTab]);
+    const daily = { label: "Daily Sales Target", targetAmount: 25000 };
+    const weekly = { label: "Weekly Sales Target", targetAmount: 125000 };
+    const monthly = { label: "Monthly Sales Target", targetAmount: 500000 };
+    if (period.value === "Today" || period.value === "Yesterday") return daily;
+    if (period.value === "Last 7 Days") return weekly;
+    if (period.value !== "Custom Date") return monthly;
+    // Custom range: by how many days it covers.
+    const days = Math.round((new Date(period.end).getTime() - new Date(period.start).getTime()) / 86400000) + 1;
+    if (days <= 1) return { label: "Daily Sales Target", targetAmount: 25000 };
+    if (days <= 8) return { label: "Weekly Sales Target", targetAmount: 125000 };
+    return { label: "Monthly Sales Target", targetAmount: 500000 };
+  }, [period]);
 
   // Metric Computations
   const completedSalesTotal = useMemo(() => {
@@ -409,42 +392,17 @@ export function SalesmanDashboardView({ session }: { session: any }) {
         </div>
       )}
 
-      {/* PERIOD FILTER TABS */}
+      {/* PERIOD FILTER (same as the admin dashboard) */}
       <div className="bg-white p-2.5 rounded-xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl flex-wrap">
-          {[
-            { key: "today", label: "Today" },
-            { key: "yesterday", label: "Yesterday" },
-            { key: "week", label: "This Week" },
-            { key: "month", label: "This Month" },
-            { key: "all", label: "All Time" },
-            { key: "custom", label: "Custom Date" },
-          ].map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setPeriodTab(tab.key as any)}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                periodTab === tab.key
-                  ? "bg-[#30539C] text-white shadow-xs"
-                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        {periodTab === "custom" && (
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-500 font-semibold">Select Day:</span>
-            <Input
-              type="date"
-              value={customDate}
-              onChange={(e) => setCustomDate(e.target.value)}
-              className="w-36 h-8 text-xs font-mono bg-slate-50"
-            />
-          </div>
-        )}
+        <p className="text-xs font-bold text-slate-600">Showing: <span className="text-slate-900">{periodTab}</span></p>
+        <DateRangeFilter
+          value={period.value}
+          onChange={(value, start, end) => {
+            const r = start && end ? { start, end } : resolveDateRange(value);
+            setPeriod({ value, start: r.start, end: r.end });
+          }}
+          className="w-[160px]"
+        />
       </div>
 
       {/* 3 KPI PERFORMANCE CARDS */}
