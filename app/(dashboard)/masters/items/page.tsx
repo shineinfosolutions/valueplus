@@ -38,6 +38,9 @@ import { BrandLogo } from "@/components/shared/brand-logo";
 import { useBranch } from "@/context/BranchContext";
 import { Switch } from "@/components/ui/switch";
 import { BulkIncentiveModal } from "@/components/items/BulkIncentiveModal";
+import { IncentiveRulesEditor, type EditableRule } from "@/components/items/IncentiveRulesEditor";
+import { ItemIncentiveDialog } from "@/components/items/ItemIncentiveDialog";
+import { cleanRules, flatFieldsFor, liveRulesOf, rulesOf, ruleText } from "@/lib/incentive-rules";
 import { ProductReferenceImportModal } from "@/components/masters/ProductReferenceImportModal";
 import { VspSheetImportModal } from "@/components/masters/VspSheetImportModal";
 import { BillingEntityBadge } from "@/components/shared/BillingEntityPicker";
@@ -78,7 +81,7 @@ const EMPTY_FORM: ItemFormData = {
   code: "",
   category: "",
   brand: "",
-  unit: "PCS",
+  unit: "NOS",
   hsn: "",
   gstRate: "18",
   purchasePrice: "",
@@ -152,6 +155,11 @@ function ItemsPageContent() {
   // short; opened automatically when editing an item that already has one.
   const [incentiveOpen, setIncentiveOpen] = useState(false);
   const [bulkIncentiveOpen, setBulkIncentiveOpen] = useState(false);
+  // The product's incentive rules (₹ and/or % — several may run together), edited in section 3 of the form.
+  const [incentiveRules, setIncentiveRules] = useState<EditableRule[]>([]);
+  // Quick incentive editor from the list (Admin, Store Manager and Cashier).
+  const [incentiveItem, setIncentiveItem] = useState<any | null>(null);
+  const canSetIncentive = ["admin", "superadmin", "manager", "cashier"].includes(userRole);
   const [productReferenceOpen, setProductReferenceOpen] = useState(false);
   const [vspImportOpen, setVspImportOpen] = useState(false);
   const [formSerials, setFormSerials] = useState<FormSerialItem[]>([]);
@@ -328,6 +336,7 @@ function ItemsPageContent() {
     setNewSerialInput("");
     setBatchNoInput("");
     setIncentiveOpen(false);
+    setIncentiveRules([]);
     setIsFormOpen(true);
   };
 
@@ -350,7 +359,7 @@ function ItemsPageContent() {
       code: item.code || "", 
       category: matchedCategory, 
       brand: matchedBrand,
-      unit: item.unit || "PCS", 
+      unit: item.unit || "NOS", 
       hsn: item.hsnCode || item.hsn || "", 
       gstRate: String(item.gstRate || 18),
       purchasePrice: String(item.purchasePrice || ""),
@@ -372,7 +381,9 @@ function ItemsPageContent() {
       warehouse: item.warehouse || activeLocation?.name || "Ashoka Enterprises (Kunraghat Showroom)", 
       status: item.status || "active",
     });
-    setIncentiveOpen(Boolean(Number(item.incentiveValue) || Number(item.incentiveAmount)));
+    const existingRules = rulesOf(item);
+    setIncentiveRules(existingRules);
+    setIncentiveOpen(existingRules.length > 0);
 
     const matching = (allDbSerials || []).filter((s: any) =>
       (s.vpCode && (s.vpCode === item.vpCode || s.vpCode === item.code)) ||
@@ -499,10 +510,15 @@ function ItemsPageContent() {
       toast.error("Please fill all required fields");
       return;
     }
-    if (incentiveOpen && !(Number(formData.incentiveValue) > 0)) {
-      toast.error("Incentive is switched on — enter a reward value, or switch it off.");
+    if (incentiveRules.some((r) => !(Number(r.value) > 0))) {
+      toast.error("Every incentive rule needs a value above 0 — fill it in or remove the rule.");
       return;
     }
+    if (incentiveRules.some((r) => r.type === "percentage" && Number(r.value) > 100)) {
+      toast.error("An incentive % cannot be above 100.");
+      return;
+    }
+    const savedRules = cleanRules(incentiveRules);
 
     const sStock = Number(formData.showroomStock || formData.currentStock || 0);
     const gStock = Number(formData.godownStock || formData.currentStock || 0);
@@ -520,13 +536,9 @@ function ItemsPageContent() {
       minSellingPrice: Number(formData.minSellingPrice) || Number(formData.purchasePrice) || 0,
       maxDiscountPercent: Number(formData.maxDiscountPercent) || 0,
       maxDiscountAmount: Number(formData.maxDiscountAmount) || 0,
-      // A collapsed section means "no incentive on this product" even if a value
-      // was typed in before the admin closed it, so the rule is force-cleared
-      // rather than trusting whatever formData still holds.
-      incentiveTargetAmount: incentiveOpen ? (Number(formData.incentiveTargetAmount) || 0) : 0,
-      incentiveAmount: incentiveOpen ? (Number(formData.incentiveAmount) || Number(formData.incentiveValue) || 0) : 0,
-      incentiveType: incentiveOpen ? (formData.incentiveType === "percentage" ? "percentage" : "fixed") : "none",
-      incentiveValue: incentiveOpen ? (Number(formData.incentiveValue) || Number(formData.incentiveAmount) || 0) : 0,
+      // Every rule is saved; the flat single-rule fields mirror the first one for older screens.
+      incentives: savedRules,
+      ...flatFieldsFor(savedRules),
       mrp: Number(formData.mrp),
       showroomStock: sStock,
       godownStock: gStock,
@@ -632,6 +644,7 @@ function ItemsPageContent() {
               }))}
               filename="master_stock_report"
             />
+{canSetIncentive && (
             <Button
               variant="outline"
               size="sm"
@@ -640,6 +653,7 @@ function ItemsPageContent() {
             >
               <Gift className="w-3.5 h-3.5 mr-1.5" /> Bulk Apply Incentive
             </Button>
+            )}
             <Button
               variant="outline"
               size="sm"
@@ -671,6 +685,16 @@ function ItemsPageContent() {
             <Badge className="bg-blue-50 text-[#30539C] border border-blue-200 text-xs font-bold px-3 py-1.5">
               👁️ Product Catalog & Stock View
             </Badge>
+{canSetIncentive && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setBulkIncentiveOpen(true)}
+              className="text-xs border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+            >
+              <Gift className="w-3.5 h-3.5 mr-1.5" /> Bulk Apply Incentive
+            </Button>
+            )}
             <ExportMenu
               className="text-xs"
               title="Product Catalog & Price List"
@@ -1065,21 +1089,29 @@ function ItemsPageContent() {
                         <p className="font-semibold text-foreground">{formatCurrency(item.sellingPrice)}</p>
                         <p className="text-xs text-muted-foreground">MRP {formatCurrency(item.mrp)}</p>
                         <p className="text-[10px] text-emerald-600 font-medium">VSP {formatCurrency(item.vsp || item.sellingPrice)}</p>
-                        {item.incentiveType && item.incentiveType !== "none" && Number(item.incentiveValue || item.incentiveAmount) > 0 && (
-                          <span
-                            className="inline-flex items-center gap-1 mt-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5"
-                            title={
-                              Number(item.incentiveTargetAmount) > 0
-                                ? `Incentive applies at ₹${item.incentiveTargetAmount}+`
-                                : "Incentive applies on every sale"
-                            }
-                          >
-                            <Gift className="w-2.5 h-2.5" />
-                            {item.incentiveType === "percentage"
-                              ? `${item.incentiveValue}%`
-                              : formatCurrency(item.incentiveValue || item.incentiveAmount)}
-                          </span>
-                        )}
+                        {(() => {
+                          const live = liveRulesOf(item);
+                          if (live.length === 0 && !canSetIncentive) return null;
+                          return (
+                            <button
+                              type="button"
+                              disabled={!canSetIncentive}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (canSetIncentive) setIncentiveItem(item);
+                              }}
+                              className={cn(
+                                "inline-flex items-center gap-1 mt-1 text-[10px] font-bold rounded-full px-2 py-0.5 border",
+                                live.length > 0 ? "text-emerald-700 bg-emerald-50 border-emerald-200" : "text-slate-500 bg-slate-50 border-dashed border-slate-300",
+                                canSetIncentive && "hover:bg-emerald-100 cursor-pointer"
+                              )}
+                              title={canSetIncentive ? "Set incentive rules" : "Incentive"}
+                            >
+                              <Gift className="w-2.5 h-2.5" />
+                              {live.length > 0 ? live.map(ruleText).join(" + ") : "Set incentive"}
+                            </button>
+                          );
+                        })()}
                       </td>
 
                       {/* Clickable Live Stock Cell: Opens Showroom & Godown Stock Breakdown Popover */}
@@ -1511,100 +1543,27 @@ function ItemsPageContent() {
               >
                 <h4 className="text-xs font-extrabold uppercase tracking-wider text-[#3F63AD] flex items-center gap-2">
                   <Gift className="w-4 h-4 text-[#3F63AD]" /> 3. Salesperson Incentive
-                  {incentiveOpen && Number(formData.incentiveValue) > 0 && (
+                  {incentiveRules.length > 0 && (
                     <span className="normal-case font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5 text-[10px] tracking-normal">
-                      {formData.incentiveType === "percentage"
-                        ? `${formData.incentiveValue}% set`
-                        : `₹${formData.incentiveValue} set`}
+                      {incentiveRules.length} rule{incentiveRules.length === 1 ? "" : "s"}
                     </span>
                   )}
                 </h4>
-                <div className="flex items-center gap-3">
-                  <Switch
-                    checked={incentiveOpen}
-                    onCheckedChange={(v: boolean) => {
-                      setIncentiveOpen(v);
-                      // Turning it on for the first time needs a starting type;
-                      // turning it off is handled at save time regardless of
-                      // whatever is left in the fields.
-                      if (v && formData.incentiveType === "none") {
-                        setFormData((f) => ({ ...f, incentiveType: "fixed" }));
-                      }
-                    }}
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                  {incentiveOpen ? (
-                    <ChevronUp className="w-4 h-4 text-slate-400" />
-                  ) : (
-                    <ChevronDown className="w-4 h-4 text-slate-400" />
-                  )}
-                </div>
+                {incentiveOpen ? (
+                  <ChevronUp className="w-4 h-4 text-slate-400" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 text-slate-400" />
+                )}
               </div>
 
               {incentiveOpen && (
-                <div className="px-5 pb-5 space-y-4 border-t border-slate-100 pt-4">
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setFormData((f) => ({ ...f, incentiveType: "fixed" }))}
-                      className={cn(
-                        "flex-1 py-2 rounded-lg text-xs font-bold border transition-colors",
-                        formData.incentiveType === "fixed"
-                          ? "bg-[#3F63AD] text-white border-[#3F63AD]"
-                          : "bg-slate-50 text-slate-600 border-slate-300"
-                      )}
-                    >
-                      Fixed ₹ per unit
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setFormData((f) => ({ ...f, incentiveType: "percentage" }))}
-                      className={cn(
-                        "flex-1 py-2 rounded-lg text-xs font-bold border transition-colors",
-                        formData.incentiveType === "percentage"
-                          ? "bg-[#3F63AD] text-white border-[#3F63AD]"
-                          : "bg-slate-50 text-slate-600 border-slate-300"
-                      )}
-                    >
-                      Percentage %
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-semibold text-slate-700">
-                        Reward Value {formData.incentiveType === "percentage" ? "(%)" : "(₹)"} *
-                      </Label>
-                      <Input
-                        type="number"
-                        placeholder={formData.incentiveType === "percentage" ? "e.g. 1.5" : "e.g. 500"}
-                        value={formData.incentiveValue}
-                        onChange={(e) => setFormData((f) => ({ ...f, incentiveValue: e.target.value }))}
-                        className="bg-slate-50 border-slate-300 font-semibold"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-semibold text-slate-700">
-                        Target Selling Price (₹)
-                      </Label>
-                      <Input
-                        type="number"
-                        placeholder={`Optional · this item's price is ₹${formData.sellingPrice || 0}`}
-                        value={formData.incentiveTargetAmount}
-                        onChange={(e) => setFormData((f) => ({ ...f, incentiveTargetAmount: e.target.value }))}
-                        className="bg-slate-50 border-slate-300"
-                      />
-                    </div>
-                  </div>
-
-                  <p className="text-[11px] text-slate-500 leading-relaxed bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-                    {formData.incentiveType === "percentage"
-                      ? `The salesperson earns ${formData.incentiveValue || 0}% of the taxable amount`
-                      : `The salesperson earns ₹${formData.incentiveValue || 0} per unit`}
-                    {Number(formData.incentiveTargetAmount) > 0
-                      ? ` when this product is billed at ₹${formData.incentiveTargetAmount} or above.`
-                      : " on every sale of this product, at any rate."}
-                  </p>
+                <div className="px-5 pb-5 border-t border-slate-100 pt-4">
+                  <IncentiveRulesEditor
+                    rules={incentiveRules}
+                    onChange={setIncentiveRules}
+                    sellingPrice={Number(formData.sellingPrice) || 0}
+                    gstRate={Number(formData.gstRate) || 18}
+                  />
                 </div>
               )}
             </div>
@@ -2166,6 +2125,11 @@ function ItemsPageContent() {
         </DialogContent>
       </Dialog>
 
+      <ItemIncentiveDialog
+        item={incentiveItem}
+        onOpenChange={(open) => { if (!open) setIncentiveItem(null); }}
+        onSaved={() => queryClient.invalidateQueries({ queryKey: ["items"] })}
+      />
       <BulkIncentiveModal
         open={bulkIncentiveOpen}
         onOpenChange={setBulkIncentiveOpen}

@@ -52,6 +52,8 @@ import {
 import { AttendancePunchWidget } from "@/components/shared/AttendancePunchWidget";
 import { useBranch } from "@/context/BranchContext";
 import { useSession } from "next-auth/react";
+import { LastFollowUpLine } from "@/components/shared/FollowUpDialog";
+import { LeadPipelineDialog, inLeadBucket, leadBucketCount, type LeadBucket } from "@/components/dashboard/LeadPipelineDialog";
 import { SalesmanDashboardView } from "@/components/dashboard/SalesmanDashboardView";
 import { CashHandoverCard } from "@/components/dashboard/CashHandoverCard";
 import { AuditLauncher } from "@/components/dashboard/AuditLauncher";
@@ -544,7 +546,9 @@ export default function DashboardPage() {
       notes: "Walk-in inquiry asking for HDFC bank instant discount",
     },
   ]);
-  const [leadTabFilter, setLeadTabFilter] = useState<"all" | "new" | "followup" | "converted">("all");
+  const [leadTabFilter, setLeadTabFilter] = useState<LeadBucket>("all");
+  // The pipeline bucket whose full lead list is open in a popup (tiles and tabs open it).
+  const [leadPopup, setLeadPopup] = useState<LeadBucket | null>(null);
   // Date-wise filter for the lead pipeline widget (empty = all dates)
   const [leadDateFilter, setLeadDateFilter] = useState<string>("");
   const [leadDateRange, setLeadDateRange] = useState<{ start: string; end: string }>({ start: "", end: "" });
@@ -3822,6 +3826,9 @@ export default function DashboardPage() {
                       <Badge className="bg-emerald-50 text-emerald-800 border-emerald-200 text-xs font-bold px-2 py-0.5 shrink-0">
                         {leadsInScope.filter(l => l.status === "Converted").length} Converted
                       </Badge>
+                      <Badge className="bg-rose-50 text-rose-700 border-rose-200 text-xs font-bold px-2 py-0.5 shrink-0">
+                        {leadBucketCount(leadsInScope, "lost")} Lost
+                      </Badge>
                     </h3>
                     <p className="text-xs text-slate-500 font-medium truncate">Enquiries, follow-up scheduler & counter conversion rate</p>
                   </div>
@@ -3872,28 +3879,32 @@ export default function DashboardPage() {
                 const convRate = totalLeads > 0 ? Math.round((converted / totalLeads) * 100) : 0;
                 const pipelineVal = scopedLeads.reduce((acc, l) => acc + (Number(l.estimatedValue) || 0), 0);
 
+                const newCount = leadBucketCount(scopedLeads, "new");
+                const lost = leadBucketCount(scopedLeads, "lost");
+                const tiles: { bucket: LeadBucket; label: string; value: string | number; sub: string; tone: string; text: string }[] = [
+                  { bucket: "all", label: "Total Leads", value: totalLeads, sub: indianNumberFormat(pipelineVal), tone: "bg-blue-50/60 border-blue-100 hover:bg-blue-100/70", text: "text-blue-700" },
+                  { bucket: "new", label: "New", value: newCount, sub: "Not contacted yet", tone: "bg-sky-50/60 border-sky-100 hover:bg-sky-100/70", text: "text-sky-700" },
+                  { bucket: "followup", label: "Follow-ups", value: followups, sub: "Active Action", tone: "bg-amber-50/60 border-amber-100 hover:bg-amber-100/70", text: "text-amber-700" },
+                  { bucket: "converted", label: "Converted", value: converted, sub: "Won & Billed", tone: "bg-emerald-50/60 border-emerald-100 hover:bg-emerald-100/70", text: "text-emerald-700" },
+                  { bucket: "lost", label: "Lost", value: lost, sub: totalLeads > 0 ? `${Math.round((lost / totalLeads) * 100)}% of leads` : "—", tone: "bg-rose-50/60 border-rose-100 hover:bg-rose-100/70", text: "text-rose-700" },
+                  { bucket: "converted", label: "Conv. Rate", value: `${convRate}%`, sub: "Funnel Win", tone: "bg-purple-50/60 border-purple-100 hover:bg-purple-100/70", text: "text-purple-700" },
+                ];
+
                 return (
                   <div className="grid grid-cols-2 gap-2 my-2.5">
-                    <div className="bg-blue-50/60 border border-blue-100 rounded-xl p-2 text-center">
-                      <p className="text-[10px] font-bold text-blue-700 uppercase">Total Leads</p>
-                      <p className="text-sm sm:text-sm font-black text-slate-900 font-mono">{totalLeads}</p>
-                      <p className="text-[9px] text-slate-500 font-medium">{indianNumberFormat(pipelineVal)}</p>
-                    </div>
-                    <div className="bg-amber-50/60 border border-amber-100 rounded-xl p-2 text-center">
-                      <p className="text-[10px] font-bold text-amber-700 uppercase">Follow-ups</p>
-                      <p className="text-sm sm:text-sm font-black text-amber-800 font-mono">{followups}</p>
-                      <p className="text-[9px] text-amber-600 font-semibold">Active Action</p>
-                    </div>
-                    <div className="bg-emerald-50/60 border border-emerald-100 rounded-xl p-2 text-center">
-                      <p className="text-[10px] font-bold text-emerald-700 uppercase">Converted</p>
-                      <p className="text-sm sm:text-sm font-black text-emerald-800 font-mono">{converted}</p>
-                      <p className="text-[9px] text-emerald-600 font-semibold">Won & Billed</p>
-                    </div>
-                    <div className="bg-purple-50/60 border border-purple-100 rounded-xl p-2 text-center">
-                      <p className="text-[10px] font-bold text-purple-700 uppercase">Conv. Rate</p>
-                      <p className="text-sm sm:text-sm font-black text-purple-900 font-mono">{convRate}%</p>
-                      <p className="text-[9px] text-purple-600 font-semibold">Funnel Win</p>
-                    </div>
+                    {tiles.map((t) => (
+                      <button
+                        key={t.label}
+                        type="button"
+                        onClick={() => { setLeadTabFilter(t.bucket); setLeadPopup(t.bucket); }}
+                        className={cn("border rounded-xl p-2 text-center transition-colors cursor-pointer", t.tone)}
+                        title={`Open ${t.label} leads`}
+                      >
+                        <p className={cn("text-[10px] font-bold uppercase", t.text)}>{t.label}</p>
+                        <p className="text-sm font-black text-slate-900 font-mono">{t.value}</p>
+                        <p className="text-[9px] text-slate-500 font-semibold truncate">{t.sub}</p>
+                      </button>
+                    ))}
                   </div>
                 );
               })()}
@@ -3909,10 +3920,11 @@ export default function DashboardPage() {
                       { key: "new", label: `🎯 New (${dateScopedLeads.filter(l => l.status === "New").length})` },
                       { key: "followup", label: `⏳ Follow-up (${dateScopedLeads.filter(l => l.status === "Follow-up" || l.status === "Interested" || l.status === "Contacted").length})` },
                       { key: "converted", label: `🏆 Converted (${dateScopedLeads.filter(l => l.status === "Converted").length})` },
+                      { key: "lost", label: `❌ Lost (${leadBucketCount(dateScopedLeads, "lost")})` },
                     ].map(tab => (
                       <button
                         key={tab.key}
-                        onClick={() => setLeadTabFilter(tab.key as any)}
+                        onClick={() => { setLeadTabFilter(tab.key as LeadBucket); setLeadPopup(tab.key as LeadBucket); }}
                         className={cn(
                           "px-2.5 py-0.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all",
                           leadTabFilter === tab.key
@@ -3930,12 +3942,7 @@ export default function DashboardPage() {
               {/* LEADS STREAM */}
               <div className="divide-y divide-slate-100 max-h-[225px] overflow-y-auto my-1.5 space-y-1">
                 {(() => {
-                  const filtered = leadsInScope.filter(l => {
-                    if (leadTabFilter === "new") return l.status === "New";
-                    if (leadTabFilter === "followup") return l.status === "Follow-up" || l.status === "Interested" || l.status === "Contacted";
-                    if (leadTabFilter === "converted") return l.status === "Converted";
-                    return true;
-                  });
+                  const filtered = leadsInScope.filter(l => inLeadBucket(l, leadTabFilter));
 
                   if (filtered.length === 0) {
                     return (
@@ -3959,8 +3966,9 @@ export default function DashboardPage() {
                           {lead.interestedProduct} {lead.estimatedValue > 0 && <span className="font-bold text-slate-900">· {indianNumberFormat(lead.estimatedValue)}</span>}
                         </p>
                         <p className="text-[10px] text-slate-400">
-                          Assigned: <span className="font-semibold text-slate-600">{lead.assignedStaff || "Sales Team"}</span> {lead.followUpDate ? `· Follow-up: ${lead.followUpDate}` : ""}
+                          Assigned: <span className="font-semibold text-slate-600">{lead.assignedStaff || "Sales Team"}</span> {lead.followUpDate ? `· Next: ${lead.followUpDate}` : ""}
                         </p>
+                        <LastFollowUpLine lead={lead} className="truncate" />
                       </div>
 
                       <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -4008,6 +4016,15 @@ export default function DashboardPage() {
                 Open Full CRM Leads <ArrowRight className="w-3 h-3" />
               </button>
             </div>
+            <LeadPipelineDialog
+              bucket={leadPopup}
+              onClose={() => setLeadPopup(null)}
+              leads={leadsInScope}
+              onStatusChange={handleUpdateLeadStatus}
+              onWhatsApp={handleLeadWhatsApp}
+              onLeadUpdated={(saved: any) => setLeads((prev) => prev.map((l) => (l._id === saved._id ? { ...l, ...saved } : l)))}
+              crmHref={canFilterLeadStaff && leadStaffFilter !== "all" && leadStaffFilter !== UNASSIGNED ? `/marketing/leads?staff=${encodeURIComponent(leadStaffFilter)}` : "/marketing/leads"}
+            />
           </div>
         </div>
       </div>

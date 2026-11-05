@@ -25,6 +25,10 @@ export interface ILineItem {
   incentiveType?: "none" | "fixed" | "percentage";
   incentiveValue?: number;
   incentiveEarned?: number;
+  /** The product's incentive rules as they stood when the line was billed (lib/incentive-rules.ts). */
+  incentiveRules?: any[];
+  /** The salesman this line's incentive goes to, when it is not the bill's Sales Executive (a shared lead). */
+  salesExecutive?: string;
   discount: number;
   discountType: "percent" | "amount";
   taxableAmount: number;
@@ -247,6 +251,8 @@ const LineItemSchema = new Schema({
   incentiveType: { type: String, default: "none" },
   incentiveValue: { type: Number, default: 0 },
   incentiveEarned: { type: Number, default: 0 },
+  incentiveRules: { type: [Schema.Types.Mixed], default: undefined },
+  salesExecutive: { type: String, default: "" },
   discount: { type: Number, default: 0 },
   discountType: { type: String, enum: ["percent", "amount"], default: "amount" },
   taxableAmount: { type: Number, required: true },

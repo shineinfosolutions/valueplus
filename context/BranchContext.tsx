@@ -77,7 +77,9 @@ export function BranchProvider({ children }: { children: React.ReactNode }) {
       const res = await fetch("/api/warehouses");
       const json = await res.json();
       if (json.success && Array.isArray(json.data) && json.data.length > 0) {
-        const apiLocations: BranchOrGodown[] = json.data.map((w: any) => ({
+        // A closed (inactive) location is never offered or kept as the selected one.
+        const active = json.data.filter((w: any) => w.status !== "inactive");
+        const apiLocations: BranchOrGodown[] = (active.length ? active : json.data).map((w: any) => ({
           id: w._id || w.id || w.code,
           name: w.name,
           code: w.code || "WH-01",

@@ -10,6 +10,7 @@ import { derivePanFromGstin } from "@/lib/gst";
 import { entityOf, entityLabel } from "@/lib/billing-entity";
 import { publishChange } from "@/lib/realtime";
 import { onsitegoIncentiveOf } from "@/lib/onsitego";
+import { stampLineIncentives } from "@/lib/incentive-server";
 
 /**
  * Full edit of a saved tax invoice from the billing form: products, rates,
@@ -510,6 +511,11 @@ export async function fullEditInvoice(
   if (update.customerGST) update.customerPAN = update.customerPAN || derivePanFromGstin(update.customerGST);
   update.items = await stampLineCosts(items, existing.items as any[]);
   update.onsitegoIncentive = onsitegoIncentiveOf(update.items);
+  {
+    const stamped = await stampLineIncentives(update.items, existing.items as any[], billDate);
+    update.items = stamped.items;
+    update.salesExecutiveIncentive = stamped.total;
+  }
   update.customerId = customerId;
   update.paymentMode = paymentMode;
   update.payments = splitRows.length > 0 ? splitRows : [];

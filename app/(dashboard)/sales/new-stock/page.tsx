@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { appConfirm, appPrompt } from "@/components/shared/AppDialogs";
 import { useSession } from "next-auth/react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageShell } from "@/components/shared/page-shell";
@@ -35,6 +36,15 @@ const STATUS_STYLE: Record<string, string> = {
 };
 
 const keyOf = (i: { itemCode: string; warehouse: string }) => `${i.itemCode}|${i.warehouse}`;
+
+/** "5 Nov 2026, 11:42 am" in India time. */
+const dateTime = (d: any) =>
+  d
+    ? new Date(d).toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" })
+    : "";
+/** Orders are cleared 7 days after they are placed (lib/stock-order-retention.ts). */
+const KEEP_DAYS = 7;
+const daysLeft = (createdAt: any) => Math.max(0, Math.ceil((new Date(createdAt).getTime() + KEEP_DAYS * 86400000 - Date.now()) / 86400000));
 
 export default function NewStockPage() {
   const { data: session } = useSession();
@@ -80,6 +90,9 @@ export default function NewStockPage() {
     },
   });
   const pendingCount = requests.filter((r) => r.status === "pending").length;
+  // A request folded into a combined order is not listed on its own: only the combined order shows.
+  const shownRequests = requests.filter((r) => r.status !== "merged");
+  const sourcesOf = (r: any) => requests.filter((x) => x.mergedInto && x.mergedInto === r.requestNumber);
 
   const brands = useMemo(() => [...new Set<string>(items.map((i) => i.brand).filter(Boolean))].sort(), [items]);
   const groups = useMemo(() => [...new Set<string>(items.map((i) => i.groupName).filter(Boolean))].sort(), [items]);
@@ -244,6 +257,10 @@ export default function NewStockPage() {
         setRejectReason("");
         toast.success(`${d.requestNumber} rejected.`);
       } else if (d._action === "cancel") toast.success(`${d.requestNumber} cancelled.`);
+      else if (d._action === "unmerge") {
+        toast.success(`Combined order undone. ${(d.restored || []).join(", ")} are waiting again.`);
+        queryClient.invalidateQueries({ queryKey: ["dashboard-stock-orders"] });
+      }
     },
     onError: (e: any) => toast.error(e.message),
   });
@@ -416,10 +433,13 @@ export default function NewStockPage() {
               </span>
             </div>
           )}
-          {requests.length === 0 ? (
+          <p className="text-[11px] text-slate-500">
+            Orders are cleared {KEEP_DAYS} days after they are placed. Waiting requests remind the Admin every day until then.
+          </p>
+          {shownRequests.length === 0 ? (
             <p className="py-10 text-center text-sm text-muted-foreground">No order requests yet.</p>
           ) : (
-            requests.map((r) => (
+            shownRequests.map((r) => (
               <div key={r._id} className="rounded-xl border border-slate-200 bg-white overflow-hidden">
                 <div className="px-4 py-3 flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/60">
                   {isAdmin && r.status === "pending" && (
@@ -436,7 +456,10 @@ export default function NewStockPage() {
                       <span className="font-mono">{r.requestNumber}</span> · <span className="text-[#30539C]">{r.salesperson}</span>
                     </p>
                     <p className="text-[11px] text-slate-500">
-                      {formatDate(r.createdAt)} · {r.items.length} product{r.items.length === 1 ? "" : "s"} · {r.totalQuantity} units
+                      Placed {dateTime(r.createdAt)} · {r.items.length} product{r.items.length === 1 ? "" : "s"} · {r.totalQuantity} units
+                    </p>
+                    <p className={cn("text-[10px]", r.status === "pending" && daysLeft(r.createdAt) <= 2 ? "text-rose-600 font-bold" : "text-slate-400")}>
+                      Cleared in {daysLeft(r.createdAt)} day{daysLeft(r.createdAt) === 1 ? "" : "s"}
                     </p>
                   </div>
                   <Badge variant="outline" className={STATUS_STYLE[r.status]}>{STATUS_LABEL[r.status] || r.status}</Badge>
@@ -461,10 +484,20 @@ export default function NewStockPage() {
                   <div className="px-4 py-2 text-[11px] text-slate-600 border-t border-slate-100 space-y-0.5">
                     {r.note && <p>Note: {r.note}</p>}
                     {r.rejectReason && <p className="text-red-700">Rejected by {r.rejectedBy}: {r.rejectReason}</p>}
-                    {r.approvedBy && <p>Approved by {r.approvedBy}</p>}
-                    {r.mergedFrom?.length > 0 && <p>Combined from {r.mergedFrom.join(", ")}</p>}
+                    {r.approvedBy && <p>Approved by {r.approvedBy}{r.approvedAt ? ` on ${dateTime(r.approvedAt)}` : ""}</p>}
+                    {r.mergedFrom?.length > 0 && (
+                      <p>
+                        Combined from{" "}
+                        {r.mergedFrom
+                          .map((no: string) => {
+                            const src = sourcesOf(r).find((x) => x.requestNumber === no);
+                            return src ? `${no} (${src.salesperson}, ${dateTime(src.createdAt)})` : no;
+                          })
+                          .join(", ")}
+                      </p>
+                    )}
                     {r.mergedInto && <p className="text-violet-700">Ordered as {r.mergedInto}</p>}
-                    {r.sentAt && <p>Sent on {formatDate(r.sentAt)} by {r.sentBy}</p>}
+                    {r.sentAt && <p>Sent on {dateTime(r.sentAt)} by {r.sentBy}</p>}
                   </div>
                 )}
                 <div className="px-4 py-2.5 flex flex-wrap justify-end gap-2 border-t border-slate-100">
@@ -475,6 +508,21 @@ export default function NewStockPage() {
                       </Button>
                       <Button size="sm" variant="outline" className="border-red-400 text-red-700" onClick={() => setRejecting(r)}>Reject</Button>
                     </>
+                  )}
+                  {isAdmin && r.status === "approved" && r.mergedFrom?.length > 0 && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-violet-300 text-violet-700"
+                      disabled={act.isPending}
+                      onClick={async () => {
+                        if (await appConfirm(`Undo ${r.requestNumber}? Its requests go back to waiting so you can add to them and combine again.`)) {
+                          act.mutate({ id: r._id, action: "unmerge" });
+                        }
+                      }}
+                    >
+                      Undo combine
+                    </Button>
                   )}
                   {isAdmin && (r.status === "approved" || r.status === "sent") && (
                     <Button

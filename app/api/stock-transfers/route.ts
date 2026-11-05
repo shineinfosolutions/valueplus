@@ -1,5 +1,6 @@
 import { deferIfManager } from "@/lib/deferred-actions";
 import { NextResponse } from "next/server";
+import mongoose from "mongoose";
 import connectToDatabase from "@/lib/db";
 import StockTransfer from "@/models/StockTransfer";
 import Warehouse from "@/models/Warehouse";
@@ -41,6 +42,29 @@ export async function POST(req: Request) {
 
     const fromWarehouseId = body.fromWarehouseId || (await resolveWarehouseId(body.fromWarehouse));
     const toWarehouseId = body.toWarehouseId || (await resolveWarehouseId(body.toWarehouse));
+    if (fromWarehouseId && toWarehouseId && String(fromWarehouseId) === String(toWarehouseId)) {
+      return NextResponse.json({ success: false, error: "Source and destination are the same." }, { status: 400 });
+    }
+
+    // Every line must be a real product with enough stock at the source location.
+    const lines: any[] = Array.isArray(body.items) ? body.items : [];
+    if (lines.length === 0) return NextResponse.json({ success: false, error: "Add at least one product." }, { status: 400 });
+    for (const line of lines) {
+      const qty = Number(line.quantity) || 0;
+      const product: any = mongoose.isValidObjectId(line.itemId) ? await Item.findById(line.itemId, { name: 1, stockByWarehouse: 1 }).lean() : null;
+      if (!product) return NextResponse.json({ success: false, error: `"${line.itemName || line.name || "A product"}" is not in the product list.` }, { status: 400 });
+      if (!(qty > 0)) return NextResponse.json({ success: false, error: `Enter a quantity for ${product.name}.` }, { status: 400 });
+      if (fromWarehouseId) {
+        const have = Number((product.stockByWarehouse || []).find((e: any) => String(e.warehouseId) === String(fromWarehouseId))?.qty) || 0;
+        if (qty > have) {
+          return NextResponse.json(
+            { success: false, error: `Only ${have} of ${product.name} are at ${body.fromWarehouse || "the source"}.` },
+            { status: 400 }
+          );
+        }
+      }
+      line.itemName = line.itemName || product.name;
+    }
 
     // Snapshot each item's cost price at transfer time — this is an internal
     // stock move, not a sale, so it's priced at cost, never at a selling price.

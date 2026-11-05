@@ -1,5 +1,6 @@
 "use client";
 import { PageShell } from "@/components/shared/page-shell";
+import { appConfirm, appPrompt } from "@/components/shared/AppDialogs";
 import { Button } from "@/components/ui/button";
 import { Plus, Layers } from "lucide-react";
 import { useState, useEffect } from "react";
@@ -36,7 +37,7 @@ export default function VariantsPage() {
   }, []);
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this variant?")) return;
+    if (!(await appConfirm("Are you sure you want to delete this variant?"))) return;
     try {
       const res = await fetch(`/api/variants?id=${id}`, { method: "DELETE" });
       const json = await res.json();

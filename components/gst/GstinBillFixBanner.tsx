@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { appConfirm, appPrompt } from "@/components/shared/AppDialogs";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
@@ -79,7 +80,7 @@ export function GstinBillFixBanner() {
               <b>{unmarked.length} product{unmarked.length === 1 ? "" : "s"}</b> already have GST inside their purchase price ({unmarked.map((i) => i.name).slice(0, 3).join(", ")}
               {unmarked.length > 3 ? "..." : ""}). Profit adds GST to every other product's cost; mark these so theirs is left as it is.
             </p>
-            <Button size="sm" disabled={markFlags.isPending} onClick={() => { if (window.confirm(`Mark ${unmarked.length} product(s) as purchase price GST included?`)) markFlags.mutate(); }}>
+            <Button size="sm" disabled={markFlags.isPending} onClick={async () => { if (await appConfirm(`Mark ${unmarked.length} product(s) as purchase price GST included?`)) markFlags.mutate(); }}>
               {markFlags.isPending ? "Marking..." : "Leave these as they are"}
             </Button>
           </div>
@@ -95,7 +96,7 @@ export function GstinBillFixBanner() {
             </p>
             <div className="flex gap-2">
               <Button size="sm" variant="outline" onClick={() => setOpenItems((o) => !o)}>{openItems ? "Hide list" : "Show products"}</Button>
-              <Button size="sm" disabled={fixItems.isPending} onClick={() => { if (window.confirm(`Set ${items.data.newRate}% GST on ${itemCount} product(s)?`)) fixItems.mutate(); }}>
+              <Button size="sm" disabled={fixItems.isPending} onClick={async () => { if (await appConfirm(`Set ${items.data.newRate}% GST on ${itemCount} product(s)?`)) fixItems.mutate(); }}>
                 {fixItems.isPending ? "Fixing..." : `Set ${items.data.newRate}% GST`}
               </Button>
             </div>
@@ -132,7 +133,7 @@ export function GstinBillFixBanner() {
                 size="sm"
                 disabled={fixBills.isPending || itemCount > 0}
                 title={itemCount > 0 ? "Fix the products first (Step 1)" : ""}
-                onClick={() => { if (window.confirm(`Fix the GST on ${billCount} bill(s)? The bill totals do not change.`)) fixBills.mutate(); }}
+                onClick={async () => { if (await appConfirm(`Fix the GST on ${billCount} bill(s)? The bill totals do not change.`)) fixBills.mutate(); }}
               >
                 {fixBills.isPending ? "Fixing..." : "Fix GST on these bills"}
               </Button>

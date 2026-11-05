@@ -86,21 +86,21 @@
 
 ## 7. Cloudflare Deployment (Workers + OpenNext)
 - **Live site**: https://valuplus.shineinfosolutions.in — Worker `valueplus-erp` (custom domain).
-- **Staging (test copy)**: https://valueplus-erp-staging.shineinfosolutions1.workers.dev — Worker `valueplus-erp-staging`. Uses its **own test database `valueplus_staging`** (secret `MONGODB_DB=valueplus_staging`), so testing there never touches live data.
+- **Staging**: removed on 2026-11-05 at the owner's request (Worker `valueplus-erp-staging` deleted, `env.staging` taken out of `wrangler.jsonc`). The old test database `valueplus_staging` and R2 bucket `valueplus-delivery-proofs-staging` were left in place (data, not deleted).
 - **Refresh the staging data**: `node scripts/copy-db-to-staging.mjs` (drops and re-copies `valueplus` → `valueplus_staging`; never writes to live). In the staging copy the `admin` user's own Security PIN is cleared so the old shared test PIN works.
 - **Database name**: `lib/db.ts` reads `MONGODB_DB` (default `valueplus`). Production secret `MONGODB_DB=valueplus` was set explicitly on 2026-10-26.
 - **Cloudflare account**: shineinfosolutions1@gmail.com, **Workers Paid plan required** (bundle is ~4.8 MB gzip; Free plan limit is 3 MB).
 - **Adapter**: `@opennextjs/cloudflare` (needs Next.js >= 15.5.28; project is on `next@15.5.28`).
 - **Config files**:
-  - `wrangler.jsonc` — top level = production (custom domain route, `NEXTAUTH_URL`), `env.staging` = staging (`routes: []` so it can never take the live domain).
+  - `wrangler.jsonc` — production only (custom domain route, `NEXTAUTH_URL`).
   - `open-next.config.ts` — OpenNext config.
   - `worker.ts` — Worker entry: wraps `.open-next/worker.js`, blocks maintenance routes, closes the per-request DB client, and exports a stub `AppServer` Durable Object (kept only because an older deployment used it; removing it breaks deploys/rollback).
 - **Secrets** (set with `npx wrangler secret bulk <file.json>` [`--env staging`]): `MONGODB_URI`, `MONGODB_DB`, `NEXTAUTH_SECRET`, `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`. Values come from `.env.local` — **strip the surrounding quotes** (quoted values broke `MONGODB_URI` once).
 - **Local Workers preview**: `.dev.vars` (copy of `.env.local`, gitignored) then `npx wrangler dev`.
-- **Deploy steps (always staging first)**:
-  1. `npx opennextjs-cloudflare build`
-  2. `npx opennextjs-cloudflare deploy --env staging` → test login + main APIs on staging
-  3. `npx opennextjs-cloudflare deploy --env=""` → production
+- **Deploy steps** (no staging any more):
+  1. `npx opennextjs-cloudflare build` (stop a running `next dev` first — both use `.next`)
+  2. `npx opennextjs-cloudflare deploy` → production
+  3. Check the live login page and a few pages
   4. Rollback if needed: `npx wrangler rollback --name valueplus-erp`
 
 ## 8. MongoDB on Cloudflare (per-request connection)
@@ -553,3 +553,5 @@
 - **2026-11-03** — Customer advance: reason asked and shown (list, receipt, WhatsApp, export); Print Receipt prints only the receipt; Received by from the login; India time on the receipt. See section 37. Built, not deployed.
 - **2026-11-03** — Receive Payment: reason required for customer payments, receipt opens after saving (print / WhatsApp, shows the advance left for the next bill), Receipt button and reason on the payments list. See section 38. Built, not deployed.
 - **2026-11-03** — Onsitego price list is now the PDF (153 plans with VP Codes read on upload to On Site Go; replaces the Excel reader); bill shows every fitting plan by section with VP Code; On Site Go folder open to every staff role. See section 33. Built, not deployed.
+- **2026-11-05** — Large batch (one session). **Incentives**: several rules per product (₹ and/or %, min. price, dates; `lib/incentive-rules.ts`), worked out on the server and frozen on each bill line; salesman dashboard "Incentive Plan" card; 🎁 quick editor on Items (Admin / Manager / Cashier); Sales Incentives shows the products sold per bill and the invoice number opens the bill. **Discount bands**: ≤5% salesman himself, 5–10% Cashier, 10–12% Manager, >12% Admin only (`lib/discount-approval.ts`). **Lead pipeline**: every tile/tab opens a list popup, new Lost bucket; follow-up outcomes (call not received …) and notes shown everywhere (`lib/lead-outcomes.ts`); lead share to another brand's salesman with accept/reject, and per-line salesman on bills so each product's incentive goes to its brand's salesman (`lib/lead-share.ts`, `lib/incentive-split.ts`). **Delivery challan**: Supplier/Customer Return claims stay Pending and are settled as CR (supplier credit → debit note in his ledger) or PR (replacement), with stock and serial moves (`lib/challan-claims.ts`); driver from the Delivery Boy list with name, vehicle and mobile. **GIDA orders**: time shown, combined order hides its sources, Undo combine, daily 10:00 reminder for pending orders and 7-day clear-out (`/api/cron/stock-orders`), WhatsApp message = model, VP code, qty. **VP codes**: the supplier invoice's real code becomes the product's VP code (64 products back-filled on live). **Godown hub**: real transfers/challans (the tabs showed fixed demo rows), stock per location, Showroom Summary tab, new transfer form with VP-code search and source stock check. **Locations**: only Ashoka Enterprises (default) and MMUT active; Main Central / North / South made inactive; Main Central's 1 mobile moved to Ashoka (STR-2026-3123-663). **Attendance**: late check-in is a Half-Day only for Manager and Cashier. **Staff names**: renaming a user carries the new name to old bills/leads/attendance (`lib/staff-rename.ts`); DHANAJAY → DHANANJAY bill fixed. **App dialogs**: window.confirm/prompt (silently "Cancel" in the Android app) replaced by `appConfirm` / `appPrompt` in 23 places — staff delete works again. **Invoice/estimate**: fit to phone width with Zoom, real A4 PDF download with margins, print scaled to A4. **Products**: default unit NOS.
+- **2026-11-05** — Deployed to production (version c1cc84bb) with the whole 2026-11-05 batch. Staging Worker deleted and `env.staging` removed from `wrangler.jsonc` at the owner's request; staging database / R2 bucket kept.

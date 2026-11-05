@@ -4,6 +4,10 @@ import { BrandSalesCard } from "@/components/shared/BrandSalesCard";
 import { StockOrdersCard } from "@/components/dashboard/StockOrdersCard";
 import { TargetProgress } from "@/components/staff/TargetProgress";
 import { MyIncentiveCard } from "@/components/staff/MyIncentiveCard";
+import { IncentivePlanCard } from "@/components/staff/IncentivePlanCard";
+import { FollowUpDialog, LastFollowUpLine } from "@/components/shared/FollowUpDialog";
+import { shareOf } from "@/lib/incentive-split";
+import { LeadPipelineDialog, LEAD_BUCKETS, leadBucketCount, type LeadBucket } from "@/components/dashboard/LeadPipelineDialog";
 import React, { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { 
@@ -41,6 +45,29 @@ export function SalesmanDashboardView({ session }: { session: any }) {
   const [periodTab, setPeriodTab] = useState<"today" | "yesterday" | "week" | "month" | "all" | "custom">("today");
   const [customDate, setCustomDate] = useState(() => todayInIndia());
   const [viewInvoice, setViewInvoice] = useState<any | null>(null);
+  // Lead pipeline bucket open in a popup (New / Follow-up / Converted / Lost).
+  const [leadPopup, setLeadPopup] = useState<LeadBucket | null>(null);
+  const [followUpLead, setFollowUpLead] = useState<any | null>(null);
+  const updateLeadStatus = async (id: string, status: string) => {
+    try {
+      const res = await fetch("/api/crm/leads", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, status, actionNote: `Status updated to ${status}` }),
+      });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || "Could not update the lead");
+      refetchLeads();
+    } catch (e: any) {
+      toast.error(e.message || "Could not update the lead");
+    }
+  };
+  const leadWhatsApp = (lead: any) => {
+    const clean = String(lead.mobile || "").replace(/\D/g, "");
+    const phone = clean.length === 10 ? `91${clean}` : clean;
+    const msg = encodeURIComponent(`Hello ${lead.customerName}, this is from Value Plus / Ashoka Enterprises, Gorakhpur regarding your enquiry for ${lead.interestedProduct || "our products"}.`);
+    window.open(`https://wa.me/${phone}?text=${msg}`, "_blank");
+  };
 
   // 1. Fetch Invoices from MongoDB
   const { data: invoices = [], isLoading: isLoadingInvoices } = useQuery({
@@ -63,7 +90,7 @@ export function SalesmanDashboardView({ session }: { session: any }) {
   });
 
   // 3. Fetch Assigned Leads
-  const { data: leads = [] } = useQuery({
+  const { data: leads = [], refetch: refetchLeads } = useQuery({
     queryKey: ["salesman-leads"],
     queryFn: async () => {
       const res = await fetch("/api/crm/leads");
@@ -104,7 +131,8 @@ export function SalesmanDashboardView({ session }: { session: any }) {
 
       // Filter by salesman match (or fallback if store bills)
       // Only the bills made under this salesperson's own name.
-      const isMyInvoice = normName(inv.salesExecutive) === me;
+      // His own bills, and bills where some lines are his (a lead shared with him).
+      const isMyInvoice = normName(inv.salesExecutive) === me || !!shareOf(inv, userName);
 
       if (!isMyInvoice) return false;
 
@@ -128,7 +156,7 @@ export function SalesmanDashboardView({ session }: { session: any }) {
       (inv: any) =>
         inv.type !== "credit-note" &&
         inv.status !== "cancelled" &&
-        normName(inv.salesExecutive) === me &&
+        (normName(inv.salesExecutive) === me || !!shareOf(inv, userName)) &&
         (inv.date ? new Date(inv.date).toISOString().split("T")[0] : "") === today
     );
   }, [invoices, userName]);
@@ -155,10 +183,8 @@ export function SalesmanDashboardView({ session }: { session: any }) {
   }, [filteredInvoices]);
 
   const periodIncentivesEarned = useMemo(() => {
-    return filteredInvoices.reduce((sum: number, inv: any) => {
-      const itemsIncentive = inv.items?.reduce((itemSum: number, item: any) => itemSum + (Number(item.incentiveEarned) || 0), 0) || 0;
-      return sum + itemsIncentive + (Number(inv.salesExecutiveIncentive) || 0) + (Number(inv.onsitegoIncentive) || 0);
-    }, 0);
+    // His part of each bill (the whole bill's incentive on his own bills; his lines' on a shared one).
+    return filteredInvoices.reduce((sum: number, inv: any) => sum + (shareOf(inv, userName)?.total || 0), 0);
   }, [filteredInvoices]);
 
   const targetPercentage = Math.round((completedSalesTotal / targetConfig.targetAmount) * 100);
@@ -224,12 +250,22 @@ export function SalesmanDashboardView({ session }: { session: any }) {
                         <p className="text-xs text-slate-500 truncate">
                           {l.interestedProduct || "Lead"} · <span className={l.followUpDate < today ? "text-rose-700 font-bold" : ""}>{l.followUpDate < today ? `overdue ${l.followUpDate}` : "today"}</span>
                         </p>
+                        <LastFollowUpLine lead={l} />
                       </div>
-                      {l.mobile && (
-                        <a href={telHref(l.mobile)} className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-600 text-white text-[11px] font-bold no-underline">
-                          <Phone className="w-3 h-3" /> Call
-                        </a>
-                      )}
+                      <div className="shrink-0 flex items-center gap-1">
+                        {l.mobile && (
+                          <a href={telHref(l.mobile)} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-600 text-white text-[11px] font-bold no-underline">
+                            <Phone className="w-3 h-3" /> Call
+                          </a>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setFollowUpLead(l)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500 text-white text-[11px] font-bold"
+                        >
+                          <Clock className="w-3 h-3" /> Note
+                        </button>
+                      </div>
                     </div>
                   ))}
                   {callList.length > 6 && <p className="text-xs text-slate-500">+{callList.length - 6} more in Leads</p>}
@@ -250,9 +286,25 @@ export function SalesmanDashboardView({ session }: { session: any }) {
                 <p className="text-xs text-slate-500">from my bills</p>
               </div>
               <div className="bg-white rounded-2xl p-3 border border-slate-200 shadow-sm">
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1"><Sparkles className="w-3.5 h-3.5 text-amber-500" /> My leads</p>
-                <p className="text-2xl font-black text-slate-900 mt-0.5">{leads.length}</p>
-                <p className="text-xs text-slate-500"><span className="font-bold text-slate-700">{openLeads.length}</span> open · {leads.filter((l: any) => l.status === "Converted").length} converted</p>
+                <button type="button" onClick={() => setLeadPopup("all")} className="w-full text-left">
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1"><Sparkles className="w-3.5 h-3.5 text-amber-500" /> My leads</p>
+                  <p className="text-2xl font-black text-slate-900 mt-0.5">{leads.length}</p>
+                </button>
+                {/* Each bucket opens its own list */}
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {LEAD_BUCKETS.filter((b) => b.key !== "all").map((b) => (
+                    <button
+                      key={b.key}
+                      type="button"
+                      onClick={() => setLeadPopup(b.key)}
+                      className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md border ${
+                        b.key === "lost" ? "bg-rose-50 text-rose-700 border-rose-200" : b.key === "converted" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : b.key === "followup" ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-blue-50 text-blue-700 border-blue-200"
+                      }`}
+                    >
+                      {b.label} {leadBucketCount(leads, b.key)}
+                    </button>
+                  ))}
+                </div>
               </div>
               <Link href="/staff/tasks" className={`rounded-2xl p-3 border shadow-sm block no-underline ${pendingTasks.length > 0 ? "bg-rose-50 border-rose-200" : "bg-white border-slate-200"}`}>
                 <p className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1"><CheckSquare className="w-3.5 h-3.5 text-rose-600" /> Pending tasks</p>
@@ -268,6 +320,9 @@ export function SalesmanDashboardView({ session }: { session: any }) {
 
             {/* Incentive: tap to see the bills and payouts behind it */}
             <MyIncentiveCard />
+
+            {/* Incentive plan: every running product incentive (₹ / %), tap for the product-wise list */}
+            <IncentivePlanCard />
 
             {/* Own brand against other brands (pieces only) */}
             <BrandSalesCard />
@@ -524,7 +579,7 @@ export function SalesmanDashboardView({ session }: { session: any }) {
                 </tr>
               ) : (
                 filteredInvoices.map((inv: any) => {
-                  const incAmount = (Number(inv.salesExecutiveIncentive) || 0) + (Number(inv.onsitegoIncentive) || 0);
+                  const incAmount = shareOf(inv, userName)?.total || 0;
                   return (
                     <tr key={inv._id || inv.id} className="hover:bg-slate-50 transition-colors">
                       <td className="p-3 font-mono font-bold text-[#30539C]">
@@ -702,6 +757,15 @@ export function SalesmanDashboardView({ session }: { session: any }) {
       </div>
 
       {/* INVOICE PREVIEW MODAL */}
+      <FollowUpDialog lead={followUpLead} onClose={() => setFollowUpLead(null)} onSaved={() => refetchLeads()} />
+      <LeadPipelineDialog
+        bucket={leadPopup}
+        onClose={() => setLeadPopup(null)}
+        leads={leads}
+        onStatusChange={updateLeadStatus}
+        onWhatsApp={leadWhatsApp}
+  onLeadUpdated={() => refetchLeads()}
+      />
       <Dialog open={!!viewInvoice} onOpenChange={() => setViewInvoice(null)}>
         <DialogContent className="max-w-4xl p-0 overflow-y-auto rounded-2xl max-h-[90vh] overflow-y-auto">
           {viewInvoice && <ValueplusInvoice invoiceData={viewInvoice} onBack={() => setViewInvoice(null)} />}

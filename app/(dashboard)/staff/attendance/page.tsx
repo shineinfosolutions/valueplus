@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
+import { appConfirm, appPrompt } from "@/components/shared/AppDialogs";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageShell } from "@/components/shared/page-shell";
 import { Input } from "@/components/ui/input";
@@ -281,7 +282,7 @@ export default function StaffAttendancePage() {
               </Badge>
             </div>
             <p className="text-xs text-slate-300">
-              📌 <strong>Shift Rules:</strong> Check-in after {shiftForm.startTime} (+{shiftForm.lateGraceMinutes}m grace) is marked <strong>Late</strong>. Check-in after {shiftForm.halfDayLateCutoff} or early checkout before {shiftForm.minHoursForFullDay} hrs automatically registers as <strong className="text-amber-400">Half-Day</strong>.
+              📌 <strong>Shift Rules:</strong> Check-in after {shiftForm.startTime} (+{shiftForm.lateGraceMinutes}m grace) is marked <strong>Late</strong>. Check-in after {shiftForm.halfDayLateCutoff} is a <strong className="text-amber-400">Half-Day</strong> only for the Store Manager and Cashier (salesmen and others stay <strong>Late</strong>). Leaving before the shift ends is a Half-Day for everyone.
             </p>
           </div>
 
@@ -756,8 +757,8 @@ export default function StaffAttendancePage() {
                             <Button
                               size="sm"
                               variant="ghost"
-                              onClick={() => {
-                                if (confirm(`Delete attendance record for ${rec.staffName} on ${rec.date}?`)) {
+                              onClick={async () => {
+                                if (await appConfirm(`Delete attendance record for ${rec.staffName} on ${rec.date}?`)) {
                                   deleteMutation.mutate(rec._id);
                                 }
                               }}
@@ -842,7 +843,7 @@ export default function StaffAttendancePage() {
                   onChange={(e) => setShiftForm({ ...shiftForm, halfDayLateCutoff: e.target.value })}
                   className="h-9 mt-1 text-xs font-mono font-bold"
                 />
-                <p className="text-[10px] text-slate-400 mt-0.5">Check-in past this = Half-Day</p>
+                <p className="text-[10px] text-slate-400 mt-0.5">Check-in past this = Half-Day (Manager &amp; Cashier only)</p>
               </div>
             </div>
 

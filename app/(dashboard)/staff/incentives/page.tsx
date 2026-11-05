@@ -1,6 +1,25 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
+import { incentiveShares, shareOf } from "@/lib/incentive-split";
+import { normPerson } from "@/lib/lead-share";
+import { isOnsitego, ONSITEGO_INCENTIVE_RATE } from "@/lib/onsitego";
+
+/** One product line of a bill as this screen shows it: what was sold, for how much, and the incentive on it. */
+function lineView(inv: any, l: any) {
+  const qty = Number(l.quantity ?? l.qty) || 1;
+  const amount = Number(l.amount) || Math.max(0, ((Number(l.rate) || 0) - (Number(l.discount) || 0)) * qty);
+  const onsitego = isOnsitego(l.extendedWarrantyProvider) ? (Number(l.extendedWarrantyAmount) || 0) * ONSITEGO_INCENTIVE_RATE : 0;
+  return {
+    name: l.itemName || l.name || "Product",
+    code: l.vpCode || l.itemCode || "",
+    qty,
+    amount,
+    incentive: (Number(l.incentiveEarned) || 0) + onsitego,
+    warranty: Number(l.extendedWarrantyAmount) > 0 ? `${l.extendedWarrantyProvider || "Warranty"} ₹${Number(l.extendedWarrantyAmount).toLocaleString("en-IN")}` : "",
+    salesman: String(l.salesExecutive || inv.salesExecutive || ""),
+  };
+}
 import { PageShell } from "@/components/shared/page-shell";
 import { useQuery } from "@tanstack/react-query";
 import { 
@@ -51,7 +70,9 @@ export default function SalesIncentivesPage() {
 
     invoices.forEach((inv: any) => {
       if (inv.type === "credit-note") return; // exclude credit notes
-      const exec = (inv.salesExecutive || "Counter / Direct").trim();
+      // One row per salesman with a part in the bill (a shared lead's bill has more than one).
+      for (const share of incentiveShares(inv)) {
+      const exec = (share.name || "Counter / Direct").trim();
 
       // If individual salesman, skip invoices not belonging to them
       if (isIndividualSalesman) {
@@ -72,15 +93,12 @@ export default function SalesIncentivesPage() {
         };
       }
 
-      const invIncentive = (Number(inv.salesExecutiveIncentive) || 0) + (Number(inv.onsitegoIncentive) || 0);
-      const invTotal = Number(inv.total) || 0;
-      const units = (inv.items || []).reduce((acc: number, it: any) => acc + (Number(it.quantity) || 1), 0);
-
       map[exec].totalInvoices += 1;
-      map[exec].totalSales += invTotal;
-      map[exec].totalUnits += units;
-      map[exec].totalIncentive += invIncentive;
+      map[exec].totalSales += share.amount;
+      map[exec].totalUnits += share.units;
+      map[exec].totalIncentive += share.total;
       map[exec].invoices.push(inv);
+      }
     });
 
     return Object.values(map).sort((a, b) => b.totalIncentive - a.totalIncentive);
@@ -95,20 +113,29 @@ export default function SalesIncentivesPage() {
       const cust = (inv.customerName || "").toLowerCase();
       const q = search.toLowerCase();
 
-      // If individual salesman, only return their invoices
-      if (isIndividualSalesman) {
+      // If individual salesman, only return the bills he has a part in (his own, or his lines on a shared bill)
+      if (isIndividualSalesman && !shareOf(inv, currentUserName)) {
         const firstName = currentUserName.toLowerCase().split(" ")[0];
         if (!exec.includes(firstName) && exec !== currentUserName.toLowerCase()) {
           return false;
         }
       }
 
-      const matchesSearch = !search || exec.includes(q) || num.includes(q) || cust.includes(q);
-      const matchesStaff = selectedStaff === "all" || (inv.salesExecutive || "Counter / Direct") === selectedStaff;
+      const people = incentiveShares(inv).map((sh) => sh.name || "Counter / Direct");
+      const matchesSearch = !search || exec.includes(q) || num.includes(q) || cust.includes(q) || people.some((n) => n.toLowerCase().includes(q));
+      const matchesStaff = selectedStaff === "all" || people.includes(selectedStaff);
       
       return matchesSearch && matchesStaff;
     });
   }, [invoices, search, selectedStaff, isIndividualSalesman, currentUserName]);
+
+  // A bill's incentive as this screen shows it: the salesman's own part for him (or the chosen staff's part), the whole
+  // bill's incentive otherwise.
+  const billIncentiveFor = (inv: any) => {
+    const who = isIndividualSalesman ? currentUserName : selectedStaff !== "all" ? selectedStaff : "";
+    if (who) return shareOf(inv, who)?.total ?? 0;
+    return incentiveShares(inv).reduce((t, sh) => t + sh.total, 0);
+  };
 
   // Overall KPIs
   const totalIncentivePaid = useMemo(() => {
@@ -141,8 +168,9 @@ export default function SalesIncentivesPage() {
             Date: formatDate(inv.date),
             SalesExecutive: inv.salesExecutive || "N/A",
             CustomerName: inv.customerName,
+            ProductsSold: (inv.items || []).map((l: any) => { const v = lineView(inv, l); return `${v.name} x${v.qty} (Rs ${Math.round(v.amount)})`; }).join("; "),
             TotalBillAmount: inv.total,
-            SalespersonIncentive: (Number(inv.salesExecutiveIncentive) || 0) + (Number(inv.onsitegoIncentive) || 0),
+            SalespersonIncentive: billIncentiveFor(inv),
             OnsitegoIncentive: Number(inv.onsitegoIncentive) || 0,
             AdminPINUsed: inv.adminOverridePinUsed ? "YES" : "NO",
             PaymentMode: inv.paymentMode
@@ -291,6 +319,7 @@ export default function SalesIncentivesPage() {
               <tr>
                 <th className="p-3 text-left">Invoice No & Date</th>
                 <th className="p-3 text-left">Customer Name</th>
+                <th className="p-3 text-left">Products Sold (Qty · Amount · Incentive)</th>
                 {!isIndividualSalesman && <th className="p-3 text-left">Sales Executive</th>}
                 <th className="p-3 text-right">Invoice Total (₹)</th>
                 <th className="p-3 text-center">Floor-Price Override</th>
@@ -300,10 +329,10 @@ export default function SalesIncentivesPage() {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {isLoading ? (
-                <tr><td colSpan={7} className="p-0"><TableShimmer rows={6} cols={7} /></td></tr>
+                <tr><td colSpan={8} className="p-0"><TableShimmer rows={6} cols={8} /></td></tr>
               ) : filteredInvoices.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="p-8 text-center text-slate-400">
+                  <td colSpan={8} className="p-8 text-center text-slate-400">
                     <Award className="w-8 h-8 mx-auto text-amber-500 mb-1 opacity-60" />
                     <p className="font-bold text-slate-700">No Invoices Found</p>
                     <p className="text-[11px] text-slate-400">Invoices billed with this salesperson will appear here with calculated incentives.</p>
@@ -311,11 +340,18 @@ export default function SalesIncentivesPage() {
                 </tr>
               ) : (
                 filteredInvoices.map((inv: any) => {
-                  const incAmount = (Number(inv.salesExecutiveIncentive) || 0) + (Number(inv.onsitegoIncentive) || 0);
+                  const incAmount = billIncentiveFor(inv);
                   return (
                     <tr key={inv._id || inv.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="p-3 font-mono font-bold text-[#30539C]">
-                        {inv.invoiceNumber}
+                      <td className="p-3 font-mono font-bold">
+                        <button
+                          type="button"
+                          onClick={() => setViewInvoice(inv)}
+                          className="text-[#30539C] underline decoration-dotted underline-offset-2 hover:decoration-solid"
+                          title="Open this invoice"
+                        >
+                          {inv.invoiceNumber}
+                        </button>
                         <span className="block text-[10px] font-sans font-normal text-slate-400">{formatDate(inv.date)}</span>
                       </td>
 
@@ -324,6 +360,28 @@ export default function SalesIncentivesPage() {
                         {inv.customerPhone && (
                           <span className="block text-[10px] text-slate-400 font-mono">+91 {inv.customerPhone}</span>
                         )}
+                      </td>
+
+                      <td className="p-3 min-w-[260px]">
+                        {(inv.items || []).map((l: any, k: number) => {
+                          const v = lineView(inv, l);
+                          const who = isIndividualSalesman ? currentUserName : selectedStaff !== "all" ? selectedStaff : "";
+                          const notMine = !!who && normPerson(v.salesman) !== normPerson(who);
+                          return (
+                            <div key={k} className={cn("py-0.5", notMine && "opacity-50")}>
+                              <p className="text-[11px] font-semibold text-slate-800 leading-snug">
+                                {v.name} <span className="font-mono text-slate-500">× {v.qty}</span>
+                              </p>
+                              <p className="text-[10px] text-slate-500">
+                                {v.code && <span className="font-mono">{v.code} · </span>}
+                                {formatCurrency(v.amount)}
+                                {v.incentive > 0 && <span className="text-emerald-700 font-bold"> · +{formatCurrency(v.incentive)}</span>}
+                                {v.warranty && <span> · {v.warranty}</span>}
+                                {notMine && <span className="text-indigo-600"> · {v.salesman}&apos;s</span>}
+                              </p>
+                            </div>
+                          );
+                        })}
                       </td>
 
                       {!isIndividualSalesman && (

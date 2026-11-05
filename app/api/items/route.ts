@@ -5,6 +5,7 @@ import connectToDatabase from "@/lib/db";
 import Item from "@/models/Item";
 import Invoice from "@/models/Invoice";
 import { getActor } from "@/lib/requirePermission";
+import { cleanRules, flatFieldsFor } from "@/lib/incentive-rules";
 
 export async function GET(req: Request) {
   try {
@@ -114,6 +115,11 @@ export async function POST(req: Request) {
     delete payload.lockedMinPrice;
     delete payload.priceLockedBy;
     delete payload.priceLockedAt;
+    // Incentive rules are cleaned here; the flat single-rule fields always follow them.
+    if (Array.isArray(payload.incentives)) {
+      payload.incentives = cleanRules(payload.incentives);
+      Object.assign(payload, flatFieldsFor(payload.incentives));
+    }
 
     // Check if item exists by exact name (case-insensitive)
     // Escape regex characters in payload.name just in case
@@ -191,6 +197,11 @@ export async function PUT(req: Request) {
     delete payload.lockedMinPrice;
     delete payload.priceLockedBy;
     delete payload.priceLockedAt;
+    // Incentive rules are cleaned here; the flat single-rule fields always follow them.
+    if (Array.isArray(payload.incentives)) {
+      payload.incentives = cleanRules(payload.incentives);
+      Object.assign(payload, flatFieldsFor(payload.incentives));
+    }
 
     if (!payload.code) {
       return NextResponse.json({ success: false, error: "Item code is required for update" }, { status: 400 });

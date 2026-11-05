@@ -3,7 +3,12 @@
  * Prints any DOM element in complete isolation using a hidden iframe
  * Guarantees zero blank pages, zero background dashboard bleeding, and exact styling.
  */
-export function printElement(element: HTMLElement, title?: string) {
+/**
+ * `opts.pageWidthPx`: the document is laid out at this width on screen (the A4 invoice is 860px). It is printed at
+ * that same layout and scaled to the A4 width inside the margins, instead of being squeezed into the page and
+ * re-wrapped; a document a little taller than one page (up to 25% more) is shrunk to fit one sheet.
+ */
+export function printElement(element: HTMLElement, title?: string, opts: { pageWidthPx?: number } = {}) {
   if (typeof window === "undefined" || !element) return;
 
   // Clone element and remove interactive buttons or hidden UI
@@ -43,8 +48,9 @@ export function printElement(element: HTMLElement, title?: string) {
         <style>
           @page {
             size: A4 portrait;
-            margin: 6mm 8mm;
+            margin: 8mm;
           }
+          tr, img, .avoid-break { break-inside: avoid; page-break-inside: avoid; }
           * {
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
@@ -64,7 +70,7 @@ export function printElement(element: HTMLElement, title?: string) {
         </style>
       </head>
       <body>
-        <div style="width: 100%; max-width: 100%; margin: 0 auto; padding: 0;">
+        <div id="print-root" style="width: 100%; max-width: 100%; margin: 0 auto; padding: 0;">
           ${cloned.outerHTML}
         </div>
       </body>
@@ -74,6 +80,19 @@ export function printElement(element: HTMLElement, title?: string) {
 
   setTimeout(() => {
     try {
+      // Keep the screen layout and scale it onto A4 (194 x 281 mm printable at 96 px per inch).
+      const pageW = opts.pageWidthPx;
+      const root = doc.getElementById("print-root")?.firstElementChild as HTMLElement | null;
+      if (pageW && root) {
+        const printableW = (194 / 25.4) * 96;
+        const printableH = (281 / 25.4) * 96;
+        root.style.setProperty("width", `${pageW}px`, "important");
+        root.style.setProperty("max-width", "none", "important");
+        let zoom = printableW / pageW;
+        const h = root.scrollHeight * zoom;
+        if (h > printableH && h <= printableH * 1.25) zoom = zoom * (printableH / h);
+        (root.style as any).zoom = String(Math.min(1, zoom));
+      }
       iframe.contentWindow?.focus();
       iframe.contentWindow?.print();
     } catch (e) {

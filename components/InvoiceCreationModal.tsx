@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
+import { appConfirm, appPrompt } from "@/components/shared/AppDialogs";
 import { allowedGstRate } from "@/lib/gst-rate";
 const todayInIndia = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date());
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -27,6 +28,8 @@ import { useLive } from "@/components/providers/RealtimeProvider";
 import { fileViewUrl } from "@/lib/file-link";
 import { ONSITEGO_INCENTIVE_RATE, isOnsitego, plansFor, slabLabel, type OnsitegoPlanRow } from "@/lib/onsitego";
 import { hsnCategoryName } from "@/lib/purchase-import/hsn-category";
+import { lineIncentive, liveRulesOf, rulesOf, ruleText } from "@/lib/incentive-rules";
+import { lineSalesmanFor, normPerson } from "@/lib/lead-share";
 
 function formatCurrency(val: number) {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(val || 0);
@@ -390,7 +393,7 @@ export function InvoiceCreationModal({
 
   // Picking (or changing) the company. Products of the other company cannot stay
   // on the bill, and the number has to come from the new company's series.
-  const chooseBillingEntity = (next: BillingEntity) => {
+  const chooseBillingEntity = async (next: BillingEntity) => {
     if (next === billingEntity) return;
     const belongsToNext = (line: any) => {
       const product = catalogItems.find(
@@ -401,9 +404,9 @@ export function InvoiceCreationModal({
     const dropped = billingForm.lineItems.filter((line: any) => !belongsToNext(line));
     if (
       dropped.length > 0 &&
-      !window.confirm(
+      !(await appConfirm(
         `Switching to ${entityLabel(next)} will remove ${dropped.length} product${dropped.length === 1 ? "" : "s"} that belong${dropped.length === 1 ? "s" : ""} to ${entityLabel(billingEntity || "valueplus")}. Continue?`
-      )
+      ))
     ) {
       return;
     }
@@ -480,24 +483,14 @@ export function InvoiceCreationModal({
         warrantyTotal += Number(item.extendedWarrantyAmount);
       }
 
-      // Compute salesperson incentive for this item based on target selling price
-      let lineInc = 0;
-      const targetAmt = Number(item.incentiveTargetAmount) || 0;
-      const rewardVal = Number(item.incentiveValue) || Number(item.incentiveAmount) || 0;
-      const incType = item.incentiveType || "fixed";
-      const currentRate = Number(item.rate) || 0;
-      const qty = Number(item.qty) || 1;
-
-      if (rewardVal > 0 && incType !== "none") {
-        const isTargetMet = targetAmt <= 0 || currentRate >= targetAmt;
-        if (isTargetMet) {
-          if (incType === "percentage") {
-            lineInc = lineTaxable * (rewardVal / 100);
-          } else {
-            lineInc = rewardVal * qty;
-          }
-        }
-      }
+      // Salesperson incentive: every running rule on the product added together (lib/incentive-rules.ts).
+      // The server works it out again when the bill is saved.
+      const lineInc = lineIncentive(item.incentiveRules ?? rulesOf(item), {
+        rate: Number(item.rate) || 0,
+        discount: Number(item.discount) || 0,
+        qty: Number(item.qty) || 1,
+        taxable: lineTaxable,
+      });
       totalIncentive += lineInc;
     });
 
@@ -576,6 +569,23 @@ export function InvoiceCreationModal({
     if (!leadSalesman || isIndividualStaff || salesExecutivePickedByHand.current) return;
     setBillingForm((prev) => (prev.salesExecutive === leadSalesman ? prev : { ...prev, salesExecutive: leadSalesman }));
   }, [isOpen, leadSalesman, isIndividualStaff]);
+  /**
+   * The salesman a bill line goes to (its incentive too). Picked by hand on the line, or else the person on the
+   * customer's lead (owner or a salesman the lead was shared with) whose brand matches the product's brand.
+   * "" = the bill's Sales Executive.
+   */
+  const lineSalesmanOf = (item: any): string => {
+    if (item?.lineSalesman === "__bill__") return "";
+    const picked = String(item?.lineSalesman || "").trim();
+    const auto = (() => {
+      if (picked) return picked;
+      const cat: any = catalogItems.find((c: any) => c._id === item?.itemId);
+      return lineSalesmanFor(customerLead, cat?.brand || item?.brand || "", usersList as any[]);
+    })();
+    return auto && normPerson(auto) !== normPerson(billingForm.salesExecutive) ? auto : "";
+  };
+  const salesmenForLines = (usersList as any[]).filter((u: any) => ["salesman", "sales"].includes(String(u.role || "").toLowerCase()));
+
   const { data: customerAdvances = [] } = useQuery({
     queryKey: ["customer-advances", cleanPhoneForAdvance],
     queryFn: async () => {
@@ -699,6 +709,7 @@ export function InvoiceCreationModal({
             adminApprovedRate: Boolean(est.priceUnlock?.lines?.some((u: any) => u.itemName === (it.name || it.itemName))),
             incentiveType: matchedCatalog?.incentiveType || "fixed",
             incentiveValue: matchedCatalog?.incentiveValue || 0,
+            incentiveRules: rulesOf(matchedCatalog),
             discount: Number(it.discount) || 0,
             gstRate: allowedGstRate(gst),
             availableStock: matchedCatalog?.currentStock || matchedCatalog?.openingStock || 10,
@@ -829,6 +840,10 @@ export function InvoiceCreationModal({
         incentiveAmount: Number(it.incentiveAmount) || 0,
         incentiveType: it.incentiveType || "fixed",
         incentiveValue: Number(it.incentiveValue) || 0,
+        // The rules this line was first billed under (the server keeps them on an edit too).
+        incentiveRules: rulesOf(it),
+        // Keep who each line went to when the bill was made (a later lead share does not move it).
+        lineSalesman: it.salesExecutive || "__bill__",
         adminApprovedRate: Boolean(it.adminOverrideRate),
         availableStock: showroomNow + qtyOnBill,
         showroomStock: showroomNow + qtyOnBill,
@@ -1184,6 +1199,7 @@ export function InvoiceCreationModal({
       incentiveAmount: prod.incentiveAmount || prod.incentiveValue || 0,
       incentiveType: prod.incentiveType || "fixed",
       incentiveValue: prod.incentiveAmount || prod.incentiveValue || 0,
+      incentiveRules: rulesOf(prod),
       adminApprovedRate: false,
       gstRate: allowedGstRate(prod.gstRate ?? 18),
       itemCode: prod.code,
@@ -1343,7 +1359,7 @@ export function InvoiceCreationModal({
     },
     onError: (error: any, variables: any) => {
       if (error?.discountApproval) {
-        // A discount of 1% or more needs the Store Manager's / Admin's approval: ask, wait, then save again.
+        // A discount above 5% needs the Cashier's / Store Manager's / Admin's approval: ask, wait, then save again.
         askDiscountApproval(variables);
         return;
       }
@@ -1358,7 +1374,7 @@ export function InvoiceCreationModal({
     }
   });
 
-  // Discount approval: the lines are sent to the Store Manager / Admin, and the same save is repeated once they say yes.
+  // Discount approval: the lines are sent to the Cashier / Store Manager / Admin (by discount band), and the same save is repeated once they say yes.
   const [discountWait, setDiscountWait] = useState<{ payload: any; ids: string[]; rows: any[] } | null>(null);
   const askDiscountApproval = async (payload: any) => {
     try {
@@ -1593,23 +1609,17 @@ export function InvoiceCreationModal({
       const lineGst = grossAmount - lineTaxable;
       const isIntraState = billingForm.placeOfSupply.includes("09") || billingForm.placeOfSupply.toLowerCase().includes("uttar pradesh");
       
-      let lineInc = 0;
-      const targetAmt = Number(item.incentiveTargetAmount) || 0;
-      const rewardVal = Number(item.incentiveValue) || Number(item.incentiveAmount) || 0;
-      const incType = item.incentiveType || "fixed";
-      const currentRate = Number(item.rate) || 0;
-      const qty = Number(item.qty) || 1;
-
-      if (rewardVal > 0 && incType !== "none") {
-        const isTargetMet = targetAmt <= 0 || currentRate >= targetAmt;
-        if (isTargetMet) {
-          if (incType === "percentage") {
-            lineInc = lineTaxable * (rewardVal / 100);
-          } else {
-            lineInc = rewardVal * qty;
-          }
-        }
-      }
+      const lineRules = item.incentiveRules ?? rulesOf(item);
+      const lineInc = lineIncentive(lineRules, {
+        rate: Number(item.rate) || 0,
+        discount: Number(item.discount) || 0,
+        qty: Number(item.qty) || 1,
+        taxable: lineTaxable,
+      });
+      const firstRule = lineRules[0];
+      const targetAmt = firstRule?.minPrice || 0;
+      const rewardVal = firstRule?.value || 0;
+      const incType = firstRule?.type || "none";
 
       // Frozen onto the invoice line at sale time — the GST Sales Register
       // needs a per-product HSN code, which the item form never collected
@@ -1636,6 +1646,9 @@ export function InvoiceCreationModal({
         incentiveType: incType,
         incentiveValue: rewardVal,
         incentiveEarned: Math.round(lineInc * 100) / 100,
+        incentiveRules: lineRules,
+        // This line's own salesman (a shared lead's other brand), when not the bill's Sales Executive.
+        salesExecutive: lineSalesmanOf(item),
         discount: item.discount,
         discountType: "amount",
         taxableAmount: lineTaxable,
@@ -2530,20 +2543,59 @@ export function InvoiceCreationModal({
                               </Badge>
                             </div>
                           )}
-                          {Number(item.incentiveValue || item.incentiveAmount) > 0 && item.incentiveType !== "none" && (
-                            <Badge className={cn(
-                              "font-mono text-[10px] font-bold",
-                              (Number(item.incentiveTargetAmount) <= 0 || (Number(item.rate) || 0) >= (Number(item.incentiveTargetAmount) || 0))
-                                ? "bg-emerald-100 text-emerald-800 border-emerald-300"
-                                : "bg-amber-50 text-amber-800 border-amber-300"
-                            )}>
-                              {(Number(item.incentiveTargetAmount) <= 0 || (Number(item.rate) || 0) >= (Number(item.incentiveTargetAmount) || 0))
-                                ? (item.incentiveType === "percentage" 
-                                    ? `🎁 Target Met: +${item.incentiveValue}% Inc` 
-                                    : `🎁 Target Met: +₹${(Number(item.incentiveValue || item.incentiveAmount) || 0) * (Number(item.qty) || 1)} Inc`)
-                                : `⚠️ Target: ₹${item.incentiveTargetAmount || 0} (₹0 Inc)`}
-                            </Badge>
-                          )}
+                          {(() => {
+                            const live = liveRulesOf({ incentiveRules: item.incentiveRules ?? rulesOf(item) });
+                            if (live.length === 0) return null;
+                            const net = (Number(item.rate) || 0) - (Number(item.discount) || 0);
+                            const earned = lineIncentive(live, {
+                              rate: Number(item.rate) || 0,
+                              discount: Number(item.discount) || 0,
+                              qty: Number(item.qty) || 1,
+                              gstRate: Number(item.gstRate) || 0,
+                            });
+                            const missed = live.filter((r) => (r.minPrice || 0) > 0 && net + 0.005 < (r.minPrice || 0));
+                            return (
+                              <Badge className={cn(
+                                "font-mono text-[10px] font-bold",
+                                earned > 0 ? "bg-emerald-100 text-emerald-800 border-emerald-300" : "bg-amber-50 text-amber-800 border-amber-300"
+                              )}>
+                                {earned > 0 ? `🎁 Inc +₹${earned.toLocaleString("en-IN")} (${live.map(ruleText).join(" + ")})` : "🎁 Inc ₹0"}
+                                {missed.length > 0 ? ` · ⚠️ sell at ₹${Math.max(...missed.map((r) => r.minPrice || 0)).toLocaleString("en-IN")}+ for more` : ""}
+                              </Badge>
+                            );
+                          })()}
+                          {item.itemId && (() => {
+                            const own = lineSalesmanOf(item);
+                            if (!own && (isIndividualStaff || salesmenForLines.length === 0)) return null;
+                            return isIndividualStaff ? (
+                              <Badge className="bg-indigo-50 text-indigo-800 border-indigo-200 text-[10px] font-bold">👤 Incentive: {own}</Badge>
+                            ) : (
+                              <select
+                                value={item.lineSalesman === "__bill__" ? "__bill__" : own}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  setBillingForm((prev) => ({
+                                    ...prev,
+                                    lineItems: prev.lineItems.map((li: any) => (li.id === item.id ? { ...li, lineSalesman: v || "__bill__" } : li)),
+                                  }));
+                                }}
+                                title="Who gets this item's incentive"
+                                className={cn(
+                                  "h-6 rounded-md border px-1.5 text-[10px] font-bold",
+                                  own ? "bg-indigo-50 text-indigo-800 border-indigo-200" : "bg-white text-slate-500 border-slate-200"
+                                )}
+                              >
+                                <option value="">👤 {billingForm.salesExecutive ? `Bill salesman (${billingForm.salesExecutive})` : "Bill salesman"}</option>
+                                {salesmenForLines
+                                  .filter((u: any) => normPerson(u.name) !== normPerson(billingForm.salesExecutive))
+                                  .map((u: any) => (
+                                    <option key={u._id || u.name} value={u.name}>
+                                      👤 {u.name}{u.assignedBrand ? ` (${u.assignedBrand})` : ""}
+                                    </option>
+                                  ))}
+                              </select>
+                            );
+                          })()}
                           {item.adminApprovedRate && (
                             <Badge className="bg-emerald-600 text-white font-mono text-[10px] font-bold">
                               ✅ Admin Approved Rate
@@ -3859,7 +3911,7 @@ export function InvoiceCreationModal({
           <DialogHeader>
             <DialogTitle>Waiting for discount approval</DialogTitle>
             <DialogDescription>
-              The discount was sent to the Store Manager (up to 10%) or the Admin (above 10%). This bill is saved by itself as soon as they approve.
+              The discount was sent for approval: the Cashier (5–10%), the Store Manager (10–12%) or the Admin (above 12%). This bill is saved by itself as soon as they approve.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
@@ -3869,7 +3921,7 @@ export function InvoiceCreationModal({
                   <span className="font-bold">{r.itemName}</span>
                   <span className="font-black text-rose-700">{r.percent}% off</span>
                 </div>
-                <p className="text-slate-600">{formatCurrency(r.sellingPrice)} to {formatCurrency(r.price)} · {r.tier === "admin" ? "needs the Admin" : "needs the Store Manager"} · {r.status}</p>
+                <p className="text-slate-600">{formatCurrency(r.sellingPrice)} to {formatCurrency(r.price)} · {r.tier === "admin" ? "needs the Admin" : r.tier === "manager" ? "needs the Store Manager" : "needs the Cashier"} · {r.status}</p>
               </div>
             ))}
           </div>

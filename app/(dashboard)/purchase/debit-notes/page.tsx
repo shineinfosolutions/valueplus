@@ -5,6 +5,7 @@
  */
 
 import { PageShell } from "@/components/shared/page-shell";
+import { appConfirm, appPrompt } from "@/components/shared/AppDialogs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -120,31 +121,9 @@ export default function DebitNotesPage() {
   const unifiedRecords = useMemo(() => {
     const list: any[] = [];
 
-    // Add Delivery Challan Claims
-    challans.forEach((c: any) => {
-      list.push({
-        id: c._id || c.challanNo,
-        recordType: "challan",
-        docNo: c.challanNo,
-        date: c.date || c.createdAt,
-        partyName: c.sourceParty || "Customer",
-        partyPhone: c.sourcePhone || c.customerPhone || "",
-        partyAddress: c.sourceAddress || "",
-        destination: c.destinationParty || "",
-        itemName: c.itemName,
-        vpCode: c.vpCode,
-        serialImei: c.serialImei,
-        defectDescription: c.defectDescription,
-        invoiceNumber: c.invoiceNumber,
-        quantity: c.quantity || 1,
-        unit: c.unit || "PCS",
-        amount: Number(c.itemPrice || 0) * Number(c.quantity || 1),
-        flowType: c.flowType || "CNR",
-        isApproved: c.approvalStatus === "approved",
-        approvedBy: c.approvedBy,
-        originalData: c,
-      });
-    });
+    // Delivery challan claims are settled on the Delivery Challan page; a supplier credit (CR) there raises the
+    // debit note listed below, so the challans themselves are not listed here.
+    void challans;
 
     // Add Purchase Debit Notes
     debitNotes.forEach((d: any) => {
@@ -160,7 +139,7 @@ export default function DebitNotesPage() {
         itemName: d.items?.[0]?.name || "Purchased Goods Return",
         vpCode: d.items?.[0]?.itemId || "",
         serialImei: d.items?.[0]?.serialNumbers?.join(", ") || "",
-        defectDescription: "",
+        defectDescription: d.noPoReason || "",
         invoiceNumber: d.linkedPoNo || "",
         quantity: d.items?.reduce((sum: number, it: any) => sum + (it.quantity || 1), 0) || 1,
         unit: "PCS",
@@ -202,7 +181,7 @@ export default function DebitNotesPage() {
   return (
     <PageShell
       title="Debit Notes & Return Claims"
-      subtitle="Unified dashboard for purchase debit notes, customer credit claims (CNR) & approval settlements"
+      subtitle="Purchase debit notes, including supplier credits (CR) from defective-return challans"
       breadcrumbs={[{ label: "Purchase" }, { label: "Debit Notes" }]}
       actions={
         <div className="flex items-center gap-2">
@@ -401,8 +380,8 @@ export default function DebitNotesPage() {
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
                                   className="gap-2 text-red-600 focus:bg-red-50 focus:text-red-700 cursor-pointer text-xs"
-                                  onClick={() => {
-                                    if(confirm(`Are you sure you want to delete ${r.docNo}?`)) {
+                                  onClick={async () => {
+                                    if(await appConfirm(`Are you sure you want to delete ${r.docNo}?`)) {
                                       deleteMutation.mutate(r.docNo);
                                     }
                                   }}

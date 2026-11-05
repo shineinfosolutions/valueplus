@@ -19,10 +19,10 @@ Every staff member signs in with email / mobile and password. Each role has its 
 
 | Role | Panel | Main work |
 |---|---|---|
-| **Super Admin (Owner)** | `/admin` | Everything. Approves the Store Manager's changes, discounts over 10%, leaves; sees all money, profit, staff and reports. |
-| **Store Manager** | `/manager` | Every page, but changes to bills, payments, stock and masters go to the Admin for approval. Approves breaks and discounts up to 10%. |
-| **Cashier** | `/cashier` | Tax invoices (POS), receive payments, advances, expenses, estimates from salesmen, day-close cash audit, purchase entry. |
-| **Salesman** | `/salesman` | Own dashboard, leads and follow-ups, estimates and "bills" for the cashier, stock check, GIDA warehouse orders, own incentive, Onsitego plans. |
+| **Super Admin (Owner)** | `/admin` | Everything. Approves the Store Manager's changes, discounts over 12%, leaves; sees all money, profit, staff and reports. |
+| **Store Manager** | `/manager` | Every page, but changes to bills, payments, stock and masters go to the Admin for approval. Approves breaks and discounts of 10–12% (and the Cashier's 5–10% band). |
+| **Cashier** | `/cashier` | Approves discounts above 5% and below 10%; sets product incentives. Tax invoices (POS), receive payments, advances, expenses, estimates from salesmen, day-close cash audit, purchase entry. |
+| **Salesman** | `/salesman` | Own dashboard, leads and follow-ups, estimates and "bills" for the cashier, stock check, GIDA warehouse orders, own incentive and the product-wise **Incentive Plan**, Onsitego plans. Gives discounts up to 5% without approval. |
 | **Accounts** | `/accounts` | Finance ledger, payouts, GST and P&L reports, supplier ledgers, documents. |
 | **HR & Payroll** | `/hr` | Attendance, leave, salary, staff profiles. |
 | **Godown Incharge** | `/warehouse` | Godown hub, stock flow, transfers, dispatch, challans, e-way bills, audit. |
@@ -51,6 +51,7 @@ Every staff member signs in with email / mobile and password. Each role has its 
 - Name, full-width **Check In / Check Out**, Apply Leave, break control.
 - **Today's follow-ups** with one-tap Call; tiles for sales today, revenue today, my leads, pending tasks.
 - **Incentive** card (Earned / Received / To receive; tap for every bill, the Onsitego part and payouts).
+- **Incentive Plan** card: tap to see every product with a running incentive, its rules (₹ per piece and/or %, minimum price, last date) and what one piece earns at the selling price; search, brand filter, sort by highest ₹ or %, in-stock only.
 - Target progress (by product units and by amount), Stock orders card, own brand vs other brands sales, quick actions (New Estimate, New Bill, New Lead, Stock, New Stock).
 - Period tabs (Today / Week / Month / custom) with own invoices, estimates and deals closed.
 
@@ -66,11 +67,11 @@ Every staff member signs in with email / mobile and password. Each role has its 
 - **Advance and credit:** the customer's advance booking receipts and money already received through Receive Payment are shown ("Payment Already Received"), with a tick box to use them on this bill.
 - **Extended warranty per line:** OneAssist, **Onsitego**, Zopper and others; plan, years, amount, policy number. **Onsitego plans are shown automatically for each product**, grouped (EW / ADLD / AMC / LTC), with price and VP Code, according to the product type and price slab; one tap adds the plan.
 - **Price control:**
-  - a line 1% or more below the selling price needs **discount approval** (1–10% Store Manager, over 10% Admin), and the counter waits with a live popup;
+  - **discount bands** (how far below the selling price): up to 5% the salesman gives it himself; above 5% and below 10% needs the **Cashier**; 10–12% the **Store Manager**; above 12% **only the Admin**. Each role gives its own band and below without asking, and the counter waits with a live popup;
   - a price below the product's **floor / locked minimum price** needs a PIN.
 - **Delivery:** counter handover or later delivery; expected delivery date; **Driver / Vehicle** drop-down (fills the driver's name, phone and vehicle); vehicle number compulsory for **Bajaj Finance** bills; delivery challan made automatically.
 - **Bill date is always today** (no back-dating); offline bills keep their own date when they sync.
-- **On save:** stock goes down per warehouse, serials become SOLD, customer balance and khata update, leads convert, sales-target tasks move, the finance DO is created, the salesman's incentive is recorded (+10% of Onsitego plans).
+- **On save:** stock goes down per warehouse, serials become SOLD, customer balance and khata update, leads convert, sales-target tasks move, the finance DO is created, the salesman's incentive is worked out on the server from the product's incentive rules (frozen on the bill line) and recorded (+10% of Onsitego plans).
 - **Print / share:** GST tax invoice (A4), WhatsApp share; delivery photos viewable on the bill.
 - **Invoice list:** search, date filter, Paid / Balance (advance shown), "Delivered" badge, delivery photos, export to Excel / PDF; phone card view.
 - **Edit a saved bill (full edit):** same form, Security PIN + reason; stock, serials, balance, receipt, warranty, challan and finance DO are redone. The Manager's edit waits for the Admin, who sees every change.
@@ -111,6 +112,10 @@ Every staff member signs in with email / mobile and password. Each role has its 
   - only today's sheet is used.
 - **Order Dispatch & Deliveries:** bills waiting for delivery, out for delivery, delivered, with OTP and photos.
 - **Delivery Challan:** tabs Delivery Challans / Pending Delivery / Delivered; return and transfer challans.
+  - **Defective returns (CR / PR):** a *Supplier Return* challan sends a defective product back to the supplier (stock goes out, serial RETURNED); a *Customer Return* challan takes a customer's defective product back (it comes into stock with its serial DEFECTIVE). The claim stays **Pending** until the result comes, then is settled:
+    - **CR (credit)** — supplier only: the supplier gave money. A **debit note** is raised in the supplier's name for that amount; it sits in his ledger as credit and comes off the next purchase bill.
+    - **PR (replacement)** — from the supplier: the new product comes into stock with its serial; to the customer: the new product goes out of stock and its serial is SOLD to him.
+    - A pending claim can be **cancelled** (stock and serial go back). Settling / cancelling: Admin, Store Manager, Godown Incharge, Accounts. Challans no longer make customer credit notes by themselves.
 - **E-Way Bills:** prepare e-way bill details for consignments over ₹50,000.
 - **Finance DO** page.
 
@@ -133,10 +138,10 @@ Every staff member signs in with email / mobile and password. Each role has its 
 ## 5. Products & Masters
 
 - **Items (Master Stock):**
-  - VP code, model, brand, category, HSN, GST, purchase price, selling price, MRP, **VSP**, floor price, incentive setting (fixed ₹ or % above a target price);
+  - VP code, model, brand, category, HSN, GST, purchase price, selling price, MRP, **VSP**, floor price, **incentive rules** — any number per product, ₹ per piece and/or % of taxable, each with an optional minimum price and from/to dates; all running rules add up. Admin, Store Manager and Cashier can set them (🎁 button on the list, or in the item form);
   - stock per warehouse (showroom / godown);
   - Product Ledger (every purchase and sale with profit; invoice links);
-  - price-sheet (V+NLC / VSP) upload by brand with a sample sheet; bulk incentive; assign brands; GST and purchase-GST fix tools (Admin);
+  - price-sheet (V+NLC / VSP) upload by brand with a sample sheet; bulk incentive (add a rule to, or replace the rules of, every product in a category / brand); assign brands; GST and purchase-GST fix tools (Admin);
   - phone view: compact list with role-based detail.
 - **Stock Report (Price & VSP):** brand, product type, stock filter, search; stock value at selling price and VSP; export.
 - **Categories, Brands** (brand → product catalog with "Bill Now"), **Units, Warehouses & Godowns, Customers** (GSTIN, credit limit, balance / khata, ledger), **Suppliers**.

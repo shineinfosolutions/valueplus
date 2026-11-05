@@ -1,6 +1,7 @@
 "use client";
 
 import { useExclusivePopup } from "@/lib/popup-queue";
+import { appConfirm, appPrompt } from "@/components/shared/AppDialogs";
 import { useLive } from "@/components/providers/RealtimeProvider";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -54,7 +55,7 @@ export function PendingLeavePopup() {
   const decide = async (r: any, decision: "approve" | "reject") => {
     let note = "";
     if (decision === "reject") {
-      const n = window.prompt("Reason for rejecting (optional):");
+      const n = await appPrompt("Reason for rejecting (optional):");
       if (n === null) return;
       note = n;
     }

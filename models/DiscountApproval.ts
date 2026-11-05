@@ -14,8 +14,8 @@ export interface IDiscountApproval extends Document {
   price: number;
   quantity: number;
   percent: number;
-  /** Who has to approve: the Store Manager (up to 10%) or the Admin (above 10%). */
-  tier: "manager" | "admin";
+  /** Who has to approve: the Cashier (above 5%, below 10%), the Store Manager (10–12%) or the Admin (above 12%). */
+  tier: "cashier" | "manager" | "admin";
   status: "pending" | "approved" | "rejected";
   reviewedBy?: string;
   reviewedAt?: Date;
@@ -36,7 +36,7 @@ const DiscountApprovalSchema = new Schema<IDiscountApproval>(
     price: { type: Number, required: true },
     quantity: { type: Number, default: 1 },
     percent: { type: Number, required: true },
-    tier: { type: String, enum: ["manager", "admin"], required: true, index: true },
+    tier: { type: String, enum: ["cashier", "manager", "admin"], required: true, index: true },
     status: { type: String, enum: ["pending", "approved", "rejected"], default: "pending", index: true },
     reviewedBy: { type: String, default: "" },
     reviewedAt: { type: Date },

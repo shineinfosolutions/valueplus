@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { checkInStatus, checkoutIsHalfDay, lateMeansHalfDay } from "@/lib/attendance-rules";
 import connectToDatabase from "@/lib/db";
 import Attendance from "@/models/Attendance";
 import User from "@/models/User";
@@ -176,21 +177,16 @@ export async function POST(req: Request) {
       const graceMinutes = shift.lateGraceMinutes || 15;
       const halfDayCutoffMinutes = timeStringToMinutes(shift.halfDayLateCutoff || "12:00");
 
-      let calculatedStatus: "Present" | "Late" | "Half-Day" = "Present";
-      let isLate = false;
       // Minutes after the 10:00 shift start (the Manager and Admin are told, even inside the grace time).
       const lateMinutes = Math.max(0, checkInMinutes - shiftStartMinutes);
-
-      if (checkInMinutes > halfDayCutoffMinutes) {
-        calculatedStatus = "Half-Day";
-        isLate = true;
-      } else if (checkInMinutes > shiftStartMinutes + graceMinutes) {
-        calculatedStatus = "Late";
-        isLate = true;
-      }
+      // Past the half-day cutoff is a Half-Day only for the Store Manager and Cashier; others are Late (lib/attendance-rules.ts).
+      const calculatedStatus = checkInStatus(staffRole, checkInMinutes, shiftStartMinutes, graceMinutes, halfDayCutoffMinutes);
+      const isLate = calculatedStatus !== "Present";
 
       const statusRemark = calculatedStatus === "Half-Day"
         ? `Checked in past half-day cutoff (${currentISTTime})`
+        : checkInMinutes > halfDayCutoffMinutes
+        ? `Checked in late at ${currentISTTime}, past the half-day cutoff (no half-day for this role)`
         : calculatedStatus === "Late"
         ? `Checked in late at ${currentISTTime} (Grace: ${shift.startTime} + ${graceMinutes}m)`
         : `Checked in on time at ${currentISTTime}`;
@@ -296,8 +292,20 @@ export async function POST(req: Request) {
 
       let isEarlyCheckout = false;
 
-      // Check if checkout is before required full-day hours or before shift end
-      if (!shift.allowEarlyCheckoutWithoutPenalty) {
+      // Check if checkout is before required full-day hours or before shift end.
+      // Short hours from coming late make a Half-Day only for the Store Manager and Cashier (lib/attendance-rules.ts).
+      const role = (record as any).staffRole || staffRole;
+      if (!shift.allowEarlyCheckoutWithoutPenalty && !lateMeansHalfDay(role)) {
+        if (checkoutIsHalfDay(role, workedHours, minHalfDayHours, minFullDayHours, outMin, shiftEndMinutes)) {
+          record.status = "Half-Day";
+          isEarlyCheckout = true;
+          record.notes = (record.notes ? record.notes + " | " : "") + `Early Check-Out at ${currentISTTime}, before the shift ends at ${shift.endTime}. Marked as Half-Day.`;
+        } else {
+          isEarlyCheckout = false;
+          if (record.status !== "Late") record.status = "Present";
+          record.notes = (record.notes ? record.notes + " | " : "") + `Shift Completed (${workedHours.toFixed(1)} hrs)`;
+        }
+      } else if (!shift.allowEarlyCheckoutWithoutPenalty) {
         if (workedHours < minHalfDayHours) {
           // Worked less than half-day minimum
           record.status = "Half-Day";

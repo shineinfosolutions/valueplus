@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
+import { appConfirm, appPrompt } from "@/components/shared/AppDialogs";
 import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { 
@@ -304,12 +305,12 @@ export default function LowStockReorderPage() {
     createBulkPOMutation.mutate(selectedItems);
   };
 
-  const handleReorderAllLowStock = () => {
+  const handleReorderAllLowStock = async () => {
     if (enrichedLowStockItems.length === 0) {
       toast.info("No low stock products to reorder!");
       return;
     }
-    if (window.confirm(`Generate automatic Purchase Orders for ALL ${enrichedLowStockItems.length} low stock items across ${summaryMetrics.uniqueSuppliers} suppliers?`)) {
+    if (await appConfirm(`Generate automatic Purchase Orders for ALL ${enrichedLowStockItems.length} low stock items across ${summaryMetrics.uniqueSuppliers} suppliers?`)) {
       createBulkPOMutation.mutate(enrichedLowStockItems);
     }
   };

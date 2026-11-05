@@ -24,6 +24,7 @@ import { fullEditInvoice, summariseInvoice } from "@/lib/invoice-full-edit";
 import { authoriseChange, auditChange, createChangeRequest, versionOf } from "@/lib/change-requests";
 import { publishChange } from "@/lib/realtime";
 import { onsitegoIncentiveOf } from "@/lib/onsitego";
+import { stampLineIncentives } from "@/lib/incentive-server";
 
 /**
  * What a plain update may change on a sales bill: contact and delivery details only.
@@ -185,8 +186,8 @@ export async function POST(req: Request) {
         body.salesperson = body.salesExecutive;
       }
     }
-    // A discount of 1% or more below the product's selling price needs the Store Manager's (up to 10%) or the
-    // Admin's (above 10%) approval. An estimate is checked by the Estimates API; a bill made from an approved
+    // A discount above 5% below the product's selling price needs approval: the Cashier (below 10%), the Store
+    // Manager (10–12%) or the Admin (above 12%) — see lib/discount-approval.ts. An estimate is checked by the Estimates API; a bill made from an approved
     // bill is covered for the lines at the same price. An offline bill cannot wait for an answer.
     if (postActor && body.type !== "proforma" && !body.offlineId && (!body.type || body.type === "tax-invoice")) {
       const linkedForDiscount: any = body.linkedEstimateNumber ? await Estimate.findOne({ estimateNumber: body.linkedEstimateNumber }).lean() : null;
@@ -197,7 +198,7 @@ export async function POST(req: Request) {
             success: false,
             discountApproval: true,
             lines: needDiscount,
-            error: `Discount approval needed: ${needDiscount.map((l) => `${l.itemName} (${l.percent}% off, ${l.tier === "admin" ? "Admin" : "Store Manager"})`).join(", ")}.`,
+            error: `Discount approval needed: ${needDiscount.map((l) => `${l.itemName} (${l.percent}% off, ${l.tier === "admin" ? "Admin" : l.tier === "manager" ? "Store Manager" : "Cashier"})`).join(", ")}.`,
           },
           { status: 409 }
         );
@@ -481,6 +482,20 @@ export async function POST(req: Request) {
 
     // Onsitego plans sold on the bill: 10% to its salesman, worked out here (never taken from the form).
     body.onsitegoIncentive = onsitegoIncentiveOf(body.items);
+    // A line's own salesman (a shared lead) is kept only when he is not the bill's Sales Executive.
+    if (Array.isArray(body.items)) {
+      const billExec = String(body.salesExecutive || "").replace(/\(.*?\)/g, "").trim().toLowerCase();
+      body.items = body.items.map((it: any) => {
+        const own = String(it?.salesExecutive || "").trim();
+        return { ...it, salesExecutive: own && own.replace(/\(.*?\)/g, "").trim().toLowerCase() !== billExec ? own : "" };
+      });
+    }
+    // Product incentive from the product's rules (lib/incentive-rules.ts), also worked out here.
+    if (Array.isArray(body.items)) {
+      const stamped = await stampLineIncentives(body.items, [], body.date);
+      body.items = stamped.items;
+      body.salesExecutiveIncentive = stamped.total;
+    }
     const invoice = await Invoice.create(body);
 
     // A Store Manager's back-dated bill: the Admin is asked to approve it.

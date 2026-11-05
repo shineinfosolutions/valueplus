@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import Item from "@/models/Item";
 import { getActor } from "@/lib/requirePermission";
+import { INCENTIVE_SETTER_ROLES, cleanRule, flatFieldsFor, rulesOf } from "@/lib/incentive-rules";
 
 /**
  * Apply one incentive rule to every item matching a category/brand/status filter.
@@ -37,9 +38,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: "You must be signed in to do this." }, { status: 401 });
     }
     // Matches the client-side gate on the Items page (isSuperAdminOrAdmin).
-    if (!["admin", "superadmin", "manager", "warehouse"].includes(actor.role)) {
+    if (!INCENTIVE_SETTER_ROLES.includes(actor.role)) {
       return NextResponse.json(
-        { success: false, error: "Only an admin or manager can set incentive rules." },
+        { success: false, error: "Only the Admin, Store Manager or Cashier can set incentive rules." },
         { status: 403 }
       );
     }
@@ -63,28 +64,33 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true, dryRun: true, matched: count, sample });
     }
 
-    const incentiveType = body.incentiveType === "percentage" ? "percentage" : "fixed";
-    const incentiveValue = Number(body.incentiveValue) || 0;
-    const incentiveTargetAmount = Number(body.incentiveTargetAmount) || 0;
-
-    if (!(incentiveValue > 0)) {
+    const rule = cleanRule({
+      type: body.incentiveType,
+      value: body.incentiveValue,
+      minPrice: body.incentiveTargetAmount,
+      label: body.label,
+      startDate: body.startDate,
+      endDate: body.endDate,
+    });
+    if (!rule) {
       return NextResponse.json(
-        { success: false, error: "Enter a reward value greater than zero." },
+        { success: false, error: "Enter a reward value greater than zero (a % at most 100)." },
         { status: 400 }
       );
     }
+    const replace = body.mode === "replace";
 
-    // incentiveAmount is written alongside incentiveValue: the billing calculator
-    // (components/InvoiceCreationModal.tsx) reads whichever one an item has, since
-    // older items were only ever given incentiveAmount.
-    const update = {
-      incentiveType,
-      incentiveValue,
-      incentiveAmount: incentiveValue,
-      incentiveTargetAmount,
-    };
-
-    const result = await Item.updateMany(filter, { $set: update });
+    // Each product's own rule list is rewritten: added to (default) or replaced. Older products whose only rule
+    // sits in the flat fields keep it, because rulesOf reads those too.
+    const matched: any[] = await Item.find(filter, {
+      incentives: 1, incentiveType: 1, incentiveValue: 1, incentiveAmount: 1, incentiveTargetAmount: 1,
+    }).lean();
+    const ops = matched.map((it) => {
+      const rules = replace ? [rule] : [...rulesOf(it), rule];
+      return { updateOne: { filter: { _id: it._id }, update: { $set: { incentives: rules, ...flatFieldsFor(rules) } } } };
+    });
+    const bulk = ops.length ? await Item.bulkWrite(ops, { ordered: false }) : null;
+    const result = { matchedCount: matched.length, modifiedCount: bulk?.modifiedCount || 0 };
 
     return NextResponse.json({
       success: true,

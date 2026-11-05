@@ -5,6 +5,7 @@
  */
 
 import { DeliveryPhotos } from "@/components/shared/DeliveryPhotos";
+import { appConfirm, appPrompt } from "@/components/shared/AppDialogs";
 import { useSession } from "next-auth/react";
 import { PageShell } from "@/components/shared/page-shell";
 import { Button } from "@/components/ui/button";
@@ -54,7 +55,19 @@ interface ChallanItem {
   driverName: string;
   driverPhone: string;
   ewayBillNo?: string;
-  flowType?: "CNR" | "PR";
+  /** CR = supplier gave money (debit note), PR = replacement product. Empty while pending; "CNR" = old name of CR. */
+  flowType?: "CR" | "PR" | "CNR" | "";
+  claimStatus?: "pending" | "settled" | "cancelled";
+  creditAmount?: number;
+  debitNoteRef?: string;
+  creditNoteRef?: string;
+  replacementItemName?: string;
+  replacementSerial?: string;
+  settledBy?: string;
+  settledAt?: string;
+  settlementNote?: string;
+  itemId?: string;
+  warehouse?: string;
   autoFromBill?: boolean;
   deliveryProofKey?: string;
   deliveryProofKeys?: string[];
@@ -97,6 +110,9 @@ export default function DeliveryChallanPage() {
   const [invoices, setInvoices] = useState<any[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
   const [suppliers, setSuppliers] = useState<any[]>([]);
+  const [warehouses, setWarehouses] = useState<any[]>([]);
+  // Delivery staff from the Users master (role Delivery Boy): name, mobile and vehicle.
+  const [drivers, setDrivers] = useState<{ id: string; name: string; phone: string; vehicleNumber: string }[]>([]);
   const [purchases, setPurchases] = useState<any[]>([]);
   
   const [selectedProductUniqueId, setSelectedProductUniqueId] = useState<string | null>(null);
@@ -163,13 +179,23 @@ export default function DeliveryChallanPage() {
     fetchInvoices();
     fetchCustomers();
     fetchSuppliers();
+    fetch("/api/delivery/drivers")
+      .then((r) => r.json())
+      .then((j) => { if (j.success && Array.isArray(j.data)) setDrivers(j.data); })
+      .catch(() => {});
+    fetch("/api/warehouses")
+      .then((r) => r.json())
+      .then((j) => { if (j.success && Array.isArray(j.data)) setWarehouses(j.data); })
+      .catch(() => {});
     fetchPurchases();
   }, []);
 
   const [formData, setFormData] = useState({
     type: "Customer Return" as ChallanItem["type"],
-    flowType: "CNR" as "CNR" | "PR",
     invoiceNumber: "",
+    itemId: "",
+    supplierId: "",
+    warehouse: "",
     sourceParty: "",
     sourcePhone: "",
     sourceAddress: "",
@@ -184,10 +210,10 @@ export default function DeliveryChallanPage() {
     itemPrice: "",
     defectDescription: "",
     reason: "Defective Replacement / Transit to GIDA Hub",
-    vehicleNo: "UP-53-ET-8819",
-    transporterName: "Value Plus In-House Van (GIDA Route)",
-    driverName: "AMIT SINGH",
-    driverPhone: "9140860604",
+    vehicleNo: "",
+    transporterName: "",
+    driverName: "",
+    driverPhone: "",
     ewayBillNo: "",
   });
 
@@ -197,7 +223,6 @@ export default function DeliveryChallanPage() {
       setFormData((prev) => ({
         ...prev,
         type: category,
-        flowType: "CNR",
         sourceParty: "",
         sourcePhone: "",
         sourceAddress: "",
@@ -211,7 +236,6 @@ export default function DeliveryChallanPage() {
       setFormData((prev) => ({
         ...prev,
         type: category,
-        flowType: "PR",
         sourceParty: KUNRAGHAT_STORE.name,
         sourcePhone: KUNRAGHAT_STORE.phone,
         sourceAddress: KUNRAGHAT_STORE.address,
@@ -225,12 +249,12 @@ export default function DeliveryChallanPage() {
       setFormData((prev) => ({
         ...prev,
         type: category,
-        flowType: "PR",
         sourceParty: GIDA_HUB.name,
         sourcePhone: GIDA_HUB.phone,
         sourceAddress: GIDA_HUB.address,
-        destinationParty: "Authorised Brand Service Center",
-        destinationAddress: "Industrial Area, Gorakhpur / Delhi Hub",
+        destinationParty: "",
+        destinationAddress: "",
+        supplierId: "",
         itemName: "",
         serialImei: "",
         reason: "Brand Defective Warranty Return Claim",
@@ -239,7 +263,6 @@ export default function DeliveryChallanPage() {
       setFormData((prev) => ({
         ...prev,
         type: category,
-        flowType: "CNR",
         sourceParty: GIDA_HUB.name,
         sourcePhone: GIDA_HUB.phone,
         sourceAddress: GIDA_HUB.address,
@@ -272,6 +295,7 @@ export default function DeliveryChallanPage() {
         prods.push({
           uniqueId: `${inv.invoiceNumber || 'INV'}-${itIdx}-${serial || it.name || itIdx}`,
           invoiceNumber: inv.invoiceNumber,
+          itemId: it.itemId || "",
           invoiceDate: inv.date || inv.createdAt,
           customerName: inv.customerName,
           customerPhone: inv.customerPhone,
@@ -308,6 +332,7 @@ export default function DeliveryChallanPage() {
         prods.push({
           uniqueId: `${p.billNo || 'BILL'}-${itIdx}-${serials || it.name || itIdx}`,
           billNo: p.billNo,
+          itemId: it.itemId || "",
           billDate: p.billDate,
           supplierName: p.supplierName,
           itemName: it.name,
@@ -373,6 +398,7 @@ export default function DeliveryChallanPage() {
     setFormData((prev) => ({
       ...prev,
       itemName: prod.itemName,
+      itemId: prod.itemId || "",
       vpCode: prod.vpCode || prev.vpCode,
       hsn: prod.hsn || prev.hsn,
       serialImei: prod.serialImei || prev.serialImei,
@@ -404,6 +430,8 @@ export default function DeliveryChallanPage() {
     setFormData((prev) => ({
       ...prev,
       destinationParty: s.name,
+      destinationAddress: [s.address?.line1, s.address?.city].filter(Boolean).join(", ") || prev.destinationAddress,
+      supplierId: s._id || "",
       sourceParty: GIDA_HUB.name,
       sourceAddress: GIDA_HUB.address,
     }));
@@ -411,19 +439,99 @@ export default function DeliveryChallanPage() {
     toast.info(`Supplier "${s.name}" selected. Purchased items loaded below.`);
   };
 
-  const handleToggleFlowType = async (challan: ChallanItem) => {
+  // Settle a pending return claim as CR (supplier money -> debit note) or PR (replacement product).
+  const role = String((session?.user as any)?.role || "").toLowerCase();
+  const canSettle = ["admin", "superadmin", "manager", "warehouse", "accounts"].includes(role);
+  const [settling, setSettling] = useState<ChallanItem | null>(null);
+  const [settleForm, setSettleForm] = useState({ mode: "PR" as "CR" | "PR", creditAmount: "", replacementItemId: "", replacementSerial: "", note: "" });
+  const [replacementSearch, setReplacementSearch] = useState("");
+  const [settleBusy, setSettleBusy] = useState(false);
+
+  const openSettle = (c: ChallanItem) => {
+    setSettling(c);
+    setReplacementSearch("");
+    setSettleForm({
+      mode: c.type === "Supplier Return" ? "CR" : "PR",
+      creditAmount: String((Number(c.itemPrice) || 0) * (Number(c.quantity) || 1) || ""),
+      replacementItemId: c.itemId || "",
+      replacementSerial: "",
+      note: "",
+    });
+  };
+
+  const submitSettle = async () => {
+    if (!settling) return;
+    if (settleForm.mode === "CR" && !(Number(settleForm.creditAmount) > 0)) {
+      toast.error("Enter the amount the supplier credited.");
+      return;
+    }
+    setSettleBusy(true);
     try {
       const res = await fetch("/api/delivery-challans", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ challanNo: challan.challanNo, action: "toggle-flow" }),
+        body: JSON.stringify({
+          _id: settling._id,
+          challanNo: settling.challanNo,
+          action: "settle",
+          mode: settleForm.mode,
+          creditAmount: Number(settleForm.creditAmount) || 0,
+          replacementItemId: settleForm.replacementItemId || undefined,
+          replacementSerial: settleForm.replacementSerial,
+          note: settleForm.note,
+        }),
       });
       const json = await res.json();
-      if (json.success) {
-        toast.success(`Challan ${challan.challanNo} switched to ${json.data.flowType}!`);
-        fetchChallans();
-      }
-    } catch (e: any) { toast.error("Error updating flow"); }
+      if (!json.success) throw new Error(json.error || "Could not settle");
+      toast.success(json.message);
+      setSettling(null);
+      fetchChallans();
+    } catch (e: any) {
+      toast.error(e.message || "Could not settle");
+    } finally {
+      setSettleBusy(false);
+    }
+  };
+
+  const cancelClaim = async (c: ChallanItem) => {
+    const note = await appPrompt(`Cancel the return claim on ${c.challanNo}? Stock and serial go back. Reason:`);
+    if (note === null) return;
+    const res = await fetch("/api/delivery-challans", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ _id: c._id, challanNo: c.challanNo, action: "cancel", note }),
+    });
+    const json = await res.json();
+    if (json.success) {
+      toast.success(json.message);
+      fetchChallans();
+    } else toast.error(json.error || "Could not cancel");
+  };
+
+  /**
+   * The driver on a challan: name, vehicle and mobile. What the challan saved comes first; a mobile or vehicle it
+   * lacks is taken from the driver's record in the Delivery Boy list (matched by name), so a number added there later
+   * shows up too. "Delivery Team" is the placeholder bills used when no driver was chosen.
+   */
+  const driverOf = (c: { driverName?: string; driverPhone?: string; vehicleNo?: string }) => {
+    const raw = String(c.driverName || "").trim();
+    const name = /^delivery team$/i.test(raw) ? "" : raw;
+    const master = name ? drivers.find((d) => d.name.trim().toLowerCase() === name.toLowerCase()) : undefined;
+    return {
+      name,
+      phone: String(c.driverPhone || "").trim() || master?.phone || "",
+      vehicle: String(c.vehicleNo || "").trim().toUpperCase() || master?.vehicleNumber || "",
+    };
+  };
+
+  const isClaim = (c: ChallanItem) => c.type === "Supplier Return" || c.type === "Customer Return";
+  /** Pending / CR / PR / Cancelled for a return claim; "" for other challans. */
+  const claimState = (c: ChallanItem): "" | "pending" | "CR" | "PR" | "cancelled" => {
+    if (!isClaim(c)) return "";
+    if (c.claimStatus === "cancelled" || c.approvalStatus === "rejected") return "cancelled";
+    if (c.flowType === "PR" && (c.claimStatus === "settled" || c.approvalStatus === "approved")) return "PR";
+    if ((c.flowType === "CR" || c.flowType === "CNR") && (c.claimStatus === "settled" || c.approvalStatus === "approved")) return "CR";
+    return "pending";
   };
 
   const isBillChallan = (c: ChallanItem) =>
@@ -447,9 +555,11 @@ export default function DeliveryChallanPage() {
         (c.itemName && c.itemName.toLowerCase().includes(search.toLowerCase())) ||
         (c.invoiceNumber && c.invoiceNumber.toLowerCase().includes(search.toLowerCase())) ||
         (c.serialImei && c.serialImei.toLowerCase().includes(search.toLowerCase())) ||
-        (c.vehicleNo && c.vehicleNo.toLowerCase().includes(search.toLowerCase()));
+        (c.vehicleNo && c.vehicleNo.toLowerCase().includes(search.toLowerCase())) ||
+        (c.driverName && c.driverName.toLowerCase().includes(search.toLowerCase())) ||
+        (c.driverPhone && String(c.driverPhone).includes(search));
       const matchType = typeFilter === "all" || c.type === typeFilter;
-      const matchFlow = flowFilter === "all" || (c.flowType || "CNR") === flowFilter;
+      const matchFlow = flowFilter === "all" || claimState(c) === flowFilter;
       // A delivery that is still pending is shown whatever its date: it has to be delivered.
       const matchDate = tab === "pending" || isDateInRange(c.date, dateRange.start, dateRange.end);
       return matchSearch && matchType && matchFlow && matchDate;
@@ -461,14 +571,16 @@ export default function DeliveryChallanPage() {
       toast.error("Please select party and item to issue delivery challan");
       return;
     }
+    if (formData.type === "Supplier Return" && !formData.destinationParty.trim()) {
+      toast.error("Choose the supplier the defective product goes back to");
+      return;
+    }
 
     const payload = {
       ...formData,
-      challanNo: `DC-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
       quantity: Number(formData.quantity) || 1,
       itemPrice: Number(formData.itemPrice) || 0,
       status: "dispatched",
-      approvalStatus: "pending",
     };
 
     try {
@@ -516,10 +628,13 @@ export default function DeliveryChallanPage() {
               "Serial/IMEI": c.serialImei || "",
               Quantity: c.quantity,
               Unit: c.unit,
-              "Vehicle No": c.vehicleNo || "",
-              Driver: c.driverName || "",
-              "Flow Mode": c.flowType || "CNR",
-              Approval: c.approvalStatus === "approved" ? "Approved" : "Pending",
+              "Vehicle No": driverOf(c).vehicle,
+              Driver: driverOf(c).name,
+              "Driver Mobile": driverOf(c).phone,
+              Claim: ({ "": "", pending: "Pending", CR: "CR (credit)", PR: "PR (replacement)", cancelled: "Cancelled" } as Record<string, string>)[claimState(c)],
+              "Debit Note": c.debitNoteRef || "",
+              "Credit Amount": c.creditAmount || "",
+              "Replacement Serial": c.replacementSerial || "",
             }))}
             filename="delivery-challans"
           />
@@ -547,8 +662,8 @@ export default function DeliveryChallanPage() {
               <RotateCcw className="w-5 h-5" />
             </div>
             <div>
-              <p className="text-2xl font-bold">{challans.filter((c) => (c.flowType || "CNR") === "CNR").length}</p>
-              <p className="text-xs text-muted-foreground">CNR (Customer Claims)</p>
+              <p className="text-2xl font-bold">{challans.filter((c) => claimState(c) === "pending").length}</p>
+              <p className="text-xs text-muted-foreground">Pending return claims</p>
             </div>
           </div>
         </div>
@@ -569,8 +684,8 @@ export default function DeliveryChallanPage() {
               <CheckCircle2 className="w-5 h-5" />
             </div>
             <div>
-              <p className="text-2xl font-bold">{challans.filter((c) => c.approvalStatus === "approved").length}</p>
-              <p className="text-xs text-muted-foreground">Approved & Settled</p>
+              <p className="text-2xl font-bold">{challans.filter((c) => ["CR", "PR"].includes(claimState(c))).length}</p>
+              <p className="text-xs text-muted-foreground">Settled (CR / PR)</p>
             </div>
           </div>
         </div>
@@ -611,9 +726,11 @@ export default function DeliveryChallanPage() {
               <SelectValue placeholder="Flow Type" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Flows</SelectItem>
-              <SelectItem value="CNR">🔄 CNR Only</SelectItem>
-              <SelectItem value="PR">📦 PR Only</SelectItem>
+              <SelectItem value="all">All Claims</SelectItem>
+              <SelectItem value="pending">⏳ Pending</SelectItem>
+              <SelectItem value="CR">💰 CR (credit)</SelectItem>
+              <SelectItem value="PR">📦 PR (replacement)</SelectItem>
+              <SelectItem value="cancelled">✖ Cancelled</SelectItem>
             </SelectContent>
           </Select>
 
@@ -649,9 +766,8 @@ export default function DeliveryChallanPage() {
                 <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Origin & Destination</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Item & Serial / Defect</th>
                 <th className="px-4 py-3 text-center text-xs font-semibold text-muted-foreground uppercase">Qty / Value</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Vehicle & Driver</th>
-                <th className="px-4 py-3 text-center text-xs font-semibold text-muted-foreground uppercase">Flow Mode</th>
-                <th className="px-4 py-3 text-center text-xs font-semibold text-muted-foreground uppercase">Approval</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Driver · Vehicle · Mobile</th>
+                <th className="px-4 py-3 text-center text-xs font-semibold text-muted-foreground uppercase" colSpan={2}>Claim (CR / PR)</th>
                 <th className="px-4 py-3 text-center text-xs font-semibold text-muted-foreground uppercase">Action</th>
               </tr>
             </thead>
@@ -662,8 +778,7 @@ export default function DeliveryChallanPage() {
                 <tr><td colSpan={8} className="py-12 text-center text-muted-foreground">No records found.</td></tr>
               ) : (
                 filtered.map((c) => {
-                  const isCNR = (c.flowType || "CNR") === "CNR";
-                  const isApproved = c.approvalStatus === "approved";
+                  const state = claimState(c);
                   return (
                     <tr key={c._id || c.challanNo} className="hover:bg-slate-50 transition-colors">
                       <td className="px-4 py-3 font-mono font-bold text-[#3F63AD] cursor-pointer" onClick={() => openPrintSheet(c)}>
@@ -688,35 +803,55 @@ export default function DeliveryChallanPage() {
                         <span className="font-bold text-slate-900">{c.quantity} {c.unit}</span>
                       </td>
                       <td className="px-4 py-3">
-                        <p className="text-xs font-mono font-bold text-slate-800 uppercase">{c.vehicleNo || "GIDA Van"}</p>
-                        <p className="text-[11px] text-slate-500">{c.transporterName}</p>
+                        {(() => {
+                          const d = driverOf(c);
+                          return (
+                            <>
+                              <p className="text-xs font-bold text-slate-900">{d.name || <span className="text-slate-400 font-normal">No driver</span>}</p>
+                              <p className="text-xs font-mono font-bold text-slate-700 uppercase">{d.vehicle || <span className="text-slate-400 font-normal normal-case">No vehicle</span>}</p>
+                              {d.phone ? (
+                                <a href={`tel:${d.phone}`} className="text-[11px] font-mono text-[#30539C] hover:underline">{d.phone}</a>
+                              ) : (
+                                <p className="text-[11px] text-rose-500">{d.name ? "Mobile not saved" : ""}</p>
+                              )}
+                            </>
+                          );
+                        })()}
                       </td>
-                      <td className="px-4 py-3 text-center">
-                        <div className="inline-flex items-center p-0.5 rounded-lg bg-slate-100 border border-slate-200">
-                          <button
-                            type="button"
-                            onClick={() => !isApproved && handleToggleFlowType(c)}
-                            disabled={isApproved}
-                            className={cn("px-2 py-1 rounded-md text-xs font-extrabold", isCNR ? "bg-amber-500 text-white" : "text-slate-500")}
-                          >
-                            CNR
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => !isApproved && handleToggleFlowType(c)}
-                            disabled={isApproved}
-                            className={cn("px-2 py-1 rounded-md text-xs font-extrabold", !isCNR ? "bg-[#30539C] text-white" : "text-slate-500")}
-                          >
-                            PR
-                          </button>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        {isApproved ? (
-                          <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 font-bold text-[10px]">✅ Approved</Badge>
-                        ) : (
-                          <Badge className="bg-amber-100 text-amber-800 border-amber-300 font-bold text-[10px]">⏳ Pending</Badge>
+                      <td className="px-4 py-3 text-center" colSpan={2}>
+                        {state === "" && <span className="text-xs text-slate-400">—</span>}
+                        {state === "pending" && (
+                          <div className="flex flex-col items-center gap-1">
+                            <Badge className="bg-amber-100 text-amber-800 border-amber-300 font-bold text-[10px]">⏳ Pending</Badge>
+                            {canSettle && (
+                              <div className="flex gap-1">
+                                <Button size="sm" onClick={() => openSettle(c)} className="h-6 px-2 text-[10px] font-bold bg-[#30539C] hover:bg-[#25427d] text-white">
+                                  Settle CR / PR
+                                </Button>
+                                <Button size="sm" variant="outline" onClick={() => cancelClaim(c)} className="h-6 px-2 text-[10px] font-bold text-rose-600 border-rose-200">
+                                  Cancel
+                                </Button>
+                              </div>
+                            )}
+                          </div>
                         )}
+                        {state === "CR" && (
+                          <div className="flex flex-col items-center gap-0.5">
+                            <Badge className="bg-emerald-600 text-white font-bold text-[10px]">💰 CR</Badge>
+                            {Number(c.creditAmount) > 0 && <span className="text-[11px] font-bold text-emerald-700">{formatCurrency(Number(c.creditAmount))}</span>}
+                            {(c.debitNoteRef || c.creditNoteRef) && <span className="text-[10px] font-mono text-slate-500">{c.debitNoteRef || c.creditNoteRef}</span>}
+                          </div>
+                        )}
+                        {state === "PR" && (
+                          <div className="flex flex-col items-center gap-0.5">
+                            <Badge className="bg-[#30539C] text-white font-bold text-[10px]">📦 PR</Badge>
+                            {c.replacementSerial && <span className="text-[10px] font-mono text-slate-600">SN: {c.replacementSerial}</span>}
+                            {c.replacementItemName && c.replacementItemName !== c.itemName && (
+                              <span className="text-[10px] text-slate-500 max-w-[140px] truncate">{c.replacementItemName}</span>
+                            )}
+                          </div>
+                        )}
+                        {state === "cancelled" && <Badge className="bg-slate-100 text-slate-500 border-slate-300 font-bold text-[10px]">✖ Cancelled</Badge>}
                       </td>
                       <td className="px-4 py-3 text-center">
                         <Button variant="outline" size="sm" onClick={() => openPrintSheet(c)} className="h-7 px-2 text-[11px] font-semibold border-[#3F63AD]/40 text-[#3F63AD] hover:bg-[#3F63AD] hover:text-white">
@@ -744,10 +879,12 @@ export default function DeliveryChallanPage() {
                 <p className="text-xs text-slate-300 mt-0.5">GIDA Hub Logistics & Replacement Transit.</p>
               </div>
             </div>
-            <div className="flex items-center gap-2 bg-white/10 p-1.5 rounded-xl border border-white/15 shrink-0">
-              <button onClick={() => setFormData({ ...formData, flowType: "CNR" })} className={cn("px-3 py-1 rounded-lg text-xs font-black", formData.flowType === "CNR" ? "bg-amber-500 text-white" : "text-slate-300")}>CNR</button>
-              <button onClick={() => setFormData({ ...formData, flowType: "PR" })} className={cn("px-3 py-1 rounded-lg text-xs font-black", formData.flowType === "PR" ? "bg-[#30539C] text-white" : "text-slate-300")}>PR</button>
-            </div>
+            {(formData.type === "Supplier Return" || formData.type === "Customer Return") && (
+              <div className="text-[11px] text-slate-200 bg-white/10 px-3 py-1.5 rounded-xl border border-white/15 shrink-0 max-w-xs">
+                Claim stays <b>Pending</b>; settle it as{" "}
+                {formData.type === "Supplier Return" ? <><b>CR</b> (supplier money) or <b>PR</b> (replacement)</> : <><b>PR</b> (replacement to customer)</>} when the result comes.
+              </div>
+            )}
           </div>
           <div className="p-6 space-y-6 bg-slate-50/70">
             <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
@@ -791,6 +928,47 @@ export default function DeliveryChallanPage() {
                       <Input value={formData.destinationParty} readOnly className="bg-slate-100 border-slate-300 font-medium text-xs text-slate-700" />
                     </div>
                   </>
+                )}
+                {formData.type === "Supplier Return" && (
+                  <>
+                    <div className="space-y-1.5 relative md:col-span-2">
+                      <Label className="text-xs font-bold text-slate-800">Supplier (product goes back to) *</Label>
+                      <Input
+                        placeholder="Search supplier..."
+                        value={formData.destinationParty}
+                        onChange={(e) => { setFormData({ ...formData, destinationParty: e.target.value, supplierId: "" }); setShowPartyDropdown(true); }}
+                        className="bg-slate-50 border-slate-300 font-bold"
+                      />
+                      {showPartyDropdown && suppliers.length > 0 && formData.destinationParty.trim() && (
+                        <div className="absolute left-0 top-16 w-full bg-white border-2 border-[#3F63AD] shadow-2xl rounded-xl z-[9999] max-h-48 overflow-y-auto divide-y divide-slate-100 p-1">
+                          {suppliers.filter((sp: any) => sp.name?.toLowerCase().includes(formData.destinationParty.toLowerCase())).slice(0, 8).map((sp: any, idx: number) => (
+                            <div key={idx} onMouseDown={() => handleSelectSupplier(sp)} className="p-2 hover:bg-blue-50 cursor-pointer text-xs font-bold">{sp.name}</div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-semibold text-slate-700">Sent from</Label>
+                      <Input value={formData.sourceParty} readOnly className="bg-slate-100 border-slate-300 font-medium text-xs text-slate-700" />
+                    </div>
+                  </>
+                )}
+                {(formData.type === "Supplier Return" || formData.type === "Customer Return") && warehouses.length > 0 && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-slate-700">
+                      {formData.type === "Supplier Return" ? "Stock goes out of" : "Defective unit kept at"}
+                    </Label>
+                    <select
+                      value={formData.warehouse}
+                      onChange={(e) => setFormData({ ...formData, warehouse: e.target.value })}
+                      className="h-9 w-full rounded-md border border-slate-300 bg-slate-50 px-2 text-xs font-semibold"
+                    >
+                      <option value="">Auto (where the product has stock)</option>
+                      {warehouses.map((w: any) => (
+                        <option key={w._id} value={w.name}>{w.name}</option>
+                      ))}
+                    </select>
+                  </div>
                 )}
               </div>
             </div>
@@ -845,7 +1023,7 @@ export default function DeliveryChallanPage() {
                       </span>
                     </div>
                     <Badge className="bg-emerald-700 text-white font-mono font-bold text-xs">
-                      {formData.quantity} {formData.unit} · {formData.flowType} Mode
+                      {formData.quantity} {formData.unit}{formData.type === "Supplier Return" || formData.type === "Customer Return" ? " · Claim: Pending" : ""}
                     </Badge>
                   </div>
 
@@ -929,40 +1107,63 @@ export default function DeliveryChallanPage() {
                 <Truck className="w-4 h-4 text-[#3F63AD]" /> 3. Vehicle & Transportation Logistics (GIDA Route)
               </h4>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="space-y-1.5 md:col-span-4">
+                  <Label className="text-xs font-bold text-slate-800">Driver (Delivery Boy list)</Label>
+                  <select
+                    value={drivers.find((d) => d.name === formData.driverName)?.id || ""}
+                    onChange={(e) => {
+                      const d = drivers.find((x) => x.id === e.target.value);
+                      setFormData({
+                        ...formData,
+                        driverName: d?.name || "",
+                        driverPhone: d?.phone || "",
+                        vehicleNo: d?.vehicleNumber || "",
+                      });
+                    }}
+                    className="h-9 w-full rounded-md border border-slate-300 bg-slate-50 px-2 text-xs font-semibold"
+                  >
+                    <option value="">{drivers.length ? "Choose driver…" : "No driver added yet"}</option>
+                    {drivers.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.name} · {d.vehicleNumber || "no vehicle"} · {d.phone || "no mobile"}
+                      </option>
+                    ))}
+                  </select>
+                  {drivers.length === 0 && (
+                    <p className="text-[11px] text-slate-500">Add drivers in Users &amp; Staff KYC Master with the role Delivery Boy (with mobile and vehicle).</p>
+                  )}
+                </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-bold text-slate-800">Vehicle Reg Number *</Label>
-                  <Input 
-                    placeholder="e.g. UP-53-ET-8819" 
-                    value={formData.vehicleNo} 
-                    onChange={(e) => setFormData({ ...formData, vehicleNo: e.target.value.toUpperCase() })} 
-                    className="bg-slate-50 border-slate-300 font-mono uppercase font-bold" 
+                  <Label className="text-xs font-bold text-slate-800">Driver Name</Label>
+                  <Input
+                    value={formData.driverName}
+                    onChange={(e) => setFormData({ ...formData, driverName: e.target.value })}
+                    className="bg-slate-50 border-slate-300 text-xs font-bold"
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-slate-700">Transporter / Agency Name</Label>
-                  <Input 
-                    placeholder="Value Plus In-House Van" 
-                    value={formData.transporterName} 
-                    onChange={(e) => setFormData({ ...formData, transporterName: e.target.value })} 
-                    className="bg-slate-50 border-slate-300 text-xs" 
+                  <Label className="text-xs font-bold text-slate-800">Vehicle Number</Label>
+                  <Input
+                    value={formData.vehicleNo}
+                    onChange={(e) => setFormData({ ...formData, vehicleNo: e.target.value.toUpperCase() })}
+                    className="bg-slate-50 border-slate-300 font-mono uppercase font-bold"
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-slate-700">Driver / Dispatcher Name</Label>
-                  <Input 
-                    placeholder="Amit Singh" 
-                    value={formData.driverName} 
-                    onChange={(e) => setFormData({ ...formData, driverName: e.target.value })} 
-                    className="bg-slate-50 border-slate-300 text-xs" 
+                  <Label className="text-xs font-bold text-slate-800">Driver Mobile</Label>
+                  <Input
+                    maxLength={10}
+                    value={formData.driverPhone}
+                    onChange={(e) => setFormData({ ...formData, driverPhone: e.target.value.replace(/\D/g, "") })}
+                    className="bg-slate-50 border-slate-300 font-mono"
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-slate-700">Driver Phone Number</Label>
-                  <Input 
-                    placeholder="9140860604" 
-                    value={formData.driverPhone} 
-                    onChange={(e) => setFormData({ ...formData, driverPhone: e.target.value })} 
-                    className="bg-slate-50 border-slate-300 font-mono" 
+                  <Label className="text-xs font-semibold text-slate-700">Transporter / Agency (optional)</Label>
+                  <Input
+                    value={formData.transporterName}
+                    onChange={(e) => setFormData({ ...formData, transporterName: e.target.value })}
+                    className="bg-slate-50 border-slate-300 text-xs"
                   />
                 </div>
                 <div className="space-y-1.5 md:col-span-2">
@@ -993,10 +1194,116 @@ export default function DeliveryChallanPage() {
                 Cancel
               </Button>
               <Button onClick={handleSave} className="bg-[#3F63AD] hover:bg-[#2E4F95] text-white px-6 font-bold shadow-lg shadow-[#3F63AD]/25">
-                <CheckCircle2 className="w-4 h-4 mr-1.5" /> Issue Delivery Challan ({formData.flowType})
+                <CheckCircle2 className="w-4 h-4 mr-1.5" /> Issue Delivery Challan
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── SETTLE A RETURN CLAIM: CR (supplier money -> debit note) / PR (replacement) ─── */}
+      <Dialog open={!!settling} onOpenChange={(o) => { if (!o) setSettling(null); }}>
+        <DialogContent className="max-w-lg">
+          {settling && (
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-lg font-bold">Settle claim · {settling.challanNo}</h3>
+                <p className="text-xs text-slate-500">
+                  {settling.itemName}{settling.serialImei ? ` · SN ${settling.serialImei}` : ""} · {settling.quantity} {settling.unit} ·{" "}
+                  {settling.type === "Supplier Return" ? `to ${settling.destinationParty}` : `from ${settling.sourceParty}`}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                {(settling.type === "Supplier Return" ? (["CR", "PR"] as const) : (["PR"] as const)).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setSettleForm((f) => ({ ...f, mode: m }))}
+                    className={cn(
+                      "rounded-xl border p-3 text-left",
+                      settleForm.mode === m ? "border-[#30539C] bg-blue-50 ring-2 ring-[#30539C]/30" : "border-slate-200"
+                    )}
+                  >
+                    <p className="font-black text-sm">{m === "CR" ? "💰 CR — Credit" : "📦 PR — Replacement"}</p>
+                    <p className="text-[11px] text-slate-500">
+                      {m === "CR"
+                        ? "Supplier gave money. A debit note goes into his ledger and comes off the next bill."
+                        : settling.type === "Supplier Return"
+                        ? "Supplier sent a new product. It comes into stock."
+                        : "Customer gets a new product. It goes out of stock."}
+                    </p>
+                  </button>
+                ))}
+              </div>
+
+              {settleForm.mode === "CR" ? (
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold">Amount credited by supplier (₹) *</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={settleForm.creditAmount}
+                    onChange={(e) => setSettleForm((f) => ({ ...f, creditAmount: e.target.value }))}
+                    className="font-bold"
+                  />
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-bold">Replacement product</Label>
+                    <Input
+                      placeholder="Same product — or search another..."
+                      value={replacementSearch}
+                      onChange={(e) => setReplacementSearch(e.target.value)}
+                      className="text-xs"
+                    />
+                    <p className="text-[11px] text-slate-600">
+                      Selected:{" "}
+                      <b>{items.find((it: any) => it._id === settleForm.replacementItemId)?.name || settling.itemName}</b>
+                    </p>
+                    {replacementSearch.trim() && (
+                      <div className="max-h-40 overflow-y-auto border rounded-lg divide-y">
+                        {items
+                          .filter((it: any) => `${it.name} ${it.vpCode || ""} ${it.code || ""}`.toLowerCase().includes(replacementSearch.toLowerCase()))
+                          .slice(0, 8)
+                          .map((it: any) => (
+                            <div
+                              key={it._id}
+                              onClick={() => { setSettleForm((f) => ({ ...f, replacementItemId: it._id })); setReplacementSearch(""); }}
+                              className="p-2 text-xs hover:bg-blue-50 cursor-pointer"
+                            >
+                              <b>{it.name}</b> <span className="text-slate-400">{it.vpCode || it.code}</span>
+                            </div>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-bold">New serial / IMEI</Label>
+                    <Input
+                      placeholder="Comma separated if more than one"
+                      value={settleForm.replacementSerial}
+                      onChange={(e) => setSettleForm((f) => ({ ...f, replacementSerial: e.target.value.toUpperCase() }))}
+                      className="font-mono text-xs"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Note (optional)</Label>
+                <Input value={settleForm.note} onChange={(e) => setSettleForm((f) => ({ ...f, note: e.target.value }))} className="text-xs" />
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setSettling(null)} disabled={settleBusy}>Close</Button>
+                <Button onClick={submitSettle} disabled={settleBusy} className="bg-[#30539C] hover:bg-[#25427d] text-white font-bold">
+                  {settleBusy ? "Saving..." : settleForm.mode === "CR" ? "Save CR & raise debit note" : "Save PR"}
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
@@ -1012,12 +1319,10 @@ export default function DeliveryChallanPage() {
                   <span className="text-xs font-mono font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-md border">
                     Challan No: <span className="text-[#30539C] font-black">{selectedChallan.challanNo}</span>
                   </span>
-                  <Badge className={cn("text-xs font-bold font-mono px-2 py-0.5", selectedChallan.flowType === "PR" ? "bg-[#30539C] text-white" : "bg-amber-500 text-white")}>
-                    {selectedChallan.flowType || "CNR"} Mode
-                  </Badge>
-                  {selectedChallan.approvalStatus === "approved" && (
-                    <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 font-bold text-xs">
-                      ✅ Approved
+                  {claimState(selectedChallan) && (
+                    <Badge className={cn("text-xs font-bold font-mono px-2 py-0.5",
+                      claimState(selectedChallan) === "PR" ? "bg-[#30539C] text-white" : claimState(selectedChallan) === "CR" ? "bg-emerald-600 text-white" : "bg-amber-500 text-white")}>
+                      {({ pending: "Claim Pending", CR: "CR (credit)", PR: "PR (replacement)", cancelled: "Cancelled" } as Record<string, string>)[claimState(selectedChallan)]}
                     </Badge>
                   )}
                 </div>
@@ -1030,7 +1335,7 @@ export default function DeliveryChallanPage() {
                       const phone = (selectedChallan.sourcePhone || selectedChallan.customerPhone || "").replace(/\D/g, "");
                       const ph = phone.length === 10 ? `91${phone}` : phone;
                       const msg = encodeURIComponent(
-                        `*VALUE PLUS / ASHOKA ENTERPRISES*\nDelivery & Return Challan #${selectedChallan.challanNo}\nFlow Mode: ${selectedChallan.flowType || 'CNR'}\nItem: ${selectedChallan.itemName}\nSerial: ${selectedChallan.serialImei || 'N/A'}\nQty: ${selectedChallan.quantity} ${selectedChallan.unit}\nDestination: ${selectedChallan.destinationParty}\nStatus: ${selectedChallan.status}\n\nThank you!`
+                        `*VALUE PLUS / ASHOKA ENTERPRISES*\nDelivery & Return Challan #${selectedChallan.challanNo}${claimState(selectedChallan) ? `\nClaim: ${claimState(selectedChallan)}` : ''}\nItem: ${selectedChallan.itemName}\nSerial: ${selectedChallan.serialImei || 'N/A'}\nQty: ${selectedChallan.quantity} ${selectedChallan.unit}\nDestination: ${selectedChallan.destinationParty}${driverOf(selectedChallan).name ? `\nDriver: ${driverOf(selectedChallan).name}${driverOf(selectedChallan).phone ? ` (${driverOf(selectedChallan).phone})` : ''}` : ''}${driverOf(selectedChallan).vehicle ? `\nVehicle: ${driverOf(selectedChallan).vehicle}` : ''}\nStatus: ${selectedChallan.status}\n\nThank you!`
                       );
                       window.open(ph ? `https://wa.me/${ph}?text=${msg}` : `https://wa.me/?text=${msg}`, "_blank");
                     }} 
@@ -1078,7 +1383,7 @@ export default function DeliveryChallanPage() {
                   <span className="text-xs flex items-center gap-1.5">
                     DELIVERY & RETURN CHALLAN
                     <span className="text-[10px] text-slate-600 font-normal">
-                      ({selectedChallan.flowType === "PR" ? "Purchase / Vendor Return Note" : "Customer Replacement / Warranty Transit"})
+                      ({selectedChallan.type === "Supplier Return" ? "Defective Return to Supplier" : selectedChallan.type === "Customer Return" ? "Customer Defective Return / Replacement" : selectedChallan.type})
                     </span>
                   </span>
                   <span className="text-xs font-mono">
@@ -1182,16 +1487,16 @@ export default function DeliveryChallanPage() {
                 <div className="grid grid-cols-12 border border-slate-400 my-2 bg-slate-50 text-[10px]">
                   <div className="col-span-3 p-2 border-r border-slate-300">
                     <span className="text-slate-500 uppercase font-bold block">Vehicle Number:</span>
-                    <span className="font-mono font-bold text-slate-900 text-xs uppercase">{selectedChallan.vehicleNo || "UP-53-ET-8819"}</span>
+                    <span className="font-mono font-bold text-slate-900 text-xs uppercase">{driverOf(selectedChallan).vehicle || "—"}</span>
                   </div>
                   <div className="col-span-3 p-2 border-r border-slate-300">
                     <span className="text-slate-500 uppercase font-bold block">Transporter / Route:</span>
-                    <span className="font-bold text-slate-800">{selectedChallan.transporterName || "Value Plus GIDA Logistics Van"}</span>
+                    <span className="font-bold text-slate-800">{selectedChallan.transporterName || "Value Plus own vehicle"}</span>
                   </div>
                   <div className="col-span-3 p-2 border-r border-slate-300">
                     <span className="text-slate-500 uppercase font-bold block">Driver & Contact:</span>
-                    <span className="font-bold text-slate-800">{selectedChallan.driverName || "AMIT SINGH"}</span>
-                    {selectedChallan.driverPhone && <span className="font-mono text-slate-600 block">Ph: {selectedChallan.driverPhone}</span>}
+                    <span className="font-bold text-slate-800">{driverOf(selectedChallan).name || "—"}</span>
+                    {driverOf(selectedChallan).phone && <span className="font-mono text-slate-600 block">Ph: {driverOf(selectedChallan).phone}</span>}
                   </div>
                   <div className="col-span-3 p-2">
                     <span className="text-slate-500 uppercase font-bold block">Transit Reason / E-Way:</span>

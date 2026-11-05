@@ -25,11 +25,27 @@ export interface ILead extends Document {
   /** When this lead was last actually followed up. */
   lastFollowUpDate?: string;
   /** Every follow-up logged against the lead, oldest first. */
-  followUps?: { date: string; nextDate?: string; notes?: string; staff?: string; staffId?: string; loggedAt?: Date }[];
+  followUps?: { date: string; nextDate?: string; outcome?: string; notes?: string; staff?: string; staffId?: string; loggedAt?: Date }[];
   /** Times the customer was called from the ERP's Call button. */
   callCount?: number;
   lastCalledAt?: Date;
   calls?: { at: Date; staff?: string; staffId?: string }[];
+  /**
+   * Other salesmen this lead is shared with (lib/lead-share.ts), e.g. the LG salesman for an LG AC on a lead the
+   * LLOYD salesman owns. A share starts "pending" and the lead shows in the other salesman's list once he accepts.
+   */
+  sharedWith?: {
+    staff: string;
+    staffId: string;
+    brand?: string;
+    products?: string;
+    note?: string;
+    status: "pending" | "accepted" | "rejected";
+    requestedBy?: string;
+    requestedById?: string;
+    requestedAt?: Date;
+    respondedAt?: Date;
+  }[];
   notes?: string;
   convertedInvoiceNumber?: string;
   timeline: ILeadTimeline[];
@@ -73,6 +89,8 @@ const LeadSchema = new Schema<ILead>(
           _id: false,
           date: { type: String, required: true },
           nextDate: { type: String, default: "" },
+          // What happened on the call (lib/lead-outcomes.ts), e.g. "not_received".
+          outcome: { type: String, default: "" },
           notes: { type: String, default: "" },
           staff: { type: String, default: "" },
           staffId: { type: String, default: "" },
@@ -83,6 +101,24 @@ const LeadSchema = new Schema<ILead>(
     },
     callCount: { type: Number, default: 0 },
     lastCalledAt: { type: Date },
+    sharedWith: {
+      type: [
+        {
+          _id: false,
+          staff: { type: String, required: true },
+          staffId: { type: String, required: true },
+          brand: { type: String, default: "" },
+          products: { type: String, default: "" },
+          note: { type: String, default: "" },
+          status: { type: String, enum: ["pending", "accepted", "rejected"], default: "pending" },
+          requestedBy: { type: String, default: "" },
+          requestedById: { type: String, default: "" },
+          requestedAt: { type: Date, default: Date.now },
+          respondedAt: { type: Date },
+        },
+      ],
+      default: [],
+    },
     calls: {
       type: [{ _id: false, at: { type: Date, default: Date.now }, staff: { type: String, default: "" }, staffId: { type: String, default: "" } }],
       default: [],

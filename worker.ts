@@ -111,7 +111,8 @@ async function connectRealtime(request: Request, env: any, ctx: ExecutionContext
 
 export default {
   // Cron (wrangler.jsonc "triggers"), every 5 minutes:
-  //  - 10:00-10:04 India time (the 10:00 run) -> "office time has started" for all staff (once a day);
+  //  - 10:00-10:04 India time (the 10:00 run) -> "office time has started" for all staff, and GIDA order
+  //    housekeeping (7-day clear-out + pending reminder), each once a day;
   //  - always -> attendance alerts (not checked in from 10:00, break over and not at the store).
   async scheduled(_event: unknown, env: any, ctx: ExecutionContext) {
     const hit = async (path: string) => {
@@ -124,7 +125,11 @@ export default {
       }
     };
     const ist = new Date(Date.now() + 5.5 * 3600 * 1000);
-    if (ist.getUTCHours() === 10 && ist.getUTCMinutes() < 5) ctx.waitUntil(hit("/api/cron/office-start"));
+    if (ist.getUTCHours() === 10 && ist.getUTCMinutes() < 5) {
+      ctx.waitUntil(hit("/api/cron/office-start"));
+      // GIDA warehouse orders: delete those older than 7 days, remind the Admin about pending ones (once a day).
+      ctx.waitUntil(hit("/api/cron/stock-orders"));
+    }
     ctx.waitUntil(hit("/api/cron/attendance"));
   },
 

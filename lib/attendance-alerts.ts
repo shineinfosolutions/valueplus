@@ -1,4 +1,5 @@
 import connectToDatabase from "@/lib/db";
+import { lateMeansHalfDay } from "@/lib/attendance-rules";
 import ScheduledRun from "@/models/ScheduledRun";
 import User from "@/models/User";
 import Attendance from "@/models/Attendance";
@@ -133,8 +134,9 @@ async function autoCheckOut(now: ReturnType<typeof istNow>): Promise<number> {
     closeAwayAtCheckout(rec, new Date(`${rec.date}T${String(Math.floor(endMin / 60)).padStart(2, "0")}:${String(endMin % 60).padStart(2, "0")}:00+05:30`));
     rec.workingDurationMinutes = worked;
     rec.isEarlyCheckout = false;
-    if (hours < (Number(shift.minHoursForFullDay) || 7.5)) rec.status = "Half-Day";
-    else if (rec.status !== "Late") rec.status = "Present";
+    // Checked out at the shift end: short hours (from coming late) are a Half-Day only for the Manager and Cashier.
+    if (lateMeansHalfDay(rec.staffRole) && hours < (Number(shift.minHoursForFullDay) || 7.5)) rec.status = "Half-Day";
+    else if (rec.status !== "Late" && rec.status !== "Half-Day") rec.status = "Present";
     rec.notes = (rec.notes ? rec.notes + " | " : "") + `Checked out automatically at ${label12(endMin)} (shift end, ${hours.toFixed(1)} hrs)`;
     await rec.save();
     closed++;

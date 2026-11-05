@@ -1,4 +1,5 @@
 import { getActor } from "@/lib/requirePermission";
+import { renameStaffEverywhere } from "@/lib/staff-rename";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import User from "@/models/User";
@@ -148,12 +149,26 @@ export async function PUT(req: Request) {
       }
     }
 
+    const before: any = updateFields.name !== undefined ? await User.findById(id).select("name").lean() : null;
+
     const updated = await User.findByIdAndUpdate(id, updateFields, { new: true })
       .select("-password")
       .lean();
 
     if (!updated) {
       return NextResponse.json({ success: false, error: "User not found" }, { status: 404 });
+    }
+
+    // A changed name: the bills, leads, attendance … saved under the old name follow, so the same person does not
+    // show twice in incentives and the leaderboard (lib/staff-rename.ts).
+    const oldName = String(before?.name || "").trim();
+    const newName = String((updated as any).name || "").trim();
+    if (before && oldName && newName && oldName !== newName) {
+      try {
+        await renameStaffEverywhere(oldName, newName);
+      } catch (e) {
+        console.warn("Notice: could not carry the new name to old records:", e);
+      }
     }
 
     return NextResponse.json({ success: true, data: updated, message: "User profile updated successfully!" });

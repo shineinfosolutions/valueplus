@@ -8,6 +8,7 @@ import { FinancePayoutReminder } from "@/components/shared/FinancePayoutReminder
 import { PendingEstimatePopup } from "@/components/shared/PendingEstimatePopup";
 import { PendingLeavePopup } from "@/components/shared/PendingLeavePopup";
 import { PendingDiscountPopup } from "@/components/shared/PendingDiscountPopup";
+import { LeadShareInbox } from "@/components/shared/LeadShareInbox";
 import { UnreadNotificationPopup } from "@/components/shared/UnreadNotificationPopup";
 import { LeadsLoginPopup } from "@/components/shared/LeadsLoginPopup";
 import { Toaster } from "sonner";
@@ -49,6 +50,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <PendingEstimatePopup />
         <PendingLeavePopup />
         <PendingDiscountPopup />
+        <LeadShareInbox />
 
         {/* Every unread notification, each time the app is opened, until it is read */}
         <UnreadNotificationPopup />

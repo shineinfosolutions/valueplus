@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { isRealVpCode } from "@/lib/vp-code";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -354,7 +355,7 @@ export function PurchaseImportModal({
             name: row.name,
             category: row.category || defaultCategory,
             brand: row.brand || defaultBrand || "Unbranded",
-            unit: "PCS",
+            unit: "NOS",
             // The invoice itself already told us this product's real HSN —
             // "8528" (a generic electronics fallback) only applies when the
             // sheet genuinely had no HSN column to read one from.
@@ -364,6 +365,8 @@ export function PurchaseImportModal({
             sellingPrice: Math.round(row.rate * 1.25),
             mrp: Math.round(row.rate * 1.3),
             ...(row.supplierCode ? { supplierCodes: [row.supplierCode] } : {}),
+            // The invoice's own item code (VP0012345) is this product's VP code.
+            ...(isRealVpCode(row.supplierCode) ? { vpCode: String(row.supplierCode).toUpperCase() } : {}),
             openingStock: 0,
             currentStock: 0,
             status: "active",

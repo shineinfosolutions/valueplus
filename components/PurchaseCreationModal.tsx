@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo, useEffect } from "react";
+import { appConfirm, appPrompt } from "@/components/shared/AppDialogs";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -851,8 +852,8 @@ export function PurchaseCreationModal({ isOpen, onClose, mode = "entry", preload
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => {
-                  if (form.items.length > 0 && !confirm("This switches to creating a Purchase Order instead of a Purchase Entry (Supplier Bill) — it won't update stock or count as a received bill. Your entered items stay filled in. Continue?")) {
+                onClick={async () => {
+                  if (form.items.length > 0 && !(await appConfirm("This switches to creating a Purchase Order instead of a Purchase Entry (Supplier Bill) — it won't update stock or count as a received bill. Your entered items stay filled in. Continue?"))) {
                     return;
                   }
                   setCurrentMode("order");
@@ -1088,8 +1089,8 @@ export function PurchaseCreationModal({ isOpen, onClose, mode = "entry", preload
                       </span>
                       <Button
                         size="sm"
-                        onClick={() => {
-                          if (form.items.length > 0 && !confirm("This switches to creating a Purchase Order instead of a Purchase Entry (Supplier Bill) — it won't update stock or count as a received bill. Your entered items stay filled in. Continue?")) {
+                        onClick={async () => {
+                          if (form.items.length > 0 && !(await appConfirm("This switches to creating a Purchase Order instead of a Purchase Entry (Supplier Bill) — it won't update stock or count as a received bill. Your entered items stay filled in. Continue?"))) {
                             return;
                           }
                           setCurrentMode("order");

@@ -39,31 +39,5 @@
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["AppServer"] },
     { "tag": "v2", "new_sqlite_classes": ["RealtimeHub"] }
-  ],
-  "env": {
-    // Test copy on workers.dev — deploy with `npx opennextjs-cloudflare deploy --env staging`.
-    "staging": {
-      "name": "valueplus-erp-staging",
-      // Never take over the production custom domain.
-      "routes": [],
-      "workers_dev": true,
-      "durable_objects": {
-        "bindings": [
-          { "name": "APP_SERVER", "class_name": "AppServer" },
-          { "name": "REALTIME", "class_name": "RealtimeHub" }
-        ]
-      },
-      "services": [
-        {
-          "binding": "WORKER_SELF_REFERENCE",
-          "service": "valueplus-erp-staging"
-        }
-      ],
-      "triggers": { "crons": ["*/5 * * * *"] },
-      "r2_buckets": [{ "binding": "DELIVERY_PROOFS", "bucket_name": "valueplus-delivery-proofs-staging" }],
-      "vars": {
-        "NEXTAUTH_URL": "https://valueplus-erp-staging.shineinfosolutions1.workers.dev"
-      }
-    }
-  }
+  ]
 }

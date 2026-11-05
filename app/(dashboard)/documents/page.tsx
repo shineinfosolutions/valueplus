@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, useEffect } from "react";
+import { appConfirm, appPrompt } from "@/components/shared/AppDialogs";
 import { useSession } from "next-auth/react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageShell } from "@/components/shared/page-shell";
@@ -108,12 +109,12 @@ export default function DocumentsPage() {
     onError: (err: any) => toast.error(err.message),
   });
 
-  const newFolder = () => {
-    const name = window.prompt("New folder name (e.g. Bank Statements, GST, Agreements):");
+  const newFolder = async () => {
+    const name = await appPrompt("New folder name (e.g. Bank Statements, GST, Agreements):");
     if (name && name.trim()) folderMutation.mutate({ name });
   };
-  const renameFolder = (f: any) => {
-    const name = window.prompt("Rename folder:", f.name);
+  const renameFolder = async (f: any) => {
+    const name = await appPrompt("Rename folder:", f.name);
     if (name && name.trim() && name.trim() !== f.name) folderMutation.mutate({ id: String(f._id), name });
   };
 
@@ -251,7 +252,7 @@ export default function DocumentsPage() {
                   type="button"
                   size="sm"
                   variant="ghost"
-                  onClick={() => window.confirm(`Delete the folder "${active.name}"?`) && deleteFolderMutation.mutate(String(active._id))}
+                  onClick={async () => { if (await appConfirm(`Delete the folder "${active.name}"?`)) deleteFolderMutation.mutate(String(active._id)); }}
                   className="h-8 text-xs text-rose-600 hover:bg-rose-50"
                 >
                   <Trash2 className="w-3 h-3 mr-1" /> Delete folder
@@ -437,7 +438,7 @@ export default function DocumentsPage() {
                               variant="ghost"
                               disabled={deleteMutation.isPending}
                               onClick={() => {
-                                if (window.confirm(`Delete "${d.narration}"? This cannot be undone.`)) deleteMutation.mutate(d._id);
+                                void appConfirm(`Delete "${d.narration}"? This cannot be undone.`).then((ok) => { if (ok) deleteMutation.mutate(d._id); });
                               }}
                               className="h-7 px-2 text-[11px] text-rose-600 hover:text-rose-700 hover:bg-rose-50"
                               title="Delete document"

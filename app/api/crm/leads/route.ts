@@ -1,9 +1,12 @@
+import { outcomeOf } from "@/lib/lead-outcomes";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import Lead from "@/models/Lead";
 import { notifyWhatsApp } from "@/lib/whatsapp/notify";
 import { getActor } from "@/lib/requirePermission";
 import { notifyAssignee } from "@/lib/notify";
+import User from "@/models/User";
+import { brandsOf, normPerson } from "@/lib/lead-share";
 
 /** Roles that see every lead; everyone else sees only their own. */
 const ALL_LEADS_ROLES = ["admin", "superadmin", "manager", "accounts", "cashier"];
@@ -24,6 +27,23 @@ export async function GET(req: Request) {
       return NextResponse.json({ success: false, error: "You must be signed in to see leads." }, { status: 401 });
     }
 
+    // The salesmen a lead can be shared with: name and brand(s).
+    if (searchParams.get("shareTargets") === "1") {
+      const users: any[] = await User.find(
+        { role: { $in: ["salesman", "sales"] }, status: { $ne: "inactive" } },
+        { name: 1, assignedBrand: 1, assignedBrands: 1 }
+      ).sort({ name: 1 }).lean();
+      return NextResponse.json({
+        success: true,
+        data: users.map((u) => ({ id: String(u._id), name: u.name, brands: brandsOf(u) })),
+      });
+    }
+    // Share requests waiting for this person to accept or reject.
+    if (searchParams.get("shareInbox") === "1") {
+      const inbox = await Lead.find({ sharedWith: { $elemMatch: { staffId: actor.id, status: "pending" } } }).sort({ updatedAt: -1 }).lean();
+      return NextResponse.json({ success: true, data: inbox });
+    }
+
     const filter: any = {};
     // A salesperson sees only the leads assigned to them (and the unassigned
     // "Sales Team" pool); Admin, Store Manager and Accounts see every lead.
@@ -36,6 +56,8 @@ export async function GET(req: Request) {
       filter.$or = [
         ...names.map((n) => ({ assignedStaff: { $regex: new RegExp(`^\\s*${escapeRegex(n)}\\s*$`, "i") } })),
         ...(isSales ? [{ assignedStaff: { $regex: /^sales team$/i } }, { assignedStaff: { $in: ["", null] } }] : []),
+        // A lead another salesman shared with them, once they accepted it.
+        { sharedWith: { $elemMatch: { staffId: actor.id, status: "accepted" } } },
       ];
     }
     if (status && status !== "all") filter.status = status;
@@ -111,10 +133,10 @@ export async function PUT(req: Request) {
     const body = await req.json();
     await connectToDatabase();
     
-    const { id, leadId, actionNote, followUp, logCall, ...updates } = body;
+    const { id, leadId, actionNote, followUp, logCall, shareRequest, shareRespond, ...updates } = body;
     // Call and follow-up history is written only by the Call / Follow-up actions
     // (attributed to the signed-in user); it can never be set or edited here.
-    for (const k of ["calls", "callCount", "lastCalledAt", "followUps", "lastFollowUpDate", "timeline", "_id", "createdAt", "updatedAt"]) {
+    for (const k of ["calls", "callCount", "lastCalledAt", "followUps", "lastFollowUpDate", "timeline", "sharedWith", "_id", "createdAt", "updatedAt"]) {
       delete (updates as any)[k];
     }
     const identifier = id ? { _id: id } : { leadId };
@@ -142,6 +164,82 @@ export async function PUT(req: Request) {
       return NextResponse.json({ success: true, data: lead });
     }
     
+    // Share the lead with another salesman (another brand's product). He sees it once he accepts.
+    if (shareRequest) {
+      const actor = await getActor();
+      if (!actor) return NextResponse.json({ success: false, error: "You must be signed in to do this." }, { status: 401 });
+      const lead: any = await Lead.findOne(identifier);
+      if (!lead) return NextResponse.json({ success: false, error: "Lead not found" }, { status: 404 });
+      const isOwner = normPerson(lead.assignedStaff) === normPerson(actor.name);
+      const isSharer = (lead.sharedWith || []).some((x: any) => x.staffId === actor.id && x.status === "accepted");
+      if (!ALL_LEADS_ROLES.includes(actor.role) && !isOwner && !isSharer) {
+        return NextResponse.json({ success: false, error: "Only the lead's salesman can share it." }, { status: 403 });
+      }
+      const target: any = await User.findById(String(shareRequest.toStaffId || "")).catch(() => null);
+      if (!target || !["salesman", "sales"].includes(String(target.role || "").toLowerCase())) {
+        return NextResponse.json({ success: false, error: "Choose the salesman to share this lead with." }, { status: 400 });
+      }
+      if (normPerson(target.name) === normPerson(lead.assignedStaff)) {
+        return NextResponse.json({ success: false, error: "This lead already belongs to that salesman." }, { status: 400 });
+      }
+      const open = (lead.sharedWith || []).find((x: any) => x.staffId === String(target._id) && x.status !== "rejected");
+      if (open) {
+        return NextResponse.json(
+          { success: false, error: open.status === "pending" ? `${target.name} has not answered the earlier request yet.` : `Already shared with ${target.name}.` },
+          { status: 409 }
+        );
+      }
+      const products = String(shareRequest.products || "").trim().slice(0, 200);
+      if (!products) return NextResponse.json({ success: false, error: "Write which product the customer wants from this salesman." }, { status: 400 });
+      const note = String(shareRequest.note || "").trim().slice(0, 300);
+      const brand = brandsOf(target)[0] || "";
+      lead.sharedWith.push({
+        staff: target.name,
+        staffId: String(target._id),
+        brand,
+        products,
+        note,
+        status: "pending",
+        requestedBy: actor.name,
+        requestedById: actor.id,
+        requestedAt: new Date(),
+      });
+      lead.timeline.push({ date: new Date(), action: `Share requested with ${target.name}${brand ? ` (${brand})` : ""}`, notes: [products, note].filter(Boolean).join(" · "), staff: actor.name });
+      await lead.save();
+      await notifyAssignee(target.name, String(target._id), {
+        type: "approval_request",
+        title: `Lead shared with you: ${lead.customerName}`,
+        message: `${actor.name} wants you on ${lead.customerName}'s lead for ${products}. Accept it to see the lead.`,
+        link: "/marketing/leads",
+        createdBy: actor.name,
+      });
+      return NextResponse.json({ success: true, message: `Request sent to ${target.name}.`, data: lead });
+    }
+
+    // The salesman a lead was shared with accepts or rejects it.
+    if (shareRespond) {
+      const actor = await getActor();
+      if (!actor) return NextResponse.json({ success: false, error: "You must be signed in to do this." }, { status: 401 });
+      const decision = shareRespond.decision === "accept" ? "accepted" : shareRespond.decision === "reject" ? "rejected" : "";
+      if (!decision) return NextResponse.json({ success: false, error: "Choose accept or reject." }, { status: 400 });
+      const lead: any = await Lead.findOne(identifier);
+      if (!lead) return NextResponse.json({ success: false, error: "Lead not found" }, { status: 404 });
+      const entry = (lead.sharedWith || []).find((x: any) => x.staffId === actor.id && x.status === "pending");
+      if (!entry) return NextResponse.json({ success: false, error: "There is no share request for you on this lead." }, { status: 404 });
+      entry.status = decision;
+      entry.respondedAt = new Date();
+      lead.timeline.push({ date: new Date(), action: `${actor.name} ${decision} the shared lead`, notes: entry.products || "", staff: actor.name });
+      await lead.save();
+      await notifyAssignee(entry.requestedBy || lead.assignedStaff, entry.requestedById || undefined, {
+        type: "approval_result",
+        title: `Lead share ${decision}: ${lead.customerName}`,
+        message: `${actor.name} ${decision} ${lead.customerName}'s lead (${entry.products}).`,
+        link: "/marketing/leads",
+        createdBy: actor.name,
+      });
+      return NextResponse.json({ success: true, message: decision === "accepted" ? "Lead added to your list." : "Request rejected.", data: lead });
+    }
+
     // Logging a follow-up: records when the customer was contacted and when the
     // next contact is due, and keeps the history of every one.
     if (followUp) {
@@ -160,7 +258,15 @@ export async function PUT(req: Request) {
       // Always the signed-in user — never taken from the form.
       const staff = actor?.name || "Staff";
       const staffId = actor?.id || "";
-      const notes = String(followUp.notes || "").trim();
+      const notes = String(followUp.notes || "").trim().slice(0, 500);
+      const outcome = outcomeOf(followUp.outcome) ? String(followUp.outcome) : "";
+      if (!outcome && !notes) {
+        return NextResponse.json(
+          { success: false, error: "Choose what happened on the call, or write what the customer said." },
+          { status: 400 }
+        );
+      }
+      const outcomeLabel = outcomeOf(outcome)?.label || "";
 
       const lead: any = await Lead.findOne(identifier);
       if (!lead) {
@@ -168,10 +274,10 @@ export async function PUT(req: Request) {
       }
       lead.lastFollowUpDate = date;
       lead.followUpDate = nextDate;
-      lead.followUps.push({ date, nextDate, notes, staff, staffId, loggedAt: new Date() });
+      lead.followUps.push({ date, nextDate, outcome, notes, staff, staffId, loggedAt: new Date() });
       lead.timeline.push({
         date: new Date(),
-        action: nextDate ? `Follow-up done on ${date}, next on ${nextDate}` : `Follow-up done on ${date}`,
+        action: `${nextDate ? `Follow-up done on ${date}, next on ${nextDate}` : `Follow-up done on ${date}`}${outcomeLabel ? ` (${outcomeLabel})` : ""}`,
         notes,
         staff,
       });

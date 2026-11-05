@@ -3,7 +3,7 @@ import connectToDatabase from "@/lib/db";
 import DiscountApproval from "@/models/DiscountApproval";
 import { getActor } from "@/lib/requirePermission";
 import { notifyRoles, notifyAssignee } from "@/lib/notify";
-import { canDecideDiscount, discountedLines, exemptFrom, normKey } from "@/lib/discount-approval";
+import { TIER_LABEL, canDecideDiscount, decidersOf, discountedLines, exemptFrom, normKey, tiersDecidableBy } from "@/lib/discount-approval";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +11,7 @@ const inr = (n: number) => `₹${Number(n).toLocaleString("en-IN", { maximumFrac
 
 /**
  * GET ?ids=a,b           -> the status of the person's own requests (the form waits on these)
- * GET ?status=pending    -> requests this person may decide (Store Manager: up to 10%; Admin: all)
+ * GET ?status=pending    -> requests this person may decide (Cashier: 5–10%; Store Manager: 5–12%; Admin: all)
  */
 export async function GET(req: Request) {
   try {
@@ -27,9 +27,9 @@ export async function GET(req: Request) {
     const q: any = {};
     const status = url.searchParams.get("status");
     if (status) q.status = status;
-    const r = actor.role;
-    if (r === "manager") q.tier = "manager";
-    else if (!["admin", "superadmin"].includes(r)) return NextResponse.json({ success: true, data: [] });
+    const tiers = tiersDecidableBy(actor.role);
+    if (tiers.length === 0) return NextResponse.json({ success: true, data: [] });
+    if (tiers.length < 3) q.tier = { $in: tiers };
     const rows = await DiscountApproval.find(q).sort({ createdAt: -1 }).limit(200).lean();
     return NextResponse.json({ success: true, data: rows });
   } catch (error: any) {
@@ -74,7 +74,7 @@ export async function POST(req: Request) {
         await open.save();
       }
       if (!open) {
-        await notifyRoles(l.tier === "admin" ? ["admin", "superadmin"] : ["manager", "admin", "superadmin"], {
+        await notifyRoles(decidersOf(l.tier), {
           type: "approval_request",
           title: `Discount approval: ${l.percent}% off ${l.itemName}`,
           message: `${actor.name} wants ${inr(l.sellingPrice)} -> ${inr(l.price)} (${l.percent}% off) x ${l.quantity} for ${customerName}.`,
@@ -103,7 +103,13 @@ export async function PATCH(req: Request) {
     if (!doc) return NextResponse.json({ success: false, error: "Request not found." }, { status: 404 });
     if (!canDecideDiscount(actor.role, doc.tier)) {
       return NextResponse.json(
-        { success: false, error: doc.tier === "admin" ? "A discount above 10% can only be approved by the Admin." : "Only the Store Manager or Admin can approve a discount." },
+        {
+          success: false,
+          error:
+            doc.tier === "admin"
+              ? "A discount above 12% can only be approved by the Admin."
+              : `This discount needs ${TIER_LABEL[doc.tier as keyof typeof TIER_LABEL] || "a senior"} or above to approve.`,
+        },
         { status: 403 }
       );
     }

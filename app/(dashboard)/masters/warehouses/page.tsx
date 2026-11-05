@@ -1,5 +1,6 @@
 "use client";
 import { PageShell } from "@/components/shared/page-shell";
+import { appConfirm, appPrompt } from "@/components/shared/AppDialogs";
 import { Button } from "@/components/ui/button";
 import { Plus, Warehouse, MapPin, Phone, X, Package, ShoppingBag, Store, Building2, ArrowRight, Edit } from "lucide-react";
 import { useState, useEffect } from "react";
@@ -83,7 +84,7 @@ export default function WarehousesPage() {
   }, []);
 
   const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Are you sure you want to delete location "${name}"?`)) return;
+    if (!(await appConfirm(`Are you sure you want to delete location "${name}"?`))) return;
     try {
       const res = await fetch(`/api/warehouses?id=${id}`, { method: "DELETE" });
       const json = await res.json();

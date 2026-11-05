@@ -162,7 +162,7 @@ export async function PUT(req: Request) {
     const body = await req.json();
     await connectToDatabase();
     
-    const { serialNumber, status, invoiceNumber, customerName, customerPhone, notes } = body;
+    const { serialNumber, status, invoiceNumber, customerName, customerPhone, notes, warehouse } = body;
     if (!serialNumber) {
       return NextResponse.json({ success: false, error: "Serial number is required" }, { status: 400 });
     }
@@ -172,6 +172,8 @@ export async function PUT(req: Request) {
     if (invoiceNumber) updateData.invoiceNumber = invoiceNumber;
     if (customerName) updateData.customerName = customerName;
     if (customerPhone) updateData.customerPhone = customerPhone;
+    // The location the unit sits at (moved with a stock transfer, or a closed godown's stock).
+    if (typeof warehouse === "string" && warehouse.trim()) updateData.warehouse = warehouse.trim();
     if (status === "SOLD") updateData.soldDate = new Date().toISOString().split("T")[0];
     
     updateData.$push = {

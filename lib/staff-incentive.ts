@@ -1,6 +1,7 @@
 import Invoice from "@/models/Invoice";
 import Salary from "@/models/Salary";
 import IncentivePayout from "@/models/IncentivePayout";
+import { incentiveShares } from "@/lib/incentive-split";
 
 /**
  * One staff member's incentive, worked out the same way everywhere (the salesman's own dashboard, the
@@ -36,7 +37,11 @@ export interface IncentiveBook {
 export async function loadIncentiveBook(): Promise<IncentiveBook> {
   const bills: any[] = await Invoice.find(
     { type: { $nin: ["proforma", "sales-order", "credit-note"] }, status: { $ne: "cancelled" } },
-    { invoiceNumber: 1, date: 1, customerName: 1, total: 1, salesExecutive: 1, salesExecutiveIncentive: 1, onsitegoIncentive: 1 }
+    {
+      invoiceNumber: 1, date: 1, customerName: 1, total: 1, salesExecutive: 1, salesExecutiveIncentive: 1, onsitegoIncentive: 1,
+      "items.salesExecutive": 1, "items.incentiveEarned": 1, "items.extendedWarrantyProvider": 1, "items.extendedWarrantyAmount": 1,
+      "items.amount": 1, "items.quantity": 1,
+    }
   )
     .sort({ date: -1, createdAt: -1 })
     .lean();
@@ -44,17 +49,25 @@ export async function loadIncentiveBook(): Promise<IncentiveBook> {
   const billCount = new Map<string, number>();
   const byName = new Map<string, any[]>();
   for (const b of bills) {
-    const k = normName(b.salesExecutive);
-    if (!k) continue;
-    billCount.set(k, (billCount.get(k) || 0) + 1);
-    // Product incentive + 10% of the Onsitego plans on the bill (lib/onsitego.ts).
-    const productInc = Number(b.salesExecutiveIncentive) || 0;
-    const onsitego = Number(b.onsitegoIncentive) || 0;
-    const inc = productInc + onsitego;
-    earned.set(k, (earned.get(k) || 0) + inc);
-    const list = byName.get(k) || [];
-    list.push({ invoiceNumber: b.invoiceNumber, date: String(b.date || "").slice(0, 10), customerName: b.customerName, total: Number(b.total) || 0, incentive: inc, productIncentive: productInc, onsitegoIncentive: onsitego });
-    byName.set(k, list);
+    // Product incentive + 10% of the Onsitego plans; on a bill whose lines carry their own salesman (a shared lead),
+    // each salesman gets the part of his lines (lib/incentive-split.ts).
+    for (const share of incentiveShares(b)) {
+      const k = normName(share.name);
+      if (!k) continue;
+      billCount.set(k, (billCount.get(k) || 0) + 1);
+      earned.set(k, (earned.get(k) || 0) + share.total);
+      const list = byName.get(k) || [];
+      list.push({
+        invoiceNumber: b.invoiceNumber,
+        date: String(b.date || "").slice(0, 10),
+        customerName: b.customerName,
+        total: Number(b.total) || 0,
+        incentive: share.total,
+        productIncentive: share.product,
+        onsitegoIncentive: share.onsitego,
+      });
+      byName.set(k, list);
+    }
   }
 
   const salaries: any[] = await Salary.find({ paymentStatus: "Paid" }, { employeeName: 1, incentives: 1 }).lean();

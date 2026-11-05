@@ -37,7 +37,10 @@ export function StockOrdersCard({ mode }: { mode: "admin" | "salesman" }) {
               <Link key={o._id} href="/sales/new-stock?tab=requests" className="flex items-center justify-between gap-2 bg-white rounded-xl border border-blue-200 px-2.5 py-1.5 no-underline">
                 <div className="min-w-0">
                   <p className="text-xs font-bold text-slate-900 truncate">{o.salesperson}</p>
-                  <p className="text-xs text-slate-500 truncate">{o.requestNumber} · {o.items.length} product{o.items.length === 1 ? "" : "s"}</p>
+                  <p className="text-xs text-slate-500 truncate">
+                    {o.requestNumber} · {o.items.length} product{o.items.length === 1 ? "" : "s"} ·{" "}
+                    {new Date(o.createdAt).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" })}
+                  </p>
                 </div>
                 <span className="text-xs font-black text-slate-900 shrink-0">{o.totalQuantity} units</span>
               </Link>

@@ -5,6 +5,7 @@ import QueryProvider from "@/components/providers/QueryProvider";
 import RealtimeProvider from "@/components/providers/RealtimeProvider";
 import { OfflineSyncProvider } from "@/components/shared/offline-sync-provider";
 import { NotificationPermissionPrompt } from "@/components/shared/NotificationPermissionPrompt";
+import { AppDialogHost } from "@/components/shared/AppDialogs";
 
 export const metadata: Metadata = {
   title: "ValuePlus ERP — Enterprise Resource Planning",
@@ -52,6 +53,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 {children}
                 {/* Asks first thing (login screen included) to allow notifications, so alerts reach a closed app */}
                 <NotificationPermissionPrompt />
+                {/* The app's own confirm / prompt boxes (window.confirm does not show in the Android app) */}
+                <AppDialogHost />
               </OfflineSyncProvider>
             </RealtimeProvider>
           </AuthProvider>

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo, useEffect, useRef, Suspense } from "react";
+import { FitToWidth } from "@/components/shared/FitToWidth";
 import {
   Printer, Download, Send, MessageSquare, MessageCircle, Edit3, Plus, Trash2, CheckCircle2,
   ArrowLeft, FileText, Building2, User, CreditCard, Layers, Sparkles, Share2, Phone
@@ -396,7 +397,8 @@ function ValueplusInvoiceContent({ invoiceData: propInvoiceData, onBack }: Value
     if (invoicePrintRef.current) {
       printElement(
         invoicePrintRef.current,
-        `${activeData.isEstimate ? "Estimate" : "TaxInvoice"}_${activeData.docNo || "ValuePlus"}`
+        `${activeData.isEstimate ? "Estimate" : "TaxInvoice"}_${activeData.docNo || "ValuePlus"}`,
+        { pageWidthPx: 860 }
       );
     } else {
       window.print();
@@ -476,13 +478,26 @@ function ValueplusInvoiceContent({ invoiceData: propInvoiceData, onBack }: Value
     window.open(`mailto:?subject=${subject}&body=${body}`, "_blank");
   };
 
+  // A real A4 PDF file (lib/export/domToPdfBlob.ts), not the print dialog: it also works on a phone.
   const handleDownload = async () => {
-    toast.info(`Preparing ${activeData.isEstimate ? "Estimate" : "Tax Invoice"} print/PDF rendering...`);
-    await handlePrint();
+    if (!invoicePrintRef.current) return handlePrint();
+    const t = toast.loading(`Preparing the ${activeData.isEstimate ? "Estimate" : "Tax Invoice"} PDF…`);
+    try {
+      const { downloadElementAsPdf } = await import("@/lib/export/domToPdfBlob");
+      await downloadElementAsPdf(
+        invoicePrintRef.current,
+        `${activeData.isEstimate ? "Estimate" : "TaxInvoice"}_${activeData.docNo || "ValuePlus"}`
+      );
+      toast.success("PDF downloaded", { id: t });
+    } catch (e) {
+      console.error("PDF error:", e);
+      toast.error("Could not make the PDF here — opening Print instead.", { id: t });
+      await handlePrint();
+    }
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 p-4 md:p-8 print:p-0 print:min-h-0 print:bg-white text-slate-900 font-sans">
+    <div className="min-h-screen bg-slate-100 p-2 sm:p-4 md:p-8 print:p-0 print:min-h-0 print:bg-white text-slate-900 font-sans">
       {/* No invoice was supplied, so the layout specimen with placeholder figures is
           being shown. Say so loudly, on screen and on paper, so it is never mistaken
           for a real bill. */}
@@ -547,9 +562,12 @@ function ValueplusInvoiceContent({ invoiceData: propInvoiceData, onBack }: Value
       </div>
 
       {/* ─── OFFICIAL VALUE PLUS TAX INVOICE / ESTIMATE SPECIFICATION CONTAINER ─── */}
+      {/* Always laid out at A4 width (860px) like on a PC; a phone shows the same page scaled down to fit. */}
+      <div className="max-w-[860px] mx-auto print:max-w-none">
+      <FitToWidth width={860}>
       <div 
         ref={invoicePrintRef}
-        className="max-w-[860px] mx-auto bg-white border border-slate-400 p-8 shadow-xl print:border-none print:shadow-none print:p-0 print:m-0 print:max-w-none print:w-full text-[11px] leading-tight"
+        className="w-[860px] bg-white border border-slate-400 p-8 shadow-xl print:border-none print:shadow-none print:p-0 print:m-0 print:max-w-none print:w-full text-[11px] leading-tight"
       >
         
         {/* TOP HEADER: BRAND LOGO */}
@@ -911,6 +929,8 @@ function ValueplusInvoiceContent({ invoiceData: propInvoiceData, onBack }: Value
           <span>Despatched from: {activeData.companyAddress}</span>
           <span>{new Date().toLocaleTimeString("en-IN")}</span>
         </div>
+      </div>
+      </FitToWidth>
       </div>
     </div>
   );

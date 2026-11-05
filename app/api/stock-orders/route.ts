@@ -55,7 +55,11 @@ export async function GET(req: Request) {
     const status = new URL(req.url).searchParams.get("status");
     const query: any = {};
     if (status) query.status = status;
-    if (["salesman", "sales"].includes(actor.role)) query.salespersonId = actor.id;
+    if (["salesman", "sales"].includes(actor.role)) {
+      // His own requests, and the combined orders his requests were folded into.
+      const mine: any[] = await StockOrderRequest.find({ salespersonId: actor.id }, { requestNumber: 1 }).lean();
+      query.$or = [{ salespersonId: actor.id }, { mergedFrom: { $in: mine.map((m) => m.requestNumber) } }];
+    }
     const data = await StockOrderRequest.find(query).sort({ createdAt: -1 }).limit(200).lean();
     return NextResponse.json({ success: true, data });
   } catch (error: any) {
@@ -226,6 +230,34 @@ export async function PATCH(req: Request) {
         console.warn("Notice: audit log for stock order merge:", e);
       }
       return NextResponse.json({ success: true, data: created });
+    }
+
+    // Undo a combined order (before it is sent): its requests go back to waiting, and the combined order goes away,
+    // so the Admin can pick them again, add more and combine once more.
+    if (action === "unmerge") {
+      if (!order.mergedFrom?.length) return NextResponse.json({ success: false, error: "This is not a combined order." }, { status: 400 });
+      if (order.status !== "approved") {
+        return NextResponse.json(
+          { success: false, error: order.status === "sent" ? "This order was already sent on WhatsApp, so it cannot be undone." : `This order is ${order.status}.` },
+          { status: 400 }
+        );
+      }
+      const sources: any[] = await StockOrderRequest.find({ requestNumber: { $in: order.mergedFrom }, mergedInto: order.requestNumber });
+      for (const src of sources) {
+        src.status = "pending";
+        src.mergedInto = undefined;
+        await src.save();
+        await notifyAssignee(src.salesperson, src.salespersonId, {
+          type: "approval_result",
+          title: "Stock order back to waiting",
+          message: `${actor.name} undid the combined order ${order.requestNumber}; ${src.requestNumber} is waiting again.`,
+          link: "/sales/new-stock?tab=requests",
+          createdBy: actor.name,
+        });
+      }
+      await log("stockorder.unmerge", `Undid combined order; ${sources.map((x) => x.requestNumber).join(", ")} back to waiting`);
+      await StockOrderRequest.deleteOne({ _id: order._id });
+      return NextResponse.json({ success: true, data: { restored: sources.map((x) => x.requestNumber) } });
     }
 
     if (action === "approve") {

@@ -44,6 +44,9 @@ export interface IItem extends Document {
   incentiveAmount?: number;
   incentiveType?: "none" | "fixed" | "percentage";
   incentiveValue?: number;
+  /** Every incentive rule on the product (₹ per piece and/or % rules, each with an optional minimum price and
+   *  dates); they add together. See lib/incentive-rules.ts. The flat incentive* fields above mirror the first. */
+  incentives?: Array<{ type: "fixed" | "percentage"; value: number; minPrice?: number; label?: string; startDate?: string; endDate?: string; active?: boolean }>;
   mrp: number;
   openingStock: number;
   /** currentStock/showroomStock/godownStock are derived aggregates, recomputed
@@ -78,6 +81,19 @@ const WarrantyPlanSchema = new Schema({
   price: { type: Number, required: true },
 });
 
+const IncentiveRuleSchema = new Schema(
+  {
+    type: { type: String, enum: ["fixed", "percentage"], default: "fixed" },
+    value: { type: Number, default: 0 },
+    minPrice: { type: Number, default: 0 },
+    label: { type: String, default: "" },
+    startDate: { type: String, default: "" },
+    endDate: { type: String, default: "" },
+    active: { type: Boolean, default: true },
+  },
+  { _id: false }
+);
+
 const ItemSchema = new Schema<IItem>(
   {
     code: { type: String, required: true, unique: true },
@@ -87,7 +103,8 @@ const ItemSchema = new Schema<IItem>(
     description: { type: String, default: "" },
     category: { type: String, default: "" },
     brand: { type: String, default: "" },
-    unit: { type: String, default: "Pcs" },
+    // New products are counted in NOS unless another unit is chosen.
+    unit: { type: String, default: "NOS" },
     hsnCode: { type: String, default: "8528" },
     // Never saved above 18% (see lib/gst-rate.ts).
     gstRate: { type: Number, default: 18, set: (v: any) => allowedGstRate(v) },
@@ -105,6 +122,7 @@ const ItemSchema = new Schema<IItem>(
     incentiveAmount: { type: Number, default: 0 },
     incentiveType: { type: String, enum: ["none", "fixed", "percentage"], default: "none" },
     incentiveValue: { type: Number, default: 0 },
+    incentives: { type: [IncentiveRuleSchema], default: undefined },
     mrp: { type: Number, required: true },
     openingStock: { type: Number, default: 0 },
     currentStock: { type: Number, default: 0 },

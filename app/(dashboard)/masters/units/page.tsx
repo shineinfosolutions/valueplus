@@ -1,5 +1,6 @@
 "use client";
 import { PageShell } from "@/components/shared/page-shell";
+import { appConfirm, appPrompt } from "@/components/shared/AppDialogs";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { useState, useEffect } from "react";
@@ -36,7 +37,7 @@ export default function UnitsPage() {
   }, []);
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this unit?")) return;
+    if (!(await appConfirm("Are you sure you want to delete this unit?"))) return;
     try {
       const res = await fetch(`/api/units?id=${id}`, { method: "DELETE" });
       const json = await res.json();

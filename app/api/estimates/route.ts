@@ -20,14 +20,14 @@ const EDITABLE_FIELDS = [
   "date", "expiryDate", "items", "subTotal", "taxTotal", "total", "notes",
 ];
 
-/** The form asks the Store Manager / Admin for these lines and then sends the estimate again. */
+/** The form asks the Cashier / Store Manager / Admin (by discount band) for these lines and then sends the estimate again. */
 function discountApprovalResponse(lines: any[]) {
   return NextResponse.json(
     {
       success: false,
       discountApproval: true,
       lines,
-      error: `Discount approval needed: ${lines.map((l) => `${l.itemName} (${l.percent}% off, ${l.tier === "admin" ? "Admin" : "Store Manager"})`).join(", ")}.`,
+      error: `Discount approval needed: ${lines.map((l) => `${l.itemName} (${l.percent}% off, ${l.tier === "admin" ? "Admin" : l.tier === "manager" ? "Store Manager" : "Cashier"})`).join(", ")}.`,
     },
     { status: 409 }
   );

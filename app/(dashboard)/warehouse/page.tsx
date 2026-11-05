@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useState, useMemo, useEffect } from "react";
+import { LocationSummary } from "@/components/inventory/LocationSummary";
+import { StockTransferDialog } from "@/components/inventory/StockTransferDialog";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageShell } from "@/components/shared/page-shell";
 import { ExportMenu } from "@/components/shared/ExportMenu";
@@ -59,7 +61,7 @@ export default function WarehouseHubPage() {
   const queryClient = useQueryClient();
   const { activeLocation, locations, setActiveLocation, isGodown } = useBranch();
 
-  const [activeTab, setActiveTab] = useState<"stock" | "inward" | "transfer" | "challan" | "audit" | "serial">("stock");
+  const [activeTab, setActiveTab] = useState<"summary" | "stock" | "inward" | "transfer" | "challan" | "audit" | "serial">("stock");
   const [searchQuery, setSearchQuery] = useState("");
 
   // Modals
@@ -207,37 +209,34 @@ export default function WarehouseHubPage() {
   const [selectedWarehouseFilter, setSelectedWarehouseFilter] = useState<string>("all");
 
   // Fix zero-stock evaluation
-  const getRealStock = (item: any) => (
-    item.currentStock !== undefined && item.currentStock !== null ? Number(item.currentStock) : Number(item.openingStock || 0)
-  );
+  // Stock lives per warehouse in item.stockByWarehouse (lib/stock.ts). Only active locations count.
+  const activeWarehouses: any[] = dbWarehouses.filter((w: any) => w.status !== "inactive");
+  const selectedWarehouse: any =
+    selectedWarehouseFilter && selectedWarehouseFilter !== "all"
+      ? activeWarehouses.find((w: any) => w.name === selectedWarehouseFilter || String(w._id) === selectedWarehouseFilter)
+      : null;
+  const qtyAt = (item: any, warehouseId: any) =>
+    Number((item.stockByWarehouse || []).find((e: any) => String(e.warehouseId) === String(warehouseId))?.qty) || 0;
+  /** A location's current name (it may have been renamed since a transfer saved the old one). */
+  const whName = (id: any, fallback: string) =>
+    (id && dbWarehouses.find((w: any) => String(w._id) === String(id))?.name) || fallback;
+  /** Each active location's stock of this product, e.g. [{ name: "Ashoka …", qty: 3 }]. */
+  const stockByLocation = (item: any) =>
+    activeWarehouses.map((w: any) => ({ id: String(w._id), name: w.name, qty: qtyAt(item, w._id) })).filter((x) => x.qty !== 0);
+  const getRealStock = (item: any) => {
+    if (selectedWarehouse) return qtyAt(item, selectedWarehouse._id);
+    if (Array.isArray(item.stockByWarehouse) && item.stockByWarehouse.length > 0) {
+      return activeWarehouses.reduce((t: number, w: any) => t + qtyAt(item, w._id), 0);
+    }
+    return item.currentStock !== undefined && item.currentStock !== null ? Number(item.currentStock) : Number(item.openingStock || 0);
+  };
 
-  // Filter items by selected godown location or enterprise wide
+  // One location: the products that have stock there. All locations: every product.
   const locationFilteredItems = useMemo(() => {
-    if (!selectedWarehouseFilter || selectedWarehouseFilter === "all") return items;
-    const filterLower = selectedWarehouseFilter.toLowerCase();
-    const isAshoka = filterLower.includes("ashoka") || 
-                     filterLower.includes("kunraghat") || 
-                     filterLower.includes("vp-kun");
-
-    return items.filter((item: any) => {
-      if (isAshoka) {
-        // Ashoka Enterprises (Kunraghat) is the default showroom in MongoDB
-        return (
-          !item.warehouse || 
-          item.warehouse === "" || 
-          item.warehouse === "null" ||
-          item.warehouse.toLowerCase().includes("ashoka") || 
-          item.warehouse.toLowerCase().includes("kunraghat") ||
-          item.warehouse.toLowerCase().includes("vp-kun") ||
-          item.warehouse.toLowerCase().includes("main") ||
-          item.warehouse.toLowerCase().includes("showroom")
-        );
-      }
-      if (!item.warehouse) return false;
-      const itemWh = item.warehouse.toLowerCase();
-      return itemWh.includes(filterLower) || filterLower.includes(itemWh);
-    });
-  }, [items, selectedWarehouseFilter]);
+    if (!selectedWarehouse) return items;
+    return items.filter((item: any) => qtyAt(item, selectedWarehouse._id) !== 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, selectedWarehouse?._id, dbWarehouses]);
 
   // Filter Items by Search query
   const filteredItems = useMemo(() => {
@@ -260,7 +259,7 @@ export default function WarehouseHubPage() {
     0
   );
 
-  const inTransitTransfersCount = transfers.filter((t: any) => t.status === "in-transit" || t.status === "pending").length || transfers.length;
+  const inTransitTransfersCount = transfers.filter((t: any) => t.status === "in-transit" || t.status === "pending").length;
   const todayChallansCount = challans.length;
 
   const handleSerialSearch = async () => {
@@ -335,9 +334,9 @@ export default function WarehouseHubPage() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">🌐 All Godowns & Showrooms (Enterprise Total)</SelectItem>
-                      {locations.map((loc) => (
-                        <SelectItem key={loc.id || loc.code} value={loc.name}>
-                          {loc.type === "warehouse" ? "🏢" : "🏬"} {loc.name} ({loc.code})
+                      {(activeWarehouses.length > 0 ? activeWarehouses : locations).map((loc: any) => (
+                        <SelectItem key={loc._id || loc.id || loc.code} value={loc.name}>
+                          {loc.type === "godown" || loc.type === "warehouse" ? "🏢" : "🏬"} {loc.name} ({loc.code})
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -401,6 +400,7 @@ export default function WarehouseHubPage() {
         {/* LOGISTICS NAVIGATION TABS */}
         <div className="flex items-center gap-2 overflow-x-auto p-1 bg-white rounded-2xl border border-slate-200 shadow-sm">
           {[
+            { id: "summary", label: "📊 Showroom Summary", icon: Warehouse },
             { id: "stock", label: "📦 Live Godown Stock", icon: Package },
             { id: "inward", label: "📥 Inward Supply (GRN)", icon: ArrowDownRight },
             { id: "transfer", label: "🔄 Inter-Godown Transfers", icon: ArrowRightLeft },
@@ -428,6 +428,18 @@ export default function WarehouseHubPage() {
         </div>
 
         {/* TAB 1: LIVE GODOWN STOCK MATRIX */}
+        {activeTab === "summary" && (
+          <LocationSummary
+            warehouses={dbWarehouses}
+            items={items}
+            transfers={transfers}
+            onOpenStock={(name) => {
+              setSelectedWarehouseFilter(name);
+              setActiveTab("stock");
+            }}
+          />
+        )}
+
         {activeTab === "stock" && (
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden space-y-4 p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -504,7 +516,11 @@ export default function WarehouseHubPage() {
                           <tr key={item._id || item.code} className="hover:bg-slate-50 transition-colors">
                             <td className="p-3">
                               <p className="font-bold text-slate-900">{item.name}</p>
-                              <p className="text-[10px] text-slate-400 font-mono">Location: {item.warehouse || activeLocation.name}</p>
+                              <p className="text-[10px] text-slate-500 font-mono">
+                                {stockByLocation(item).length > 0
+                                  ? stockByLocation(item).map((l) => `${l.name}: ${l.qty}`).join(" · ")
+                                  : "No stock at any location"}
+                              </p>
                             </td>
                             <td className="p-3 font-mono font-bold text-[#30539C]">
                               {item.vpCode || item.code}
@@ -626,28 +642,68 @@ export default function WarehouseHubPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  <tr className="hover:bg-slate-50">
-                    <td className="p-3 font-mono font-bold text-[#30539C]">TRF-2026-0031</td>
-                    <td className="p-3 font-bold text-slate-800">Central Godown</td>
-                    <td className="p-3 font-bold text-emerald-700">Kunraghat Showroom</td>
-                    <td className="p-3">Voltas 1.5 Ton Inverter AC</td>
-                    <td className="p-3 text-center font-mono font-black">10 PCS</td>
-                    <td className="p-3 font-mono text-[11px] text-slate-600">UP 53 BT 9090 (Raju)</td>
-                    <td className="p-3 text-center">
-                      <Badge className="bg-amber-100 text-amber-800">In-Transit</Badge>
-                    </td>
-                  </tr>
-                  <tr className="hover:bg-slate-50">
-                    <td className="p-3 font-mono font-bold text-[#30539C]">TRF-2026-0030</td>
-                    <td className="p-3 font-bold text-slate-800">Central Godown</td>
-                    <td className="p-3 font-bold text-emerald-700">Deoria Road Branch</td>
-                    <td className="p-3">Sony Bravia 55' 4K OLED</td>
-                    <td className="p-3 text-center font-mono font-black">5 PCS</td>
-                    <td className="p-3 font-mono text-[11px] text-slate-600">UP 53 Z 1234 (Kailash)</td>
-                    <td className="p-3 text-center">
-                      <Badge className="bg-emerald-100 text-emerald-800">Delivered & Verified</Badge>
-                    </td>
-                  </tr>
+                  {transfersLoading ? (
+                    <tr><td colSpan={7} className="p-6 text-center text-slate-400">Loading transfers…</td></tr>
+                  ) : transfers.length === 0 ? (
+                    <tr><td colSpan={7} className="p-6 text-center text-slate-400">No stock transfers yet.</td></tr>
+                  ) : (
+                    transfers.map((t: any) => {
+                      const received = t.status === "received";
+                      const units = (t.items || []).reduce((n: number, i: any) => n + (Number(i.quantity) || 0), 0);
+                      return (
+                        <tr key={t._id || t.transferNo} className="hover:bg-slate-50 align-top">
+                          <td className="p-3 font-mono font-bold text-[#30539C]">
+                            {t.transferNo}
+                            <span className="block text-[10px] font-sans font-normal text-slate-400">
+                              {t.createdAt
+                                ? new Date(t.createdAt).toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" })
+                                : t.date}
+                            </span>
+                          </td>
+                          <td className="p-3 font-bold text-slate-800">{whName(t.fromWarehouseId, t.fromWarehouse)}</td>
+                          <td className="p-3 font-bold text-emerald-700">{whName(t.toWarehouseId, t.toWarehouse)}</td>
+                          <td className="p-3">
+                            {(t.items || []).map((i: any, k: number) => (
+                              <p key={k} className="text-slate-700">{i.itemName} <span className="font-mono text-slate-500">× {i.quantity}</span></p>
+                            ))}
+                            {t.notes && <p className="text-[10px] text-slate-400 mt-0.5">{t.notes}</p>}
+                          </td>
+                          <td className="p-3 text-center font-mono font-black">{units} PCS</td>
+                          <td className="p-3 font-mono text-[11px] text-slate-600">
+                            {[t.vehicleNo || t.vehicleNumber, t.driverName].filter(Boolean).join(" · ") || "—"}
+                          </td>
+                          <td className="p-3 text-center">
+                            {received ? (
+                              <Badge className="bg-emerald-100 text-emerald-800">Received</Badge>
+                            ) : (
+                              <div className="flex flex-col items-center gap-1">
+                                <Badge className="bg-amber-100 text-amber-800">{t.status === "pending" ? "Pending" : "In-Transit"}</Badge>
+                                <Button
+                                  size="sm"
+                                  className="h-6 px-2 text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white"
+                                  onClick={async () => {
+                                    const res = await fetch(`/api/stock-transfers?transferNo=${encodeURIComponent(t.transferNo)}`, {
+                                      method: "PUT",
+                                      headers: { "Content-Type": "application/json" },
+                                      body: JSON.stringify({ status: "received" }),
+                                    });
+                                    const json = await res.json();
+                                    if (json.success) {
+                                      toast.success(`${t.transferNo} received at ${whName(t.toWarehouseId, t.toWarehouse)}`);
+                                      queryClient.invalidateQueries({ queryKey: ["stock-transfers"] });
+                                      queryClient.invalidateQueries({ queryKey: ["items-stock"] });
+                                    } else toast.error(json.error || "Could not mark as received");
+                                  }}
+                                >
+                                  Mark received
+                                </Button>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>
@@ -679,26 +735,33 @@ export default function WarehouseHubPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  <tr className="hover:bg-slate-50">
-                    <td className="p-3 font-mono font-bold text-[#30539C]">DC-2026-0045</td>
-                    <td className="p-3 font-extrabold text-slate-900">Dr. Alok Verma (Gorakhpur)</td>
-                    <td className="p-3 font-mono text-slate-700">UP 53 T 7711</td>
-                    <td className="p-3 font-mono text-slate-600">9839445566</td>
-                    <td className="p-3 font-mono text-slate-500">2026-08-21</td>
-                    <td className="p-3 text-center">
-                      <Badge className="bg-emerald-100 text-emerald-800">Dispatched</Badge>
-                    </td>
-                  </tr>
-                  <tr className="hover:bg-slate-50">
-                    <td className="p-3 font-mono font-bold text-[#30539C]">DC-2026-0044</td>
-                    <td className="p-3 font-extrabold text-slate-900">Reliance Retail Ltd</td>
-                    <td className="p-3 font-mono text-slate-700">DL 01 AA 2299</td>
-                    <td className="p-3 font-mono text-slate-600">9140889900</td>
-                    <td className="p-3 font-mono text-slate-500">2026-08-20</td>
-                    <td className="p-3 text-center">
-                      <Badge className="bg-emerald-100 text-emerald-800">Delivered</Badge>
-                    </td>
-                  </tr>
+                  {challans.length === 0 ? (
+                    <tr><td colSpan={6} className="p-6 text-center text-slate-400">No delivery challans yet.</td></tr>
+                  ) : (
+                    challans.slice(0, 100).map((c: any) => (
+                      <tr key={c._id || c.challanNo} className="hover:bg-slate-50">
+                        <td className="p-3 font-mono font-bold text-[#30539C]">
+                          {c.challanNo}
+                          {c.invoiceNumber && <span className="block text-[10px] font-normal text-slate-400">{c.invoiceNumber}</span>}
+                        </td>
+                        <td className="p-3 font-extrabold text-slate-900">
+                          {c.destinationParty}
+                          <span className="block text-[10px] font-normal text-slate-500">{c.itemName}</span>
+                        </td>
+                        <td className="p-3 font-mono text-slate-700">{c.vehicleNo || "—"}</td>
+                        <td className="p-3 font-mono text-slate-600">
+                          {/^delivery team$/i.test(String(c.driverName || "")) ? "—" : c.driverName || "—"}
+                          {c.driverPhone && <span className="block">{c.driverPhone}</span>}
+                        </td>
+                        <td className="p-3 font-mono text-slate-500">{String(c.date || c.createdAt || "").slice(0, 10)}</td>
+                        <td className="p-3 text-center">
+                          <Badge className={c.status === "delivered" || c.status === "received" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}>
+                            {String(c.status || "dispatched").replace(/^\w/, (x: string) => x.toUpperCase())}
+                          </Badge>
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -800,173 +863,8 @@ export default function WarehouseHubPage() {
         )}
       </div>
 
-      {/* TRANSFER MODAL */}
-      <Dialog open={isTransferModalOpen} onOpenChange={setIsTransferModalOpen}>
-        <DialogContent className="max-w-lg bg-white rounded-2xl shadow-2xl p-6 border border-slate-200">
-          <DialogHeader>
-            <DialogTitle className="text-base font-black text-slate-900 flex items-center gap-2">
-              <ArrowRightLeft className="w-5 h-5 text-[#76C043]" />
-              Initiate Stock Transfer
-            </DialogTitle>
-            <DialogDescription className="text-xs text-slate-500">
-              Move stock from any store or godown to another, with vehicle verification.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-3 py-2">
-            <div className="space-y-1">
-              <Label className="text-xs font-bold text-slate-700">From (Store / Godown)</Label>
-              <Select
-                value={transferForm.fromLocation}
-                onValueChange={(val) =>
-                  setTransferForm({
-                    ...transferForm,
-                    fromLocation: val,
-                    toLocation: transferForm.toLocation === val ? "" : transferForm.toLocation,
-                  })
-                }
-              >
-                <SelectTrigger className="h-9 text-xs font-bold">
-                  <SelectValue placeholder="Choose where the stock leaves from" />
-                </SelectTrigger>
-                <SelectContent>
-                  {transferLocations.map((w: any) => (
-                    <SelectItem key={w._id || w.name} value={w.name}>
-                      {locationIcon(w)} {w.name}
-                      {w.city ? ` (${w.city})` : ""}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1">
-              <Label className="text-xs font-bold text-slate-700">To (Store / Godown)</Label>
-              <Select
-                value={transferForm.toLocation}
-                onValueChange={(val) => setTransferForm({ ...transferForm, toLocation: val })}
-              >
-                <SelectTrigger className="h-9 text-xs font-bold">
-                  <SelectValue placeholder="Choose where the stock goes" />
-                </SelectTrigger>
-                <SelectContent>
-                  {transferLocations.length > 0 ? (
-                    transferLocations
-                      .filter((w: any) => w.name !== transferForm.fromLocation)
-                      .map((w: any) => (
-                        <SelectItem key={w._id || w.name} value={w.name}>
-                          {locationIcon(w)} {w.name}
-                          {w.city ? ` (${w.city})` : ""}
-                        </SelectItem>
-                      ))
-                  ) : (
-                    <>
-                      <SelectItem value="Ashoka Enterprises (Kunraghat Showroom)">
-                        🏬 Ashoka Enterprises (Kunraghat Showroom)
-                      </SelectItem>
-                      <SelectItem value="Value Plus (Deoria Road Branch)">
-                        🏬 Value Plus (Deoria Road Branch)
-                      </SelectItem>
-                      <SelectItem value="GIDA Industrial Area Godown">
-                        🏢 GIDA Industrial Area Godown
-                      </SelectItem>
-                    </>
-                  )}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label className="text-xs font-bold text-slate-700">Item SKU Code / Product</Label>
-                <Input
-                  value={transferForm.itemCode}
-                  onChange={(e) => setTransferForm({ ...transferForm, itemCode: e.target.value })}
-                  className="h-9 text-xs font-mono font-bold"
-                  placeholder="e.g. VP-SAMS-TV55"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <Label className="text-xs font-bold text-slate-700">Quantity (Units)</Label>
-                <Input
-                  type="number"
-                  min="1"
-                  value={transferForm.quantity}
-                  onChange={(e) => setTransferForm({ ...transferForm, quantity: e.target.value })}
-                  className="h-9 text-xs font-mono font-bold"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label className="text-xs font-bold text-slate-700">Vehicle Number</Label>
-                <Input
-                  value={transferForm.vehicleNumber}
-                  onChange={(e) => setTransferForm({ ...transferForm, vehicleNumber: e.target.value })}
-                  className="h-9 text-xs font-mono"
-                  placeholder="UP 53 BT 9090"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <Label className="text-xs font-bold text-slate-700">Driver Phone</Label>
-                <Input
-                  value={transferForm.driverPhone}
-                  onChange={(e) => setTransferForm({ ...transferForm, driverPhone: e.target.value })}
-                  className="h-9 text-xs font-mono"
-                  placeholder="9839123456"
-                />
-              </div>
-            </div>
-          </div>
-
-          <DialogFooter className="pt-2">
-            <Button variant="ghost" onClick={() => setIsTransferModalOpen(false)} className="text-xs">
-              Cancel
-            </Button>
-            <Button
-              disabled={createTransferMutation.isPending}
-              onClick={() => {
-                if (!transferForm.fromLocation || !transferForm.toLocation) {
-                  toast.error("Choose both the store/godown the stock leaves from and where it goes.");
-                  return;
-                }
-                if (transferForm.fromLocation === transferForm.toLocation) {
-                  toast.error("The stock is already there — choose a different destination.");
-                  return;
-                }
-                const matchedItem = items.find((i: any) => 
-                  i.code?.toLowerCase() === transferForm.itemCode?.toLowerCase() ||
-                  i.vpCode?.toLowerCase() === transferForm.itemCode?.toLowerCase() ||
-                  i.name?.toLowerCase().includes(transferForm.itemCode?.toLowerCase())
-                );
-
-                createTransferMutation.mutate({
-                  fromWarehouse: transferForm.fromLocation,
-                  toWarehouse: transferForm.toLocation,
-                  vehicleNo: transferForm.vehicleNumber,
-                  driverName: transferForm.driverName,
-                  driverPhone: transferForm.driverPhone,
-                  remarks: transferForm.notes,
-                  items: [
-                    {
-                      itemId: matchedItem?._id || "ITEM",
-                      name: matchedItem?.name || transferForm.itemName,
-                      quantity: Number(transferForm.quantity) || 1,
-                      unit: matchedItem?.unit || "PCS",
-                    }
-                  ]
-                });
-              }}
-              className="bg-[#76C043] hover:bg-[#68ac3b] text-white font-bold text-xs"
-            >
-              {createTransferMutation.isPending ? "Dispatching..." : "Generate Transfer Slip & Dispatch"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* TRANSFER MODAL: products by VP code / model, stock at the source, recent transfers */}
+      <StockTransferDialog open={isTransferModalOpen} onOpenChange={setIsTransferModalOpen} defaultFrom={selectedWarehouse?.name || activeLocation.name} />
 
       {/* INWARD MODAL */}
       <Dialog open={isInwardModalOpen} onOpenChange={setIsInwardModalOpen}>

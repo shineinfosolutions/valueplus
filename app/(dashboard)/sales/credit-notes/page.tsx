@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect, Suspense } from "react";
+import { appConfirm, appPrompt } from "@/components/shared/AppDialogs";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Plus, Search, FileMinus, MoreHorizontal, FileText, XCircle,
@@ -90,34 +91,9 @@ function CreditNotesContent() {
       });
     });
 
-    // 2. Add Approved Delivery Challans (CNR / Customer Returns)
-    challans.forEach((c: any) => {
-      const cnRef = c.creditNoteRef || c.challanNo;
-      // Avoid duplicate if already in invoiceCreditNotes
-      if (seenRefs.has(cnRef) || seenRefs.has(c.challanNo)) return;
-
-      const isApproved = c.approvalStatus === "approved";
-      const totalAmount = Number(c.itemPrice || 0) * Number(c.quantity || 1);
-
-      list.push({
-        id: c._id || c.challanNo,
-        docNo: c.creditNoteRef || c.challanNo,
-        date: c.approvedAt || c.date || c.createdAt,
-        customerName: c.sourceParty || "Customer Claim",
-        customerPhone: c.sourcePhone || c.customerPhone || "",
-        itemName: c.itemName,
-        vpCode: c.vpCode || "",
-        serialNumber: c.serialImei || "",
-        quantity: c.quantity || 1,
-        unit: c.unit || "PCS",
-        total: totalAmount,
-        status: isApproved ? "paid" : "pending",
-        isApproved: isApproved,
-        notes: `From Challan #${c.challanNo}${c.defectDescription ? ` (Fault: ${c.defectDescription})` : ""}`,
-        originalData: c,
-        source: "challan",
-      });
-    });
+    // Delivery challans are not listed: a customer's defective product is settled by a replacement (PR) on the
+    // Delivery Challan page, which makes no credit note. Credit notes made by older challans are invoices above.
+    void challans;
 
     return list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [invoiceCreditNotes, challans]);
@@ -341,8 +317,8 @@ function CreditNotesContent() {
                               <DropdownMenuContent align="end" className="w-44">
                                 <DropdownMenuItem 
                                   className="gap-2 text-red-600 focus:bg-red-50 focus:text-red-700 cursor-pointer text-xs"
-                                  onClick={() => {
-                                    if(confirm(`Are you sure you want to delete ${inv.docNo}?`)) {
+                                  onClick={async () => {
+                                    if(await appConfirm(`Are you sure you want to delete ${inv.docNo}?`)) {
                                       deleteMutation.mutate(inv.docNo);
                                     }
                                   }}

@@ -37,6 +37,11 @@ export function BulkIncentiveModal({
   const [incentiveType, setIncentiveType] = useState<"fixed" | "percentage">("fixed");
   const [value, setValue] = useState("");
   const [targetAmount, setTargetAmount] = useState("");
+  // "add": the rule joins each product's existing rules; "replace": it becomes the only rule.
+  const [mode, setMode] = useState<"add" | "replace">("add");
+  const [label, setLabel] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [preview, setPreview] = useState<{ matched: number; sample: any[] } | null>(null);
 
   const reset = () => {
@@ -45,6 +50,10 @@ export function BulkIncentiveModal({
     setIncentiveType("fixed");
     setValue("");
     setTargetAmount("");
+    setMode("add");
+    setLabel("");
+    setStartDate("");
+    setEndDate("");
     setPreview(null);
   };
 
@@ -54,6 +63,10 @@ export function BulkIncentiveModal({
     incentiveType,
     incentiveValue: Number(value) || 0,
     incentiveTargetAmount: Number(targetAmount) || 0,
+    mode,
+    label,
+    startDate,
+    endDate,
     dryRun,
   });
 
@@ -203,6 +216,43 @@ export function BulkIncentiveModal({
             <p className="text-[11px] text-slate-400">
               Leave Target Price blank to reward every sale of a matching product, whatever the
               rate. Set it to reward only sales at or above that price.
+            </p>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1.5 col-span-3">
+                <Label className="text-xs font-semibold text-slate-700">Label (optional)</Label>
+                <Input placeholder="e.g. Diwali brand scheme" value={label} onChange={(e) => setLabel(e.target.value)} className="bg-slate-50 border-slate-300" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-slate-700">From</Label>
+                <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="bg-slate-50 border-slate-300" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-slate-700">To</Label>
+                <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="bg-slate-50 border-slate-300" />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              {([
+                ["add", "Add to existing rules"],
+                ["replace", "Replace all rules"],
+              ] as const).map(([m, text]) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => { setMode(m); setPreview(null); }}
+                  className={cn(
+                    "flex-1 py-2 rounded-lg text-xs font-bold border transition-colors",
+                    mode === m ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-slate-600 border-slate-300"
+                  )}
+                >
+                  {text}
+                </button>
+              ))}
+            </div>
+            <p className="text-[11px] text-slate-400">
+              {mode === "add"
+                ? "The new rule is added next to each product's current rules; they all add up."
+                : "Each matching product's current rules are removed and this becomes its only rule."}
             </p>
           </div>
 

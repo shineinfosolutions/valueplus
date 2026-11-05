@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { appConfirm, appPrompt } from "@/components/shared/AppDialogs";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
@@ -226,10 +227,10 @@ export default function LeaveRequestsPage() {
     onError: (e: any) => toast.error(e.message),
   });
 
-  const decide = (id: string, decision: "approve" | "reject") => {
+  const decide = async (id: string, decision: "approve" | "reject") => {
     let note = "";
     if (decision === "reject") {
-      const n = window.prompt("Reason for rejecting (optional):");
+      const n = await appPrompt("Reason for rejecting (optional):");
       if (n === null) return;
       note = n;
     }

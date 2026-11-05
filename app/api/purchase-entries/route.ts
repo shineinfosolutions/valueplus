@@ -351,7 +351,7 @@ export async function POST(req: Request) {
               category: "Electronics",
               // The brand the name spells out (a known brand, or "... - BRAND"); otherwise none, for the Admin to assign.
               brand: await brandForNewProduct(item.name),
-              unit: "PCS",
+              unit: "NOS",
               hsnCode: "8471",
               gstRate: gstRate,
               purchasePrice: rate,

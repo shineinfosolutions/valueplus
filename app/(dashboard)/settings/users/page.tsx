@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { appConfirm, appPrompt } from "@/components/shared/AppDialogs";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageShell } from "@/components/shared/page-shell";
 import { Input } from "@/components/ui/input";
@@ -654,8 +655,8 @@ export default function UsersAndStaffPage() {
                               <Button
                                 size="sm"
                                 variant="ghost"
-                                onClick={() => {
-                                  if (confirm(`Are you sure you want to delete user ${u.name}?`)) {
+                                onClick={async () => {
+                                  if (await appConfirm(`Are you sure you want to delete user ${u.name}?`)) {
                                     deleteUserMutation.mutate(u._id);
                                   }
                                 }}

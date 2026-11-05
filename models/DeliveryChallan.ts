@@ -26,7 +26,31 @@ export interface IDeliveryChallan extends Document {
   driverName: string;
   driverPhone: string;
   ewayBillNo?: string;
-  flowType?: "CNR" | "PR";
+  /**
+   * How a defective-return claim was settled (Supplier Return / Customer Return only), chosen when the result comes:
+   *   CR — the supplier gave money: a debit note is raised in the supplier's name and sits in his ledger as credit,
+   *        so it comes off the next purchase bill.
+   *   PR — a replacement product came (from the supplier), or was given (to the customer).
+   * Empty while the claim is pending. "CNR" is the old name of CR on challans made before this change.
+   */
+  flowType?: "CR" | "PR" | "CNR" | "";
+  /** Settlement of a Supplier / Customer Return claim. */
+  claimStatus?: "pending" | "settled" | "cancelled";
+  settledAt?: Date;
+  settledBy?: string;
+  /** CR: the amount the supplier credited, and the debit note raised for it. */
+  creditAmount?: number;
+  debitNoteRef?: string;
+  /** PR: the product and serial that replaced the defective unit. */
+  replacementItemId?: string;
+  replacementItemName?: string;
+  replacementSerial?: string;
+  /** The product (catalog id), supplier and warehouse the defective unit belongs to. */
+  itemId?: string;
+  supplierId?: string;
+  warehouse?: string;
+  settlementNote?: string;
+  createdBy?: string;
   approvalStatus?: "pending" | "approved" | "rejected";
   approvedAt?: Date;
   approvedBy?: string;
@@ -74,10 +98,22 @@ const DeliveryChallanSchema = new Schema<IDeliveryChallan>(
     ewayBillNo: { type: String, default: "" },
     flowType: {
       type: String,
-      enum: ["CNR", "PR"],
-      default: "CNR",
+      enum: ["CR", "PR", "CNR", ""],
+      default: "",
       index: true,
     },
+    claimStatus: { type: String, enum: ["pending", "settled", "cancelled"], index: true },
+    settledAt: { type: Date },
+    settledBy: { type: String, default: "" },
+    creditAmount: { type: Number, default: 0 },
+    replacementItemId: { type: String, default: "" },
+    replacementItemName: { type: String, default: "" },
+    replacementSerial: { type: String, default: "" },
+    itemId: { type: String, default: "" },
+    supplierId: { type: String, default: "" },
+    warehouse: { type: String, default: "" },
+    settlementNote: { type: String, default: "" },
+    createdBy: { type: String, default: "" },
     approvalStatus: {
       type: String,
       enum: ["pending", "approved", "rejected"],
