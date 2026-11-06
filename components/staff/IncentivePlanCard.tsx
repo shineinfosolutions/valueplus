@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input";
 import { formatCurrency } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { ruleText, type IncentiveRule } from "@/lib/incentive-rules";
+import { OnsitegoPlansTable } from "@/components/onsitego/OnsitegoPlansTable";
+import { ONSITEGO_INCENTIVE_RATE, type OnsitegoPlanRow } from "@/lib/onsitego";
 
 interface PlanRow {
   _id: string;
@@ -38,6 +40,19 @@ export function IncentivePlanCard() {
   const [brand, setBrand] = useState("all");
   const [sort, setSort] = useState<"amount" | "percent">("amount");
   const [inStockOnly, setInStockOnly] = useState(false);
+  // The dialog has two columns of plans: products with an incentive, and the Onsite Go extended warranty plans.
+  const [tab, setTab] = useState<"products" | "onsitego">("products");
+
+  // The Onsite Go price list (same list and key as the bill form's).
+  const { data: onsitegoPlans = [] } = useQuery<OnsitegoPlanRow[]>({
+    queryKey: ["onsitego-plans"],
+    staleTime: 10 * 60 * 1000,
+    meta: { live: ["/api/documents"] },
+    queryFn: async () => {
+      const json = await (await fetch("/api/onsitego/plans")).json();
+      return json.success ? json.data : [];
+    },
+  });
 
   const { data: rows = [], isLoading } = useQuery<PlanRow[]>({
     queryKey: ["incentive-plan"],
@@ -83,11 +98,14 @@ export function IncentivePlanCard() {
             <p className="text-lg font-black text-emerald-700">{formatCurrency(best)}</p>
           </div>
         </div>
+        <p className="mt-1 text-[11px] font-semibold text-emerald-800">
+          Onsite Go: {onsitegoPlans.length} plans · you earn {Math.round(ONSITEGO_INCENTIVE_RATE * 100)}% of each
+        </p>
         <p className="text-[11px] text-slate-500">Tap to see what each product pays you</p>
       </button>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col p-0">
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden flex flex-col p-0">
           <DialogHeader className="px-4 pt-4">
             <DialogTitle className="flex items-center gap-2">
               <Gift className="w-5 h-5 text-emerald-600" /> Incentive Plan
@@ -98,6 +116,39 @@ export function IncentivePlanCard() {
             </DialogDescription>
           </DialogHeader>
 
+          <div className="px-4 flex gap-1.5" role="tablist">
+            {(
+              [
+                ["products", `Product incentive (${rows.length})`],
+                ["onsitego", `Onsite Go plans (${onsitegoPlans.length})`],
+              ] as const
+            ).map(([k, label]) => (
+              <button
+                key={k}
+                type="button"
+                role="tab"
+                aria-selected={tab === k}
+                onClick={() => setTab(k)}
+                className={cn(
+                  "px-3 py-1.5 rounded-lg text-xs font-bold border",
+                  tab === k ? "bg-emerald-600 border-emerald-600 text-white" : "bg-white border-slate-300 text-slate-600"
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {tab === "onsitego" ? (
+            <div className="px-4 pb-4 pt-2 overflow-y-auto">
+              <p className="mb-2 text-[11px] text-slate-600">
+                Every Onsite Go extended warranty plan, one row each. Sell any plan on a bill and you earn {Math.round(ONSITEGO_INCENTIVE_RATE * 100)}% of its price.
+                The bill offers the plans that fit the product&apos;s price.
+              </p>
+              <OnsitegoPlansTable plans={onsitegoPlans} maxHeightClass="max-h-[55vh]" />
+            </div>
+          ) : (
+          <>
           <div className="px-4 space-y-2">
             <div className="relative">
               <Search className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -191,6 +242,8 @@ export function IncentivePlanCard() {
               </div>
             ))}
           </div>
+          </>
+          )}
         </DialogContent>
       </Dialog>
     </>

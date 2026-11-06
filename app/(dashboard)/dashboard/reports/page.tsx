@@ -73,9 +73,19 @@ function ReportsContent() {
   // (e.g. a due settled with no invoice reference) — only the former has a
   // full bill to show, so this looks the actual invoice up rather than
   // assuming the row's own fields are enough to print.
-  const openInvoicePreview = (tx: any) => {
+  const openInvoicePreview = async (tx: any) => {
     const docNo = tx.id || tx.invoiceNumber;
-    const match = invoices.find((inv: any) => inv.invoiceNumber === docNo);
+    let match = invoices.find((inv: any) => inv.invoiceNumber === docNo);
+    // The invoice list leaves estimates out, but an advance taken with an estimate is a real collection tied to it:
+    // that one is looked up by its number and opens as the estimate.
+    if (!match && /^EST-/i.test(String(docNo || ""))) {
+      try {
+        const json = await (await fetch(`/api/invoices?invoiceNumber=${encodeURIComponent(docNo)}`)).json();
+        if (json.success && json.data) match = json.data;
+      } catch {
+        /* falls through to the message below */
+      }
+    }
     if (!match) {
       toast.error("No invoice found for this entry — it may be a standalone payment receipt.");
       return;

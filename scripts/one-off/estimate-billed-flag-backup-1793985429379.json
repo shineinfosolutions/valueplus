@@ -1,0 +1,110 @@
+[
+ {
+  "_id": "6aedff7f626074350ebba5c5",
+  "estimateNumber": "EST-2026-0003-1921",
+  "date": "2026-11-06T00:00:00.000Z",
+  "expiryDate": "2026-11-06T00:00:00.000Z",
+  "customerName": "ANKITA DWIVEDI",
+  "customerPhone": "8960666846",
+  "customerAddress": "",
+  "customerGST": "",
+  "customerCompanyName": "",
+  "salesExecutive": "Ansh Gaur",
+  "salesperson": "Ansh Gaur",
+  "status": "Converted",
+  "items": [
+   {
+    "itemCode": "VP-XLUO843601",
+    "name": "NEO 278GD PRM CRYSTAL BLACK(2S)-Y 22328- WHIRLPOOL",
+    "quantity": 1,
+    "rate": 27500,
+    "discount": 0,
+    "itemId": "ITEM-1793983751908",
+    "tax": 18,
+    "amount": 27500
+   },
+   {
+    "itemCode": "VP-JY7KJK8570",
+    "name": "LLOYD 55PS850G (QLED)- LLOYD",
+    "quantity": 1,
+    "rate": 43000,
+    "discount": 0,
+    "itemId": "ITEM-1793983751909",
+    "tax": 18,
+    "amount": 43000
+   },
+   {
+    "itemCode": "ITM-28472883-10",
+    "name": "STAINWASH PRO 8.0 KG GREY 10YrMW 31692- WHIRLPOOL",
+    "quantity": 1,
+    "rate": 20000,
+    "discount": 0,
+    "itemId": "ITEM-1793983751909",
+    "tax": 18,
+    "amount": 20000
+   },
+   {
+    "itemCode": "VP-Z0OY8O6650",
+    "name": "19K XCEL EDGE GXI 3 STAR INVERTER R32 SPLIT AC_CAI19CE3R36FO- CARRIER",
+    "quantity": 1,
+    "rate": 35000,
+    "discount": 0,
+    "itemId": "ITEM-1793983751909",
+    "tax": 18,
+    "amount": 35000
+   },
+   {
+    "itemCode": "VP-0VNFJW5631",
+    "name": "GHCAFSRK135 PROLIFE VISTA 4.2L AIR FRYER 1350W- HAVELLS",
+    "quantity": 1,
+    "rate": 4700,
+    "discount": 0,
+    "itemId": "ITEM-1793983751910",
+    "tax": 18,
+    "amount": 4700
+   },
+   {
+    "itemCode": "VP-EQABNG3589",
+    "name": "GHBKTATK125 KETTLE AQUA BLACK PLUS 1.2 LTR 1250 W-HAVELLS",
+    "quantity": 1,
+    "rate": 2000,
+    "discount": 0,
+    "itemId": "ITEM-1793983751910",
+    "tax": 18,
+    "amount": 2000
+   },
+   {
+    "itemCode": "VP-FXCAO55356",
+    "name": "BAJAJ ARMOR SERIES PENTACLE 15L (BLUE BAJAJ ELECTRICALS)",
+    "quantity": 1,
+    "rate": 9500,
+    "discount": 0,
+    "itemId": "ITEM-1793983751910",
+    "tax": 18,
+    "amount": 9500
+   },
+   {
+    "itemCode": "VP-6PLAPK8746",
+    "name": "GHROFCLK290 HESTIO BLACK 13 WAVE FIN OFR 2900 W-HAVELLS",
+    "quantity": 1,
+    "rate": 12500,
+    "discount": 0,
+    "itemId": "ITEM-1793983751910",
+    "tax": 18,
+    "amount": 12500
+   }
+  ],
+  "subTotal": 154200,
+  "taxTotal": 23522.033898305075,
+  "total": 154200,
+  "notes": "Official Estimate Generated",
+  "kind": "estimate",
+  "approvalStatus": "approved",
+  "createdAt": "2026-11-06T16:25:35.852Z",
+  "updatedAt": "2026-11-06T16:49:13.636Z",
+  "__v": 0,
+  "convertedInvoiceNumber": "EST-2026-0003-1921",
+  "advanceAmount": 20000,
+  "advanceMode": "UPI"
+ }
+]

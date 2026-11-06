@@ -38,13 +38,45 @@ export default function ReceivePaymentPage() {
     }
   });
 
+  // Advances customers have paid (booking tokens and the advance taken with an estimate), shown beside their payments.
+  const { data: advances = [] } = useQuery({
+    queryKey: ["payments-advances"],
+    queryFn: async () => {
+      const res = await fetch("/api/crm/advances");
+      const json = await res.json();
+      return json.success ? (json.data as any[]) : [];
+    },
+  });
+
   const currentTabPayments = useMemo(() => {
-    if (activeTab === "customers") {
-      return payments.filter((p: any) => p.partyType !== "Supplier");
-    } else {
-      return payments.filter((p: any) => p.partyType === "Supplier");
-    }
-  }, [payments, activeTab]);
+    if (activeTab !== "customers") return payments.filter((p: any) => p.partyType === "Supplier");
+
+    const estimateOf = (a: any) => String(`${a.reason || ""} ${a.notes || ""}`).match(/EST-[A-Za-z0-9-]+/)?.[0] || "";
+    const advanceRows = (advances as any[])
+      .filter((a) => a.status !== "Cancelled")
+      .map((a) => ({
+        _id: `adv-${a._id}`,
+        transactionId: a.receiptNumber,
+        date: a.date,
+        partyName: a.customerName,
+        partyType: "Customer",
+        paymentMode: a.paymentMode,
+        type: "received",
+        amount: a.amount,
+        referenceId: estimateOf(a),
+        notes: a.reason || a.notes || "",
+        isAdvance: true,
+        estimateNo: estimateOf(a),
+        advanceLeft: a.remainingBalance,
+        advanceStatus: a.status,
+      }));
+    // The same advance can also be on the list as the "Initial payment" of the estimate's saved quotation: shown once, as the advance.
+    const coveredEstimates = new Set(advanceRows.map((r) => r.estimateNo).filter(Boolean));
+    const customerPayments = payments.filter(
+      (p: any) => p.partyType !== "Supplier" && !(String(p.referenceId || "").startsWith("EST-") && coveredEstimates.has(p.referenceId))
+    );
+    return [...customerPayments, ...advanceRows].sort((a: any, b: any) => String(b.date || "").localeCompare(String(a.date || "")));
+  }, [payments, advances, activeTab]);
 
   const filtered = useMemo(() => {
     return currentTabPayments.filter((p: any) => {
@@ -78,6 +110,7 @@ export default function ReceivePaymentPage() {
               [activeTab === "customers" ? "Customer" : "Supplier"]: p.partyName,
               Mode: p.paymentMode,
               Reference: p.referenceId || "",
+              Note: p.isAdvance ? (p.estimateNo ? `Advance of Estimate ${p.estimateNo}` : "Advance") : "",
               Type: p.type === "received" ? "Received (In)" : "Paid (Out)",
               Amount: formatCurrency(p.amount),
             }))}
@@ -171,6 +204,12 @@ export default function ReceivePaymentPage() {
                       <Badge variant="outline" className="w-fit text-[10px] uppercase font-bold tracking-wider bg-slate-50 text-slate-600 border-slate-200">
                         {p.paymentMode}
                       </Badge>
+                      {p.isAdvance && (
+                        <span className="mt-1 w-fit rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">
+                          {p.estimateNo ? `ADVANCE · amount of Estimate ${p.estimateNo}` : "ADVANCE"}
+                          {Number(p.advanceLeft) < Number(p.amount) ? ` · left ${formatCurrency(p.advanceLeft)}` : ""}
+                        </span>
+                      )}
                       {p.referenceId && <span className="text-[10px] text-slate-500 font-mono mt-1">Ref: {p.referenceId}</span>}
                       {p.notes && <span className="text-[10px] text-slate-600 mt-0.5 max-w-[220px]">Reason: {p.notes}</span>}
                     </div>
@@ -186,12 +225,18 @@ export default function ReceivePaymentPage() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right" data-m="inline">
-                    {p.partyType === "Customer" && (
-                      <Button size="sm" variant="outline" onClick={() => setReceiptFor(p)} className="h-7 px-2 mr-1 text-[11px] font-bold" title="Payment receipt">
-                        <Printer className="w-3.5 h-3.5 mr-1" /> Receipt
-                      </Button>
+                    {p.isAdvance ? (
+                      <a href="/sales/advances" className="text-[11px] font-bold text-[#30539C] hover:underline">Advance slip →</a>
+                    ) : (
+                      <>
+                        {p.partyType === "Customer" && (
+                          <Button size="sm" variant="outline" onClick={() => setReceiptFor(p)} className="h-7 px-2 mr-1 text-[11px] font-bold" title="Payment receipt">
+                            <Printer className="w-3.5 h-3.5 mr-1" /> Receipt
+                          </Button>
+                        )}
+                        <PaymentChangeControls payment={p} />
+                      </>
                     )}
-                    <PaymentChangeControls payment={p} />
                   </td>
                 </tr>
               ))}

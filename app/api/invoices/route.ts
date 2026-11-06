@@ -27,6 +27,7 @@ import { onsitegoIncentiveOf } from "@/lib/onsitego";
 import { stampLineIncentives } from "@/lib/incentive-server";
 import { checkDoId, checkExtraDos, createExtraDOs, extraDosOf, financeFilesOf, linkBillToDO } from "@/lib/finance-do";
 import { doRecordOverrides } from "@/lib/do-parser";
+import { sameLines } from "@/lib/estimate-diff";
 
 /**
  * What a plain update may change on a sales bill: contact and delivery details only.
@@ -828,7 +829,9 @@ export async function POST(req: Request) {
             await invoice.save();
           }
         }
-      } else {
+      } else if (invoice.type !== "proforma" && invoice.type !== "credit-note") {
+        // (An estimate's own saved quotation is type "proforma"; it must never mark the estimate it belongs to as
+        // already billed. That is what used to make every new estimate show "Billed" the moment it was saved.)
         const phoneDigits = (invoice.customerPhone || "").replace(/\D/g, "");
         if (phoneDigits && phoneDigits.length >= 10) {
           const matchedEst = await Estimate.findOne({
@@ -1401,6 +1404,36 @@ export async function PUT(req: Request) {
         "type", "backdateStatus", "backdateRequestedBy", "backdateMadeOn", "creditAdjusted", "advanceAdjusted",
         "advanceReceiptNo", "cancelledAt", "cancelledBy", "cancelReason", "lastModifiedReason", "pin", "reason", "action",
       ]) delete patch[k];
+
+      // An estimate edit changes only what the user changed, and never the advance the customer already paid.
+      const advanceIn = body.advanceAmount;
+      for (const k of ["paidAmount", "balanceAmount", "payments", "paymentMode", "status", "advanceAmount", "advanceMode"]) delete patch[k];
+      const was: any = existingInvoice.toObject ? existingInvoice.toObject() : existingInvoice;
+      const dayOf = (v: any) => (v ? (typeof v === "string" ? v : new Date(v).toISOString()).slice(0, 10) : "");
+      for (const [k, v] of Object.entries(patch)) {
+        if (k === "items") {
+          if (sameLines(was.items, v as any[])) delete patch.items;
+          continue;
+        }
+        if (v !== null && typeof v === "object") continue; // other lists / objects are written as sent
+        if (k === "date" || k === "dueDate") {
+          if (dayOf(was[k]) === dayOf(v)) delete patch[k];
+        } else if (typeof v === "number" || (typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v)) && typeof was[k] === "number")) {
+          if (Math.abs(Number(was[k] ?? 0) - Number(v)) <= 0.5) delete patch[k];
+        } else if (String(was[k] ?? "").trim() === String(v ?? "").trim()) {
+          delete patch[k];
+        }
+      }
+      // The advance already received stays; a larger advance can be added; the balance follows the total.
+      const newTotal = patch.total !== undefined ? Number(patch.total) : Number(was.total) || 0;
+      let paid = Number(was.paidAmount) || 0;
+      if (advanceIn !== undefined && Number.isFinite(Number(advanceIn)) && Number(advanceIn) > paid) {
+        paid = Math.min(newTotal, Number(advanceIn));
+        if (body.advanceMode) patch.paymentMode = body.advanceMode;
+      }
+      if (paid !== (Number(was.paidAmount) || 0)) patch.paidAmount = paid;
+      const balance = Math.max(0, newTotal - paid);
+      if (Math.abs(balance - (Number(was.balanceAmount) || 0)) > 0.5) patch.balanceAmount = balance;
     } else {
       const blocked: string[] = [];
       for (const [k, v] of Object.entries(body)) {

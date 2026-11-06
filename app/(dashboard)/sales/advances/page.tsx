@@ -17,6 +17,7 @@ import { numberToWordsIndian } from "@/lib/number-to-words";
 import { printElement } from "@/lib/printUtility";
 import { useSession } from "next-auth/react";
 import { ExportMenu } from "@/components/shared/ExportMenu";
+import { AuthorizePinDialog } from "@/components/AuthorizePinDialog";
 
 function formatCurrency(val: number) {
   return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(val || 0);
@@ -26,7 +27,6 @@ export default function CustomerAdvancesPage() {
   const queryClient = useQueryClient();
   const { data: session } = useSession();
   const currentUserName = session?.user?.name || "Counter Cashier";
-
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -34,6 +34,29 @@ export default function CustomerAdvancesPage() {
   const [refundModalAdvance, setRefundModalAdvance] = useState<any>(null);
   const [refundAmount, setRefundAmount] = useState<number>(0);
   const [refundNotes, setRefundNotes] = useState("");
+  // Cancel an advance that was entered by mistake (Admin, with the Security PIN): no money goes back, the receipt stays as Cancelled.
+  const isAdminUser = ["admin", "superadmin"].includes(String((session?.user as any)?.role || "").toLowerCase());
+  const [cancelAdvance, setCancelAdvance] = useState<any>(null);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+  const cancelMutation = useMutation({
+    mutationFn: async ({ id, pin, reason }: { id: string; pin: string; reason: string }) => {
+      const res = await fetch("/api/crm/advances", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, action: "cancel", pin, reason }),
+      });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || "Could not cancel the advance");
+      return json;
+    },
+    onSuccess: (json: any) => {
+      toast.success(json.message || "Advance cancelled.");
+      queryClient.invalidateQueries({ queryKey: ["customer-advances-all"] });
+      setCancelAdvance(null);
+      setCancelError(null);
+    },
+    onError: (err: any) => setCancelError(err.message || "Could not cancel the advance"),
+  });
 
   // New Advance Form State
   const [newAdvance, setNewAdvance] = useState({
@@ -303,7 +326,7 @@ export default function CustomerAdvancesPage() {
         </div>
 
         <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
-          {["all", "Available", "Partially Used", "Fully Adjusted", "Refunded"].map((st) => (
+          {["all", "Available", "Partially Used", "Fully Adjusted", "Refunded", "Cancelled"].map((st) => (
             <button
               key={st}
               onClick={() => setStatusFilter(st)}
@@ -462,6 +485,18 @@ export default function CustomerAdvancesPage() {
                           >
                             <Share2 className="w-4 h-4" />
                           </Button>
+
+                          {isAdminUser && isAvailable && !(adv.usedAmount > 0) && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => { setCancelAdvance(adv); setCancelError(null); }}
+                              title="Cancel: entered by mistake (no money goes back; the receipt stays as Cancelled)"
+                              className="h-8 px-2 text-[11px] font-bold text-amber-700 hover:text-amber-800 hover:bg-amber-50 rounded-lg"
+                            >
+                              Cancel
+                            </Button>
+                          )}
 
                           {(isAvailable || isPartial) && (
                             <Button
@@ -787,6 +822,26 @@ export default function CustomerAdvancesPage() {
           </DialogContent>
         </Dialog>
       )}
+
+      <AuthorizePinDialog
+        open={!!cancelAdvance}
+        onOpenChange={(open) => {
+          if (!open) {
+            setCancelAdvance(null);
+            setCancelError(null);
+          }
+        }}
+        onConfirm={({ pin, reason }) => {
+          if (!cancelAdvance) return;
+          setCancelError(null);
+          cancelMutation.mutate({ id: cancelAdvance._id, pin, reason });
+        }}
+        title={`Cancel advance ${cancelAdvance?.receiptNumber || ""} (${formatCurrency(cancelAdvance?.amount || 0)})`}
+        description="Use this when the advance was entered by mistake (for example twice). No money goes back to the customer: the receipt stays in the list as Cancelled, and the customer's advance balance goes down by this amount."
+        confirmLabel="Cancel this advance"
+        isPending={cancelMutation.isPending}
+        errorMessage={cancelError}
+      />
 
       {/* REFUND MODAL */}
       {refundModalAdvance && (

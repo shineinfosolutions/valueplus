@@ -117,6 +117,7 @@ export const config = {
     "/staff/:path*",
     "/driver/:path*",
     "/delivery/:path*",
+    "/onsitego/:path*",
     "/admin/:path*",
     "/marketing/:path*",
     "/banking/:path*",

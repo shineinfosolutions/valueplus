@@ -3,6 +3,8 @@ import connectToDatabase from "@/lib/db";
 import CustomerAdvance from "@/models/CustomerAdvance";
 import Customer from "@/models/Customer";
 import { getActor } from "@/lib/requirePermission";
+import { requirePinAndPermission } from "@/lib/securityPin";
+import AuditLog from "@/models/AuditLog";
 
 export async function GET(req: Request) {
   try {
@@ -199,6 +201,65 @@ export async function PUT(req: Request) {
       }
 
       return NextResponse.json({ success: true, data: advance, message: `Refund of ₹${refundVal} processed successfully.` });
+    }
+
+    // ── Cancel: an advance that was entered by mistake (for example twice) ─────────────────────────
+    // No money goes back to the customer: the receipt is kept in the list as Cancelled, with who cancelled it
+    // and why, and the customer's advance balance loses that amount, so it can never be adjusted on a bill.
+    // Only the Admin, with the Security PIN, and only for an advance that has not been used or refunded.
+    if (action === "cancel") {
+      const actor = await getActor().catch(() => null);
+      if (!actor) return NextResponse.json({ success: false, error: "You must be signed in to do this." }, { status: 401 });
+      if (!["admin", "superadmin"].includes(actor.role)) {
+        return NextResponse.json({ success: false, error: "Only the Admin can cancel an advance receipt." }, { status: 403 });
+      }
+      const why = String(body.reason || "").trim();
+      if (why.length < 3) {
+        return NextResponse.json({ success: false, error: "Write why this advance is being cancelled." }, { status: 400 });
+      }
+      const check = await requirePinAndPermission(actor, "invoice.delete", String(body.pin || ""));
+      if (!check.ok) {
+        return NextResponse.json({ success: false, error: check.error, pinFailed: true }, { status: 403 });
+      }
+      if (advance.status !== "Available" || (Number(advance.usedAmount) || 0) > 0 || Number(advance.remainingBalance) !== Number(advance.amount)) {
+        return NextResponse.json(
+          { success: false, error: "Only an advance that has not been used or refunded can be cancelled." },
+          { status: 409 }
+        );
+      }
+      const taken = Number(advance.remainingBalance) || 0;
+      advance.status = "Cancelled";
+      advance.remainingBalance = 0;
+      advance.notes = `${advance.notes ? advance.notes + " | " : ""}CANCELLED by ${actor.name} on ${new Date().toISOString().split("T")[0]}: ${why}`;
+      await advance.save();
+
+      const customer = await Customer.findOne({ phone: advance.customerPhone });
+      if (customer) {
+        customer.advanceBalance = Math.max(0, (customer.advanceBalance || 0) - taken);
+        await customer.save();
+      }
+      try {
+        await AuditLog.create({
+          action: "advance.cancel",
+          entityType: "CustomerAdvance",
+          entityRef: advance.receiptNumber,
+          entityId: String(advance._id),
+          partyName: advance.customerName,
+          amount: taken,
+          reason: why,
+          performedBy: actor.name,
+          performedByUserId: actor.id,
+          performedByRole: actor.role,
+          pinVerified: true,
+          usedLegacyPin: Boolean(check.usedLegacyPin),
+          ip: req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || "",
+          userAgent: req.headers.get("user-agent") || "",
+          metadata: { reason: advance.reason, notes: advance.notes },
+        });
+      } catch (logErr) {
+        console.warn("Notice: audit log for advance cancel:", logErr);
+      }
+      return NextResponse.json({ success: true, data: advance, message: `Advance ${advance.receiptNumber} (₹${taken}) cancelled.` });
     }
 
     return NextResponse.json({ success: false, error: "Invalid action" }, { status: 400 });

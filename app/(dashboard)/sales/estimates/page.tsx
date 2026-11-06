@@ -62,6 +62,16 @@ export default function EstimatesPage() {
   const [estimateToDelete, setEstimateToDelete] = useState<string | null>(null);
   const [activePrintEstimate, setActivePrintEstimate] = useState<any>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  // The estimate's saved quotation carries each line's HSN, VP code and taxable value, so the printed estimate shows the
+  // same table as the one opened from the collections list.
+  const { data: savedQuotation } = useQuery({
+    queryKey: ["estimate-quotation", activePrintEstimate?.estimateNumber],
+    enabled: isPreviewOpen && !!activePrintEstimate?.estimateNumber,
+    queryFn: async () => {
+      const json = await (await fetch(`/api/invoices?invoiceNumber=${encodeURIComponent(activePrintEstimate.estimateNumber)}`)).json();
+      return json.success ? json.data : null;
+    },
+  });
   const [selectedEstimate, setSelectedEstimate] = useState<any | null>(null);
   const [convertingEstimate, setConvertingEstimate] = useState<any | null>(null);
   const [editingEstimate, setEditingEstimate] = useState<any | null>(null);
@@ -317,6 +327,9 @@ export default function EstimatesPage() {
                   <td className="px-4 py-3 text-right font-semibold">
                     {formatCurrency(e.total || e.totalAmount)}
                     {e.status === "Converted" && e.dealAmount > 0 && <p className="text-[10px] font-normal text-emerald-700">Deal amount</p>}
+                    {Number(e.advanceAmount) > 0 && (
+                      <p className="text-[10px] font-bold text-emerald-700">Advance received {formatCurrency(e.advanceAmount)}{e.advanceMode ? ` · ${e.advanceMode}` : ""}</p>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-center">
                     {e.status === "Converted" ? (
@@ -402,13 +415,13 @@ export default function EstimatesPage() {
                     >
                       <MessageCircle className="w-3.5 h-3.5" />
                     </Button>
-                    {e.status !== "Converted" && (
+                    {(e.status !== "Converted" || canReview) && (
                       <Button
                         variant="ghost"
                         size="icon"
                         className="h-7 w-7 text-amber-700 hover:bg-amber-50"
                         onClick={() => setEditingEstimate(e)}
-                        title="Edit Estimate"
+                        title={e.status === "Converted" ? "Edit Estimate (already billed: the bill itself is not changed)" : "Edit Estimate"}
                         aria-label={"Edit estimate " + (e.estimateNumber || e.estimateNo)}
                       >
                         <Pencil className="w-3.5 h-3.5" />
@@ -640,6 +653,14 @@ export default function EstimatesPage() {
               salesperson: activePrintEstimate.salesperson || activePrintEstimate.salesExecutive || "AMIT SINGH",
               salesExecutive: activePrintEstimate.salesperson || activePrintEstimate.salesExecutive || "AMIT SINGH",
             };
+            if (
+              savedQuotation &&
+              Array.isArray(savedQuotation.items) &&
+              savedQuotation.items.length > 0 &&
+              savedQuotation.items.length === (activePrintEstimate.items || []).length
+            ) {
+              enrichedData.items = savedQuotation.items;
+            }
             if (customer) {
               if (!enrichedData.customerAddress) enrichedData.customerAddress = customer.billingAddress?.line1 || customer.address || "";
               if (!enrichedData.customerCity) enrichedData.customerCity = customer.billingAddress?.city || customer.city || "";

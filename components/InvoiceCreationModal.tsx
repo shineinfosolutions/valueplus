@@ -26,7 +26,7 @@ import { useSession } from "next-auth/react";
 import { useBranch } from "@/context/BranchContext";
 import { useLive } from "@/components/providers/RealtimeProvider";
 import { fileViewUrl } from "@/lib/file-link";
-import { ONSITEGO_INCENTIVE_RATE, isOnsitego, plansFor, slabLabel, type OnsitegoPlanRow } from "@/lib/onsitego";
+import { ONSITEGO_INCENTIVE_RATE, isOnsitego, onsitegoIncentiveOf, plansFor, slabLabel, type OnsitegoPlanRow } from "@/lib/onsitego";
 import { hsnCategoryName } from "@/lib/purchase-import/hsn-category";
 import { lineIncentive, liveRulesOf, rulesOf, ruleText } from "@/lib/incentive-rules";
 import { lineSalesmanFor, normPerson } from "@/lib/lead-share";
@@ -316,6 +316,8 @@ export function InvoiceCreationModal({
   const [billingForm, setBillingForm] = useState(INITIAL_BILLING_FORM);
   const [estimateIncludesAdvance, setEstimateIncludesAdvance] = useState(false);
   const [preBookingAdvanceAmount, setPreBookingAdvanceAmount] = useState<number>(5000);
+  // The advance already received on the estimate being edited (it can be raised, never taken back).
+  const [originalEstimateAdvance, setOriginalEstimateAdvance] = useState(0);
   const [preBookingPaymentMode, setPreBookingPaymentMode] = useState<string>("UPI");
   const [preBookingTransactionRef, setPreBookingTransactionRef] = useState<string>("");
 
@@ -370,6 +372,7 @@ export function InvoiceCreationModal({
       setBillingForm(INITIAL_BILLING_FORM);
       setBillingEntity("");
       setEstimateIncludesAdvance(false);
+      setOriginalEstimateAdvance(0);
       setDoRead(null);
     } else {
       if (isIndividualStaff && currentUserName) {
@@ -728,7 +731,7 @@ export function InvoiceCreationModal({
             discount: Number(it.discount) || 0,
             gstRate: allowedGstRate(gst),
             availableStock: matchedCatalog?.currentStock || matchedCatalog?.openingStock || 10,
-            extendedWarrantyProvider: "OneAssist",
+            extendedWarrantyProvider: "",
             extendedWarrantyPlan: "none",
             extendedWarrantyAmount: 0,
             extendedWarrantyDuration: 1,
@@ -759,7 +762,7 @@ export function InvoiceCreationModal({
             discount: 0,
             gstRate: 18,
             availableStock: 10,
-            extendedWarrantyProvider: "OneAssist",
+            extendedWarrantyProvider: "",
             extendedWarrantyPlan: "none",
             extendedWarrantyAmount: 0,
             extendedWarrantyDuration: 1,
@@ -805,8 +808,18 @@ export function InvoiceCreationModal({
     const est = editEstimate;
     setBillingEntity(entityOf(est.billingEntity || est));
     handleLoadEstimate(est);
+    // The advance the customer already paid comes back into the form, so saving does not lose it.
+    const savedAdvance = Number(est.advanceAmount) || 0;
+    setOriginalEstimateAdvance(savedAdvance);
+    if (savedAdvance > 0) {
+      setEstimateIncludesAdvance(true);
+      setPreBookingAdvanceAmount(savedAdvance);
+    } else {
+      setEstimateIncludesAdvance(false);
+    }
     setBillingForm((prev: any) => ({
       ...prev,
+      ...(savedAdvance > 0 && est.advanceMode ? { paymentMode: est.advanceMode } : {}),
       invoiceNo: est.estimateNumber || est.estimateNo || prev.invoiceNo,
       invoiceDate: String(est.date || prev.invoiceDate).slice(0, 10),
       dueDate: est.expiryDate ? String(est.expiryDate).slice(0, 10) : prev.dueDate,
@@ -864,7 +877,7 @@ export function InvoiceCreationModal({
         showroomStock: showroomNow + qtyOnBill,
         godownStock: cat?.godownStock,
         isSerialized: Boolean(cat?.isSerialized || it.serialNumber),
-        extendedWarrantyProvider: it.extendedWarrantyProvider || "OneAssist",
+        extendedWarrantyProvider: it.extendedWarrantyProvider || "",
         extendedWarrantyPlan: it.extendedWarrantyPlan || "none",
         extendedWarrantyAmount: Number(it.extendedWarrantyAmount) || 0,
         extendedWarrantyDuration: Number(it.extendedWarrantyDuration) || 1,
@@ -1065,7 +1078,7 @@ export function InvoiceCreationModal({
           discount: 0, 
           gstRate: 18, 
           availableStock: 0,
-          extendedWarrantyProvider: "OneAssist",
+          extendedWarrantyProvider: "",
           extendedWarrantyPlan: "none",
           extendedWarrantyAmount: 0,
           extendedWarrantyDuration: 1,
@@ -1282,6 +1295,10 @@ export function InvoiceCreationModal({
               taxTotal: payload.totalGST,
               total: payload.total,
               notes: payload.notes || "Official Estimate Generated",
+              // The advance paid with the estimate (shown at the top of the printed estimate).
+              advanceAmount: payload.paymentMode !== "N/A" ? Number(payload.paidAmount) || 0 : 0,
+              advanceMode: payload.paymentMode !== "N/A" ? payload.paymentMode : "",
+              advanceTxnRef: payload.paymentMode !== "N/A" ? billingForm.upiTxnId || billingForm.creditCardTxnId || billingForm.debitCardTxnId || billingForm.onlineTxnId || "" : "",
               kind: billRequest || editEstimate?.kind === "bill" ? "bill" : "estimate",
               priceUnlockPin: unlockPinRef.current || undefined,
             }),
@@ -1307,7 +1324,13 @@ export function InvoiceCreationModal({
         const upd = await fetch("/api/invoices", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...payload, type: "proforma" }),
+          body: JSON.stringify({
+            ...payload,
+            type: "proforma",
+            // The server keeps the advance already received and only raises it.
+            advanceAmount: payload.paymentMode !== "N/A" ? Number(payload.paidAmount) || 0 : 0,
+            advanceMode: payload.paymentMode !== "N/A" ? payload.paymentMode : "",
+          }),
         });
         const updJson = await upd.json().catch(() => ({}));
         // Older estimates exist only in the estimates list — that one was updated above.
@@ -1803,7 +1826,14 @@ export function InvoiceCreationModal({
         paidAmt = Math.min(billCalculations.grandTotal, preBookingAdvanceAmount);
         balanceAmt = Math.max(0, billCalculations.grandTotal - paidAmt);
         paymentModeToSave = billingForm.paymentMode;
-        try {
+        if (isEditingEstimate && originalEstimateAdvance > 0 && paidAmt < originalEstimateAdvance) {
+          toast.error(`₹${originalEstimateAdvance} advance was already received on this estimate. It can be raised here, not reduced.`);
+          return;
+        }
+        // A new estimate records its whole advance; an edited one records only the extra amount added now, so the
+        // customer's advance book is not credited a second time for money already received.
+        const advanceToRecord = paidAmt - (isEditingEstimate ? originalEstimateAdvance : 0);
+        if (advanceToRecord > 0) try {
           const txnRef = billingForm.upiTxnId || billingForm.creditCardTxnId || billingForm.debitCardTxnId || billingForm.onlineTxnId || "";
           fetch("/api/crm/advances", {
             method: "POST",
@@ -1811,7 +1841,7 @@ export function InvoiceCreationModal({
             body: JSON.stringify({
               customerName: billingForm.customerName,
               customerPhone: billingForm.customerPhone,
-              amount: paidAmt,
+              amount: advanceToRecord,
               paymentMode: billingForm.paymentMode,
               transactionRef: txnRef,
               productBooked: formattedItems.map(i => i.itemName).join(", "),
@@ -3061,143 +3091,141 @@ export function InvoiceCreationModal({
                           </Select>
                         </div>
 
-                        {/* EXTENDED WARRANTY PLAN & CUSTOM DETAILS */}
+                        {/* EXTENDED WARRANTY: Onsite Go plans only (the price list the Admin uploads in Onsite Go) */}
                         <div className="col-span-3 md:col-span-6 bg-purple-50/60 p-3 rounded-xl border border-purple-200 space-y-2.5">
-                          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-                            <Label className="text-xs font-bold text-purple-950 flex items-center gap-1.5">
-                              <Shield className="w-3.5 h-3.5 text-purple-600" /> Extended Warranty & Device Protection
-                            </Label>
-                            <div className="flex items-center gap-2">
-                              <span className="text-[10px] font-semibold text-purple-700">Quick Plan:</span>
-                              <Select 
-                                value={WARRANTY_PLANS.find(p => p.name === item.extendedWarrantyPlan)?.id || (item.extendedWarrantyAmount > 0 ? "custom" : "none")} 
-                                onValueChange={(v) => {
-                                  if (v === "custom") {
-                                    handleLineItemChange(idx, "extendedWarrantyProvider", "OneAssist");
-                                    handleLineItemChange(idx, "extendedWarrantyDuration", 1);
-                                    handleLineItemChange(idx, "extendedWarrantyAmount", 1499);
-                                    handleLineItemChange(idx, "extendedWarrantyPlan", "Custom Extended Warranty");
-                                  } else {
-                                    handleLineItemChange(idx, "extendedWarrantyPlan", v);
-                                  }
-                                }}
-                              >
-                                <SelectTrigger className="h-7 text-xs bg-white border-purple-300 font-bold text-purple-900 w-52">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {WARRANTY_PLANS.map((p) => (
-                                    <SelectItem key={p.id} value={p.id}>
-                                      {p.name} {p.price > 0 ? `(+₹${p.price.toLocaleString("en-IN")})` : ""}
-                                    </SelectItem>
-                                  ))}
-                                  <SelectItem value="custom">⚙️ Custom Provider & Price</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            </div>
-                          </div>
-
-                          {/* Onsitego plans that fit this product (product group + price slab), shown automatically */}
                           {(() => {
                             const fits = onsitegoPlansForLine(item);
-                            if (fits.length === 0) return null;
-                            const chosenOnsitego = isOnsitego(item.extendedWarrantyProvider) && Number(item.extendedWarrantyAmount) > 0;
+                            const hasPlan = Number(item.extendedWarrantyAmount) > 0;
+                            const chosenOnsitego = isOnsitego(item.extendedWarrantyProvider) && hasPlan;
                             // One row per section of the price list (EW, ADLD, AMC, replacement plan ...).
                             const sections = Array.from(new Set(fits.map((p) => p.category || p.kind)));
+                            const incentive = Math.round(Number(item.extendedWarrantyAmount) * ONSITEGO_INCENTIVE_RATE);
                             return (
-                              <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-2 space-y-1.5">
-                                <p className="text-[11px] font-bold text-emerald-900">
-                                  Onsitego plans for this product
-                                  <span className="font-semibold text-emerald-700"> · price slab {slabLabel(fits[0])} · salesman earns {Math.round(ONSITEGO_INCENTIVE_RATE * 100)}%</span>
-                                </p>
-                                {sections.map((sec) => (
-                                  <div key={sec}>
-                                    <p className="text-[10px] font-semibold text-emerald-800">{sec}</p>
-                                    <div className="mt-0.5 flex flex-wrap gap-1.5">
-                                      {fits
-                                        .filter((p) => (p.category || p.kind) === sec)
-                                        .map((p) => {
-                                          const on = chosenOnsitego && item.extendedWarrantyPlan === onsitegoPlanLabel(p) && Number(item.extendedWarrantyAmount) === p.price;
-                                          return (
-                                            <button
-                                              key={p.vpCode || p.planName}
-                                              type="button"
-                                              onClick={() => applyOnsitegoPlan(idx, p)}
-                                              title={`${p.planName} · ${p.vpCode} · for products ${slabLabel(p)}`}
-                                              className={cn(
-                                                "px-2.5 py-1 rounded-md border text-[11px] font-bold text-left leading-tight",
-                                                on ? "bg-emerald-600 border-emerald-600 text-white" : "bg-white border-emerald-300 text-emerald-900 hover:bg-emerald-100"
-                                              )}
-                                            >
-                                              {p.years} Yr {p.kind} · ₹{p.price.toLocaleString("en-IN")}
-                                              <span className={cn("block text-[9px] font-mono font-semibold", on ? "text-emerald-100" : "text-emerald-600")}>
-                                                {p.vpCode} · +₹{Math.round(p.price * ONSITEGO_INCENTIVE_RATE)}
-                                              </span>
-                                            </button>
-                                          );
-                                        })}
-                                    </div>
+                              <>
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <Label className="text-xs font-bold text-purple-950 flex items-center gap-1.5">
+                                    <Shield className="w-3.5 h-3.5 text-purple-600" /> Extended Warranty — Onsite Go
+                                    <span className="font-semibold text-purple-700">· salesman earns {Math.round(ONSITEGO_INCENTIVE_RATE * 100)}% of the plan</span>
+                                  </Label>
+                                  {hasPlan && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleLineItemChange(idx, "extendedWarrantyPlan", "none")}
+                                      className="text-[11px] font-bold text-rose-600 hover:text-rose-800 underline"
+                                    >
+                                      Remove plan
+                                    </button>
+                                  )}
+                                </div>
+
+                                {/* The plan chosen for this line */}
+                                {hasPlan && (
+                                  <div className={cn("rounded-lg border px-2.5 py-1.5 text-[11px]", chosenOnsitego ? "border-emerald-300 bg-emerald-50 text-emerald-900" : "border-amber-300 bg-amber-50 text-amber-900")}>
+                                    <p className="font-bold">
+                                      {chosenOnsitego ? "✓ " : "Older plan, not Onsite Go: "}
+                                      {item.extendedWarrantyPlan} · ₹{Number(item.extendedWarrantyAmount).toLocaleString("en-IN")}
+                                      {item.extendedWarrantyDuration ? ` · ${item.extendedWarrantyDuration} Yr` : ""}
+                                    </p>
+                                    {chosenOnsitego ? (
+                                      <p className="text-emerald-700">The salesman earns ₹{incentive.toLocaleString("en-IN")} on this plan.</p>
+                                    ) : (
+                                      <p>{item.extendedWarrantyProvider || "Other provider"}: remove it and choose an Onsite Go plan below.</p>
+                                    )}
                                   </div>
-                                ))}
-                              </div>
+                                )}
+
+                                {/* Onsite Go plans that fit this product (product group + price slab), shown automatically */}
+                                {fits.length > 0 && (
+                                  <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-2 space-y-1.5">
+                                    <p className="text-[11px] font-bold text-emerald-900">
+                                      Onsite Go plans for this product
+                                      <span className="font-semibold text-emerald-700"> · price slab {slabLabel(fits[0])}</span>
+                                    </p>
+                                    {sections.map((sec) => (
+                                      <div key={sec}>
+                                        <p className="text-[10px] font-semibold text-emerald-800">{sec}</p>
+                                        <div className="mt-0.5 flex flex-wrap gap-1.5">
+                                          {fits
+                                            .filter((p) => (p.category || p.kind) === sec)
+                                            .map((p) => {
+                                              const on = chosenOnsitego && item.extendedWarrantyPlan === onsitegoPlanLabel(p) && Number(item.extendedWarrantyAmount) === p.price;
+                                              return (
+                                                <button
+                                                  key={p.vpCode || p.planName}
+                                                  type="button"
+                                                  onClick={() => applyOnsitegoPlan(idx, p)}
+                                                  title={`${p.planName} · ${p.vpCode} · for products ${slabLabel(p)}`}
+                                                  className={cn(
+                                                    "px-2.5 py-1 rounded-md border text-[11px] font-bold text-left leading-tight",
+                                                    on ? "bg-emerald-600 border-emerald-600 text-white" : "bg-white border-emerald-300 text-emerald-900 hover:bg-emerald-100"
+                                                  )}
+                                                >
+                                                  {p.years} Yr {p.kind} · ₹{p.price.toLocaleString("en-IN")}
+                                                  <span className={cn("block text-[9px] font-mono font-semibold", on ? "text-emerald-100" : "text-emerald-600")}>
+                                                    {p.vpCode} · +₹{Math.round(p.price * ONSITEGO_INCENTIVE_RATE)}
+                                                  </span>
+                                                </button>
+                                              );
+                                            })}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+
+                                {/* No plan fits this product's group or price: pick from the whole list, or the list is not loaded yet */}
+                                {fits.length === 0 && onsitegoPlans.length > 0 && !hasPlan && (
+                                  <div className="space-y-1">
+                                    <p className="text-[11px] text-purple-800">
+                                      {(Number(item.rate) || 0) - (Number(item.discount) || 0) > 0
+                                        ? "No Onsite Go plan is listed for this product's type and price. You can still choose one from the whole list:"
+                                        : "Enter the product price to see its Onsite Go plans, or choose from the whole list:"}
+                                    </p>
+                                    <select
+                                      value=""
+                                      onChange={(e) => {
+                                        const plan = onsitegoPlans.find((p) => `${p.vpCode}|${p.planName}` === e.target.value);
+                                        if (plan) applyOnsitegoPlan(idx, plan);
+                                      }}
+                                      aria-label="Choose an Onsite Go plan"
+                                      className="h-8 w-full rounded-md border border-purple-300 bg-white px-2 text-xs font-semibold text-slate-800"
+                                    >
+                                      <option value="">Choose an Onsite Go plan...</option>
+                                      {Array.from(new Set(onsitegoPlans.map((p) => p.category || "Other"))).sort().map((cat) => (
+                                        <optgroup key={cat} label={cat}>
+                                          {onsitegoPlans
+                                            .filter((p) => (p.category || "Other") === cat)
+                                            .map((p) => (
+                                              <option key={`${p.vpCode}|${p.planName}`} value={`${p.vpCode}|${p.planName}`}>
+                                                {p.planName} · ₹{p.price.toLocaleString("en-IN")} · {p.vpCode}
+                                              </option>
+                                            ))}
+                                        </optgroup>
+                                      ))}
+                                    </select>
+                                  </div>
+                                )}
+                                {onsitegoPlans.length === 0 && !hasPlan && (
+                                  <p className="text-[11px] text-purple-800">
+                                    No Onsite Go price list is loaded yet. The Admin uploads it under Onsite Go in the menu.
+                                  </p>
+                                )}
+
+                                {/* The certificate number Onsite Go gives for the plan */}
+                                {hasPlan && (
+                                  <div className="pt-1.5 border-t border-purple-200/80 max-w-xs">
+                                    <Label className="text-[10px] font-bold text-purple-900">Policy / Certificate No.</Label>
+                                    <Input
+                                      placeholder="Onsite Go certificate number"
+                                      value={item.extendedWarrantyPolicyNo || ""}
+                                      onChange={(e) => handleLineItemChange(idx, "extendedWarrantyPolicyNo", e.target.value)}
+                                      className="h-7 text-xs bg-white border-purple-300 font-mono"
+                                    />
+                                  </div>
+                                )}
+                              </>
                             );
                           })()}
-
-                          {(item.extendedWarrantyAmount > 0 || (item.extendedWarrantyPlan && item.extendedWarrantyPlan !== "none")) && (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 pt-1.5 border-t border-purple-200/80">
-                              <div>
-                                <Label className="text-[10px] font-bold text-purple-900">Provider Name *</Label>
-                                <Select 
-                                  value={item.extendedWarrantyProvider || "OneAssist"} 
-                                  onValueChange={(v) => handleLineItemChange(idx, "extendedWarrantyProvider", v)}
-                                >
-                                  <SelectTrigger className="h-7 text-xs bg-white border-purple-300 font-bold text-slate-800">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {WARRANTY_PROVIDERS.map(pr => <SelectItem key={pr} value={pr}>{pr}</SelectItem>)}
-                                  </SelectContent>
-                                </Select>
-                              </div>
-
-                              <div>
-                                <Label className="text-[10px] font-bold text-purple-900">Duration (Years) *</Label>
-                                <Select 
-                                  value={String(item.extendedWarrantyDuration || 1)} 
-                                  onValueChange={(v) => handleLineItemChange(idx, "extendedWarrantyDuration", Number(v))}
-                                >
-                                  <SelectTrigger className="h-7 text-xs bg-white border-purple-300 font-bold text-slate-800">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {WARRANTY_DURATIONS.map(d => <SelectItem key={d.value} value={String(d.value)}>{d.label}</SelectItem>)}
-                                  </SelectContent>
-                                </Select>
-                              </div>
-
-                              <div>
-                                <Label className="text-[10px] font-bold text-purple-900">Warranty Price (₹) *</Label>
-                                <Input 
-                                  type="number"
-                                  min="0"
-                                  placeholder="e.g. 1999"
-                                  value={item.extendedWarrantyAmount || ""}
-                                  onChange={(e) => handleLineItemChange(idx, "extendedWarrantyAmount", Math.max(0, Number(e.target.value) || 0))}
-                                  className="h-7 text-xs bg-white border-purple-300 font-mono font-black text-purple-950"
-                                />
-                              </div>
-
-                              <div>
-                                <Label className="text-[10px] font-bold text-purple-900">Policy / Certificate No.</Label>
-                                <Input 
-                                  placeholder="e.g. OA-99281"
-                                  value={item.extendedWarrantyPolicyNo || ""}
-                                  onChange={(e) => handleLineItemChange(idx, "extendedWarrantyPolicyNo", e.target.value)}
-                                  className="h-7 text-xs bg-white border-purple-300 font-mono text-xs"
-                                />
-                              </div>
-                            </div>
-                          )}
                         </div>
                       </div>
 
@@ -3306,6 +3334,7 @@ export function InvoiceCreationModal({
                       <input
                         type="checkbox"
                         checked={estimateIncludesAdvance}
+                        disabled={originalEstimateAdvance > 0}
                         onChange={(e) => setEstimateIncludesAdvance(e.target.checked)}
                         className="rounded text-[#30539C] focus:ring-[#30539C] w-4 h-4"
                       />
@@ -3318,6 +3347,9 @@ export function InvoiceCreationModal({
                   <div className="p-4 bg-amber-50/80 rounded-xl border-2 border-amber-400 grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
                     <div>
                       <Label className="font-bold text-amber-950">Advance Token Amount (₹) *</Label>
+                      {originalEstimateAdvance > 0 && (
+                        <p className="text-[10px] text-amber-900">Already received: <b>{formatCurrency(originalEstimateAdvance)}</b>. You can add more, not reduce it.</p>
+                      )}
                       <Input
                         type="number"
                         min="1"
@@ -4115,6 +4147,12 @@ export function InvoiceCreationModal({
                   <span>🎁 Earned Incentive:</span>
                   <span>+{formatCurrency(billCalculations.totalIncentive)}</span>
                 </p>
+                {onsitegoIncentiveOf(billingForm.lineItems) > 0 && (
+                  <p className="text-emerald-300 font-mono font-bold text-[11px] flex items-center gap-1">
+                    <span>🛡 Onsite Go plan ({Math.round(ONSITEGO_INCENTIVE_RATE * 100)}%):</span>
+                    <span>+{formatCurrency(onsitegoIncentiveOf(billingForm.lineItems))}</span>
+                  </p>
+                )}
               </div>
 
               <div className="text-right">

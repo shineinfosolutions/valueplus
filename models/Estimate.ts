@@ -41,6 +41,10 @@ export interface IEstimate extends Document {
   dealAmount?: number;
   convertedInvoiceNumber?: string;
   dealSalesperson?: string;
+  /** The advance token the customer paid with this estimate (shown at the top of the printed estimate). */
+  advanceAmount?: number;
+  advanceMode?: string;
+  advanceTxnRef?: string;
   priceUnlock?: {
     by: string;
     byRole: string;
@@ -88,6 +92,9 @@ const EstimateSchema = new Schema<IEstimate>(
     rejectReason: { type: String },
     dealAmount: { type: Number },
     dealSalesperson: { type: String },
+    advanceAmount: { type: Number, default: 0 },
+    advanceMode: { type: String, default: "" },
+    advanceTxnRef: { type: String, default: "" },
     priceUnlock: {
       type: new Schema(
         {

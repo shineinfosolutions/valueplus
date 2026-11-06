@@ -157,8 +157,12 @@ function ValueplusInvoiceContent({ invoiceData: propInvoiceData, onBack }: Value
             const qty = Number(it.quantity || it.qty || 1);
             const rate = Number(it.rate || 0);
             const discount = Number(it.discount || 0);
-            const taxable = it.taxableAmount || (rate - discount) * qty;
-            const gstRate = Number(it.gstRate || 18);
+            const gstRate = Number(it.gstRate || it.tax || 18);
+            // An estimate line has no taxable value of its own, and its rate already includes GST (as on the saved
+            // bill), so the GST is taken out of it. Adding 18% on top is what made an estimate total more than its price.
+            const taxable =
+              it.taxableAmount ||
+              (isEst ? Math.round((((rate - discount) * qty) / (1 + gstRate / 100)) * 100) / 100 : (rate - discount) * qty);
             const isIntra = !invoice.placeOfSupply || invoice.placeOfSupply.includes("09") || invoice.placeOfSupply.includes("Uttar Pradesh");
             const halfRate = gstRate / 2;
             const halfGst = (taxable * (halfRate / 100));
@@ -255,6 +259,9 @@ function ValueplusInvoiceContent({ invoiceData: propInvoiceData, onBack }: Value
         })(),
         
         paymentMode: invoice.paymentMode || "Cash",
+        // The advance token paid with an estimate: its own field on the estimate, else what the saved quotation shows as paid.
+        advanceReceived: isEst ? Number(invoice.advanceAmount) || Number(invoice.paidAmount) || 0 : 0,
+        advanceReceivedMode: invoice.advanceMode || (invoice.paymentMode && invoice.paymentMode !== "N/A" ? invoice.paymentMode : ""),
         payments: Array.isArray(invoice.payments) ? invoice.payments : [],
         // Never invent a paid figure. `paidAmount || total || 25500` meant a bill with
         // nothing collected printed as fully paid, and a missing value printed a
@@ -353,6 +360,8 @@ function ValueplusInvoiceContent({ invoiceData: propInvoiceData, onBack }: Value
       freightCharges: 0,
       
       paymentMode: "Cash",
+      advanceReceived: 0,
+      advanceReceivedMode: "",
       paidAmount: 25500.00,
       balanceAmount: 0,
       vehicleNumber: "",
@@ -619,6 +628,19 @@ function ValueplusInvoiceContent({ invoiceData: propInvoiceData, onBack }: Value
           <span className="text-xs">Dated : <span className="font-mono">{activeData.dated}</span></span>
         </div>
 
+        {/* ADVANCE RECEIVED (an estimate that has had an advance token paid): shown right at the top */}
+        {activeData.isEstimate && activeData.advanceReceived > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-0.5 py-1.5 px-2 border-b border-slate-400 bg-emerald-50 text-[11px]">
+            <span className="font-black text-emerald-900 uppercase tracking-wide">
+              Advance Received: <span className="font-mono">₹{activeData.advanceReceived.toFixed(2)}</span>
+              {activeData.advanceReceivedMode ? <span className="font-bold normal-case"> via {activeData.advanceReceivedMode}</span> : null}
+            </span>
+            <span className="font-bold text-slate-800">
+              Balance on delivery: <span className="font-mono">₹{Math.max(0, (Number(activeData.netAmount) || 0) - activeData.advanceReceived).toFixed(2)}</span>
+            </span>
+          </div>
+        )}
+
         {/* COMPANY & SALES EXECUTIVE / SALESPERSON DETAILS */}
         <div className="grid grid-cols-12 border-b border-slate-400 py-2 gap-2">
           <div className="col-span-5 pr-2">
@@ -865,9 +887,9 @@ function ValueplusInvoiceContent({ invoiceData: propInvoiceData, onBack }: Value
         {/* ─── REMARKS & PAYMENT SUMMARY ─────────────────────────── */}
         <div className="py-2 border-b border-slate-400 text-[10px] space-y-1">
           {activeData.isEstimate ? (
-            (activeData.advanceAdjusted > 0 || (activeData.paidAmount > 0 && activeData.paidAmount < activeData.netAmount)) ? (
+            (activeData.advanceReceived > 0 || activeData.advanceAdjusted > 0 || (activeData.paidAmount > 0 && activeData.paidAmount < activeData.netAmount)) ? (
               <p>
-                <span className="font-bold">Remarks:</span> Commercial Price Estimate • Advance Token Received: <span className="font-mono font-bold text-emerald-800">₹{(activeData.advanceAdjusted || activeData.paidAmount)?.toFixed(2)}</span> via <span className="font-bold uppercase">{activeData.paymentMode}</span> • Balance on Delivery: <span className="font-mono font-bold">₹{Math.max(0, activeData.netAmount - (activeData.advanceAdjusted || activeData.paidAmount))?.toFixed(2)}</span> • Estimate valid for 15 days.
+                <span className="font-bold">Remarks:</span> Commercial Price Estimate • Advance Token Received: <span className="font-mono font-bold text-emerald-800">₹{(activeData.advanceReceived || activeData.advanceAdjusted || activeData.paidAmount)?.toFixed(2)}</span> via <span className="font-bold uppercase">{activeData.advanceReceivedMode || activeData.paymentMode}</span> • Balance on Delivery: <span className="font-mono font-bold">₹{Math.max(0, activeData.netAmount - (activeData.advanceReceived || activeData.advanceAdjusted || activeData.paidAmount))?.toFixed(2)}</span> • Estimate valid for 15 days.
               </p>
             ) : (
               <p>

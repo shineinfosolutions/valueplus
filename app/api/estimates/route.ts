@@ -9,8 +9,11 @@ import { requirePinAndPermission } from "@/lib/securityPin";
 import { findBelowFloor, verifyUnlockPin } from "@/lib/priceLock";
 import { missingApprovals } from "@/lib/discount-approval";
 import { notifyRoles } from "@/lib/notify";
+import { estimateFieldChanged } from "@/lib/estimate-diff";
 
 const SALES_ONLY_ROLES = ["salesman", "sales"];
+/** Who may still correct an estimate after it was made into a bill. */
+const CAN_EDIT_BILLED_ROLES = ["admin", "superadmin", "manager", "cashier"];
 const stripBrackets = (v?: string) => String(v || "").replace(/\(.*?\)/g, "").trim().toLowerCase();
 const sameName = (a?: string, b?: string) => stripBrackets(a) === stripBrackets(b);
 
@@ -18,7 +21,9 @@ const sameName = (a?: string, b?: string) => stripBrackets(a) === stripBrackets(
 const EDITABLE_FIELDS = [
   "customerName", "customerPhone", "customerAddress", "customerGST", "customerCompanyName",
   "date", "expiryDate", "items", "subTotal", "taxTotal", "total", "notes",
+  "advanceAmount", "advanceMode", "advanceTxnRef",
 ];
+const num0 = (v: any) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
 /** The form asks the Cashier / Store Manager / Admin (by discount band) for these lines and then sends the estimate again. */
 function discountApprovalResponse(lines: any[]) {
@@ -265,37 +270,65 @@ export async function PUT(req: Request) {
     if (!existing) {
       return NextResponse.json({ success: false, error: "Estimate not found" }, { status: 404 });
     }
-    if (existing.status === "Converted") {
-      return NextResponse.json({ success: false, error: "This estimate is already billed and cannot be changed." }, { status: 400 });
+    // An estimate already made into a bill can still be corrected by the Admin, Cashier and Store Manager (the
+    // quotation only; the bill made from it is not changed). Nobody else can.
+    const alreadyBilled = existing.status === "Converted";
+    if (alreadyBilled && !CAN_EDIT_BILLED_ROLES.includes(actor.role)) {
+      return NextResponse.json({ success: false, error: "This estimate is already billed. Only the Admin, Cashier or Store Manager can change it." }, { status: 403 });
     }
     if (SALES_ONLY_ROLES.includes(actor.role) && !sameName(existing.salesperson || existing.salesExecutive, actor.name)) {
       return NextResponse.json({ success: false, error: "You can only change your own estimates." }, { status: 403 });
     }
 
-    const nextItems = body.items !== undefined ? body.items : existing.items;
-    const lock = await checkPriceLock(actor, nextItems, body.priceUnlockPin);
-    if (!lock.ok) return lock.response;
-    const needDiscount = await missingApprovals(actor, body.customerName || existing.customerName, nextItems);
-    if (needDiscount.length > 0) return discountApprovalResponse(needDiscount);
-
+    // Only what the user really changed is written; a field that comes back the same as saved is left alone.
     const set: any = {};
-    for (const k of EDITABLE_FIELDS) if (body[k] !== undefined) set[k] = body[k];
-    const unset: any = {};
-    if (lock.unlock) set.priceUnlock = lock.unlock;
-    else unset.priceUnlock = 1;
+    for (const k of EDITABLE_FIELDS) {
+      if (body[k] === undefined) continue;
+      if (estimateFieldChanged(k, existing[k], body[k])) set[k] = body[k];
+    }
+    const itemsChanged = "items" in set;
+    if (itemsChanged) {
+      // The totals belong to the lines: they move together, and only then.
+      for (const k of ["subTotal", "taxTotal", "total"]) if (body[k] !== undefined) set[k] = body[k];
+    } else {
+      for (const k of ["subTotal", "taxTotal", "total"]) delete set[k];
+    }
+    if (Object.keys(set).length === 0) {
+      return NextResponse.json({ success: true, message: "Nothing was changed.", unchanged: true, data: existing });
+    }
+    // The advance the customer already paid cannot be taken back by editing the estimate.
+    if ("advanceAmount" in set && num0(set.advanceAmount) < num0(existing.advanceAmount)) {
+      return NextResponse.json(
+        { success: false, error: `₹${num0(existing.advanceAmount)} advance was already received on this estimate. It cannot be reduced here.` },
+        { status: 400 }
+      );
+    }
 
-    // A changed bill goes back to the cashier; an estimate (quotation) stays as it is.
-    if (existing.kind === "bill") {
+    // Price lock and discount approval concern the lines, so they are asked only when the lines changed.
+    let lock: Awaited<ReturnType<typeof checkPriceLock>> | null = null;
+    if (itemsChanged) {
+      lock = await checkPriceLock(actor, body.items, body.priceUnlockPin);
+      if (!lock.ok) return lock.response;
+      const needDiscount = await missingApprovals(actor, body.customerName || existing.customerName, body.items);
+      if (needDiscount.length > 0) return discountApprovalResponse(needDiscount);
+    }
+    const unset: any = {};
+    if (itemsChanged) {
+      if (lock && lock.ok && lock.unlock) set.priceUnlock = lock.unlock;
+      else unset.priceUnlock = 1;
+    }
+
+    // A changed bill goes back to the cashier; an estimate (quotation) stays as it is. One already made into a bill
+    // keeps its approval, or it would show as waiting again and could be billed twice.
+    if (existing.kind === "bill" && !alreadyBilled) {
       set.approvalStatus = "pending";
       Object.assign(unset, { approvedBy: 1, approvedAt: 1, rejectedBy: 1, rejectedAt: 1, rejectReason: 1, dealAmount: 1, dealSalesperson: 1 });
     }
 
-    const updatedEstimate = await Estimate.findOneAndUpdate(
-      { estimateNumber: body.estimateNumber },
-      { $set: set, $unset: unset },
-      { new: true }
-    );
-    if (lock.unlock && updatedEstimate) await logPriceUnlock(req, actor, updatedEstimate, lock.below, "estimate edited");
+    const update: any = { $set: set };
+    if (Object.keys(unset).length > 0) update.$unset = unset;
+    const updatedEstimate = await Estimate.findOneAndUpdate({ estimateNumber: body.estimateNumber }, update, { new: true });
+    if (lock && lock.ok && lock.unlock && updatedEstimate) await logPriceUnlock(req, actor, updatedEstimate, lock.below, "estimate edited");
 
     return NextResponse.json({ success: true, message: "Estimate updated successfully", data: updatedEstimate });
   } catch (error: any) {
