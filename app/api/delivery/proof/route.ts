@@ -4,10 +4,12 @@ import connectToDatabase from "@/lib/db";
 import Invoice from "@/models/Invoice";
 import DeliveryChallan from "@/models/DeliveryChallan";
 import { getActor } from "@/lib/requirePermission";
+import { checkSerialOnBill } from "@/lib/delivery-serial";
 
 export const dynamic = "force-dynamic";
 
-const UPLOAD_ROLES = ["driver", "courier", "delivery", "warehouse", "admin", "superadmin", "manager"];
+// The cashier also adds the 3 photos when the customer collects the goods himself (Received by self).
+const UPLOAD_ROLES = ["driver", "courier", "delivery", "warehouse", "admin", "superadmin", "manager", "cashier"];
 const VIEW_ROLES = ["admin", "superadmin", "manager"];
 const MAX_BYTES = 8 * 1024 * 1024;
 const REQUIRED_PHOTOS = 3;
@@ -21,7 +23,8 @@ function bucket(): any {
 
 /**
  * The delivery boy's photo of the delivered goods, kept in the R2 bucket (never as a public link).
- * POST (multipart: invoiceNumber, file x3) saves the 3 photos on the bill; GET ?invoiceNumber=&n=0..2 lets the Admin / Manager open one.
+ * POST (multipart: invoiceNumber, file x3, serial) saves the 3 photos on the bill; for delivery staff the first photo is the
+ * scanned serial-number barcode and `serial` is its text (checked against the serials on the bill); GET ?invoiceNumber=&n=0..2 lets the Admin / Manager open one.
  */
 export async function POST(req: Request) {
   try {
@@ -33,6 +36,11 @@ export async function POST(req: Request) {
     const form = await req.formData();
     const invoiceNumber = String(form.get("invoiceNumber") || "").trim();
     const files = form.getAll("file").filter((f): f is File => f instanceof File);
+    // The barcode scanned from the serial-number sticker; its photo is the FIRST file.
+    const serial = String(form.get("serial") || "").trim();
+    if (CAMERA_ONLY_ROLES.includes(actor.role) && !serial) {
+      return NextResponse.json({ success: false, error: "Scan the serial number barcode first; its photo is one of the 3 photos." }, { status: 400 });
+    }
     if (!invoiceNumber) return NextResponse.json({ success: false, error: "Choose the bill first." }, { status: 400 });
     if (files.length < REQUIRED_PHOTOS) {
       return NextResponse.json({ success: false, error: `Take ${REQUIRED_PHOTOS} photos of the delivered goods (you sent ${files.length}).` }, { status: 400 });
@@ -53,6 +61,19 @@ export async function POST(req: Request) {
     if (invoice.deliveryStatus === "delivered" && (invoice.deliveryProofKeys?.length || 0) >= REQUIRED_PHOTOS && !VIEW_ROLES.includes(actor.role)) {
       return NextResponse.json({ success: false, error: "This delivery is already completed." }, { status: 409 });
     }
+    // The scanned serial must be one sold on this bill (when the bill records serial numbers).
+    let serialMatched = false;
+    if (serial) {
+      const check = checkSerialOnBill(serial, invoice.items);
+      serialMatched = check.matched;
+      if (check.billHasSerials && !check.matched) {
+        return NextResponse.json(
+          { success: false, error: `The scanned serial number (${serial}) is not on bill ${invoiceNumber}. Scan the product that was sold on this bill.` },
+          { status: 400 }
+        );
+      }
+    }
+
     const r2 = bucket();
     if (!r2) return NextResponse.json({ success: false, error: "Photo storage is not set up." }, { status: 500 });
 
@@ -72,6 +93,10 @@ export async function POST(req: Request) {
     invoice.deliveryProofKey = keys[0];
     invoice.deliveryProofAt = new Date();
     invoice.deliveryProofBy = actor.name;
+    if (serial) {
+      invoice.deliverySerial = serial;
+      invoice.deliverySerialMatched = serialMatched;
+    }
     await invoice.save();
     for (const k of old) if (!keys.includes(k)) await r2.delete(k).catch(() => {});
     await DeliveryChallan.updateMany({ invoiceNumber }, { $set: { deliveryProofKey: keys[0], deliveryProofKeys: keys } }).catch(() => {});

@@ -288,6 +288,8 @@ export function InvoiceCreationModal({
     // Several DO / approval files can be attached (financePdfUrl stays the first, for older screens).
     financePdfUrls: [] as string[],
     financeLinkInput: "",
+    // What was read from the uploaded DO (kept so the finance record can use the DO's own figures).
+    financeDoData: null as any,
     // More DOs on the same bill (the loan split across several DOs); the main fields are DO 1.
     financeDos: [] as ExtraDo[],
     financeRemarks: "",
@@ -368,6 +370,7 @@ export function InvoiceCreationModal({
       setBillingForm(INITIAL_BILLING_FORM);
       setBillingEntity("");
       setEstimateIncludesAdvance(false);
+      setDoRead(null);
     } else {
       if (isIndividualStaff && currentUserName) {
         setBillingForm((prev) => ({ ...prev, salesExecutive: currentUserName }));
@@ -642,6 +645,9 @@ export function InvoiceCreationModal({
   // to the amount payable before the invoice can be saved.
   const [isSplitPayment, setIsSplitPayment] = useState(false);
   const [isUploadingFinanceDoc, setIsUploadingFinanceDoc] = useState(false);
+  // The DO uploaded at the top of the bill: what was read from it, and whether it is being read now.
+  const [doRead, setDoRead] = useState<{ data: any; existing: { invoiceNumber: string; customerName: string } | null; missing: string[]; fileName: string } | null>(null);
+  const [isReadingDo, setIsReadingDo] = useState(false);
   const [splitRows, setSplitRows] = useState<Array<{ mode: string; amount: string; txnId: string }>>([
     { mode: "Cash", amount: "", txnId: "" },
     { mode: "UPI", amount: "", txnId: "" },
@@ -1547,6 +1553,75 @@ export function InvoiceCreationModal({
     }
   };
 
+  // The DO uploaded at the top of the bill: the file is attached to the bill and its text is read, and what it says
+  // (customer, finance company, DO number, down payment, loan terms) is copied into the bill. Everything stays editable.
+  const handleDoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error(`${file.name}: the file must be smaller than 10 MB.`);
+      return;
+    }
+    setIsReadingDo(true);
+    try {
+      const readForm = new FormData();
+      readForm.append("file", file);
+      const saveForm = new FormData();
+      saveForm.append("file", file);
+      saveForm.append("folder", "valueplus/finance-docs");
+      const [read, saved] = await Promise.all([
+        fetch("/api/finance/parse-do", { method: "POST", body: readForm }).then((r) => r.json()).catch(() => ({ success: false, error: "Could not read the DO" })),
+        fetch("/api/upload", { method: "POST", body: saveForm }).then((r) => r.json()).catch(() => ({ success: false, error: "upload failed" })),
+      ]);
+      if (saved.success) addFinanceFile(saved.data.url);
+      else toast.error(`${file.name}: ${saved.error || "upload failed"}`);
+      if (!read.success) {
+        setDoRead(null);
+        toast.error(read.error || "Could not read the DO, so nothing was filled in.");
+        return;
+      }
+
+      const d = read.data;
+      const missing: string[] = [];
+      if (!d.customerName) missing.push("customer name");
+      if (!d.customerPhone) missing.push("customer mobile number");
+      if (!d.customerAddress) missing.push("customer address");
+      if (!d.provider) missing.push("finance company");
+      if (!d.doId) missing.push("DO number");
+
+      setBillingForm((prev: any) => ({
+        ...prev,
+        ...(d.customerName ? { customerName: d.customerName } : {}),
+        ...(d.customerAddress
+          ? {
+              customerAddress: d.customerAddress,
+              ...(d.customerPin ? { customerPin: d.customerPin } : {}),
+              ...(/gorakhpur/i.test(d.customerAddress) ? { customerCity: "Gorakhpur" } : {}),
+            }
+          : {}),
+        financeDoData: d,
+        ...(d.provider ? { financeProvider: d.provider } : {}),
+        ...(d.doId ? { financeDoId: d.doId } : {}),
+        ...(d.appId ? { financeAppId: d.appId } : {}),
+        ...(d.downPayment ? { financeDownPayment: d.downPayment } : {}),
+        ...(d.tenureMonths ? { financeTenureMonths: d.tenureMonths } : {}),
+        ...(d.interestRate ? { financeInterestRate: d.interestRate } : {}),
+        financeApprovalStatus: "Approved",
+        // A split bill keeps its own payment rows; a plain bill becomes a Finance bill.
+        ...(isSplitPayment ? {} : { paymentMode: "Finance" }),
+      }));
+      // The mobile number also finds an existing customer (and then that customer's saved details are used).
+      if (d.customerPhone) handlePhoneLookup(String(d.customerPhone).replace(/\D/g, "").slice(-10));
+      setDoRead({ data: d, existing: read.existing || null, missing, fileName: file.name });
+      toast.success(`DO read: ${d.provider || "finance company not recognised"}${d.doId ? ` · ${d.doId}` : ""}. Check the details below.`);
+    } catch (err: any) {
+      toast.error(err.message || "Could not read the DO, please try again.");
+    } finally {
+      setIsReadingDo(false);
+    }
+  };
+
   const handleFinalSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -1910,6 +1985,15 @@ export function InvoiceCreationModal({
             financeDownPaymentMode: isFinance ? (billingForm.financeDownPaymentMode || "Cash") : "",
             financeGrossLoan: isFinance ? (billCalculations.grandTotal - downPay) : 0,
             financeNetLoan: isFinance ? (billCalculations.grandTotal - downPay) : 0,
+            // From the uploaded DO: its figures for the finance record, and the loan terms on the bill.
+            ...(isFinance && billingForm.financeDoData
+              ? {
+                  financeDoData: billingForm.financeDoData,
+                  ...(Number(billingForm.financeDoData.tenureMonths) > 0 ? { financeTenureMonths: Number(billingForm.financeDoData.tenureMonths) } : {}),
+                  ...(Number(billingForm.financeDoData.interestRate) > 0 ? { financeInterestRate: Number(billingForm.financeDoData.interestRate) } : {}),
+                  ...(Number(billingForm.financeDoData.marginMoney) > 0 ? { financeMarginMoney: Number(billingForm.financeDoData.marginMoney) } : {}),
+                }
+              : {}),
           }),
 
       // Due specifics
@@ -1981,6 +2065,97 @@ export function InvoiceCreationModal({
               className={cn("space-y-3 sm:space-y-6", !billingEntity && "opacity-40 pointer-events-none select-none")}
               aria-disabled={!billingEntity}
             >
+            {/* DO UPLOAD: for a finance sale, the DO fills the customer, finance company, DO number, down payment and loan terms. */}
+            {mode === "invoice" && !isEditingInvoice && (() => {
+              const d = doRead?.data;
+              const hasProducts = billingForm.lineItems.some((it: any) => it.name);
+              const priceGap = d && d.productPrice > 0 && hasProducts ? Math.abs(billCalculations.grandTotal - d.productPrice) : 0;
+              const ageDays = d?.date ? Math.floor((new Date(todayInIndia()).getTime() - new Date(d.date).getTime()) / 86400000) : 0;
+              const facts: [string, string][] = d
+                ? ([
+                    ["Finance company", d.provider || "—"],
+                    ["DO number", d.doId || "—"],
+                    ...(d.appId ? ([["Deal / application ID", d.appId]] as [string, string][]) : []),
+                    ["DO date", d.date || "—"],
+                    ["Customer", d.customerName || "—"],
+                    ["Mobile", d.customerPhone || "—"],
+                    ["Product", [d.brand, d.model].filter(Boolean).join(" ") || "—"],
+                    ["Product price on DO", d.productPrice ? formatCurrency(d.productPrice) : "—"],
+                    ["Loan (gross)", d.grossLoan ? formatCurrency(d.grossLoan) : "—"],
+                    ["Customer down payment", d.downPayment ? formatCurrency(d.downPayment) : "—"],
+                    ["Finance pays you (net)", d.netDisbursement ? formatCurrency(d.netDisbursement) : "—"],
+                    ["Scheme", [d.scheme, d.tenureMonths ? `${d.tenureMonths} months` : "", d.emi ? `EMI ${formatCurrency(d.emi)}` : ""].filter(Boolean).join(" · ") || "—"],
+                  ] as [string, string][])
+                : [];
+              return (
+                <div className="rounded-xl border border-orange-200 bg-orange-50/60 p-3 sm:p-4 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-xs font-black text-orange-950 flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-orange-600" /> Finance sale? Upload the DO
+                      </p>
+                      <p className="text-[11px] text-orange-900/80">
+                        The customer, finance company, DO number, down payment and loan details are filled in from the DO. You can change anything afterwards.
+                      </p>
+                    </div>
+                    <label
+                      className={cn(
+                        "shrink-0 h-9 px-3 rounded-md border border-orange-300 bg-white text-orange-800 text-xs font-bold flex items-center gap-1.5 cursor-pointer hover:bg-orange-50",
+                        isReadingDo && "opacity-60 pointer-events-none"
+                      )}
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      {isReadingDo ? "Reading the DO..." : doRead ? "Upload another DO" : "Upload DO (PDF)"}
+                      <input type="file" accept="application/pdf" className="hidden" onChange={handleDoUpload} disabled={isReadingDo} />
+                    </label>
+                  </div>
+
+                  {d && (
+                    <>
+                      <p className="text-[11px] font-bold text-emerald-800">✓ Read from {doRead?.fileName}. The file is attached to this bill.</p>
+                      <div className="rounded-lg border border-orange-200 bg-white p-2.5 text-[11px] grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-1.5">
+                        {facts.map(([label, value]) => (
+                          <div key={label} className="min-w-0">
+                            <p className="text-[10px] font-bold uppercase text-slate-500">{label}</p>
+                            <p className="font-semibold text-slate-900 break-words">{value}</p>
+                          </div>
+                        ))}
+                      </div>
+                      {doRead?.existing && (
+                        <p className="text-[11px] rounded-md border border-rose-300 bg-rose-50 px-2.5 py-1.5 text-rose-800">
+                          DO {d.doId} is already used on bill <b>{doRead.existing.invoiceNumber}</b> ({doRead.existing.customerName}). It can be used again only for the same customer; otherwise the bill will not save.
+                        </p>
+                      )}
+                      {doRead && doRead.missing.length > 0 && (
+                        <p className="text-[11px] rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-amber-900">
+                          Not on this DO, please type it: <b>{doRead.missing.join(", ")}</b>.
+                        </p>
+                      )}
+                      {ageDays > 15 && (
+                        <p className="text-[11px] rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-amber-900">
+                          This DO is dated {d.date}, more than 15 days ago. Finance companies usually treat an old DO as expired.
+                        </p>
+                      )}
+                      {hasProducts && d.productPrice > 0 && (
+                        priceGap > 1 ? (
+                          <p className="text-[11px] rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-amber-900">
+                            Bill total {formatCurrency(billCalculations.grandTotal)} is different from the product price on the DO ({formatCurrency(d.productPrice)}). Check the product and discount.
+                          </p>
+                        ) : (
+                          <p className="text-[11px] font-bold text-emerald-800">✓ Bill total matches the DO product price.</p>
+                        )
+                      )}
+                      {!hasProducts && (
+                        <p className="text-[11px] text-slate-600">
+                          Now add the product ({[d.brand, d.model].filter(Boolean).join(" ") || "as on the DO"}) below. Its price should come to {d.productPrice ? formatCurrency(d.productPrice) : "the DO price"}.
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+              );
+            })()}
+
             {/* SECTION 1: CUSTOMER-FIRST BILLING FORM */}
             <div className="bg-white p-3 sm:p-5 rounded-xl border border-slate-200 shadow-sm space-y-3 sm:space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b pb-3">

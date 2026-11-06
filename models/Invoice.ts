@@ -209,6 +209,13 @@ export interface IInvoice extends Document {
   deliveryProofKey?: string;
   /** The three photos of the delivered goods (R2 keys); deliveryProofKey is the first. */
   deliveryProofKeys?: string[];
+  /** The customer came and took the goods himself (no delivery boy); marked by cashier / manager / admin with 3 photos. */
+  receivedBySelf?: boolean;
+  receivedBySelfBy?: string;
+  /** The serial-number barcode the delivery boy scanned at delivery (its photo is the first delivery photo). */
+  deliverySerial?: string;
+  /** True when that serial is one of the serial numbers recorded on this bill. */
+  deliverySerialMatched?: boolean;
   deliveryProofAt?: Date | string;
   deliveryProofBy?: string;
   deliveredAt?: Date | string;
@@ -424,6 +431,10 @@ const InvoiceSchema = new Schema<IInvoice>(
     driverVehicleNo: { type: String, default: "" },
     deliveryProofKey: { type: String, default: "" },
     deliveryProofKeys: { type: [String], default: [] },
+    receivedBySelf: { type: Boolean, default: false },
+    receivedBySelfBy: { type: String, default: "" },
+    deliverySerial: { type: String, default: "" },
+    deliverySerialMatched: { type: Boolean, default: false },
     deliveryProofAt: { type: Date },
     deliveryProofBy: { type: String, default: "" },
     deliveredAt: { type: Date },

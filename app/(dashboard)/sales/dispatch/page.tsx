@@ -24,6 +24,7 @@ import {
   RefreshCw,
   Send,
   User,
+  UserCheck,
   AlertCircle
 } from "lucide-react";
 import { useState, useMemo, useEffect } from "react";
@@ -33,6 +34,8 @@ import { toast } from "sonner";
 import Link from "next/link";
 import { TableShimmer } from "@/components/shared/shimmer-skeleton";
 import { ExportMenu } from "@/components/shared/ExportMenu";
+import { CameraCapture } from "@/components/shared/CameraCapture";
+import { openWhatsApp } from "@/lib/whatsapp-open";
 
 /** A bill financed through Bajaj Finance: its delivery must carry a vehicle number. */
 const isBajajBill = (inv: any) => /bajaj/i.test(String(inv?.financeProvider || ""));
@@ -59,6 +62,14 @@ export default function OrderDispatchHubPage() {
     fetch("/api/delivery/drivers").then((r) => r.json()).then((j) => { if (j.success) setDrivers(j.data || []); }).catch(() => {});
   }, []);
   const [isSubmittingDispatch, setIsSubmittingDispatch] = useState(false);
+
+  // "Received by self" dialog: the bill, its 3 photos, and the camera.
+  const [selfItem, setSelfItem] = useState<any | null>(null);
+  const [selfPhotos, setSelfPhotos] = useState<File[]>([]);
+  const [selfCameraOpen, setSelfCameraOpen] = useState(false);
+  const [isSubmittingSelf, setIsSubmittingSelf] = useState(false);
+  const selfPreviews = useMemo(() => selfPhotos.map((f) => URL.createObjectURL(f)), [selfPhotos]);
+  useEffect(() => () => selfPreviews.forEach((u) => URL.revokeObjectURL(u)), [selfPreviews]);
 
   // OTP Verification Modal State
   const [otpModalOpen, setOtpModalOpen] = useState(false);
@@ -188,16 +199,11 @@ export default function OrderDispatchHubPage() {
         setDispatchModalOpen(false);
         fetchOrders();
 
-        // Trigger WhatsApp Notification to Customer
-        const custPhone = (activeDispatchItem.customerPhone || "").replace(/\D/g, "");
+        // Send the customer the WhatsApp message: the WhatsApp app if it is on this computer, else WhatsApp Web.
         const trackUrl = `${window.location.origin}/track/${activeDispatchItem.invoiceNumber}`;
         const msg = `🚚 *VALUE PLUS - Out For Delivery Notification*\n\nHello *${activeDispatchItem.customerName}*,\nYour Value Plus order *#${activeDispatchItem.invoiceNumber}* is out for delivery.\n\n👤 *Driver*: ${json.data.driverName}\n📞 *Driver Mobile*: ${json.data.driverPhone}\n🚗 *Vehicle No*: ${json.data.vehicleNo}\n\n🔑 *Delivery OTP*: *${json.data.otp}*\n*(Share it with the delivery person only after you have inspected the goods)*\n\n🌐 *Track Live Status*:\n${trackUrl}\n\n— *VALUE PLUS* (रिश्ता विश्वास का)`;
 
-        if (custPhone.length === 10) {
-          window.open(`https://api.whatsapp.com/send?phone=91${custPhone}&text=${encodeURIComponent(msg)}`, "_blank");
-        } else {
-          window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, "_blank");
-        }
+        openWhatsApp(activeDispatchItem.customerPhone, msg);
       } else {
         toast.error(json.error || "Failed to update dispatch status");
       }
@@ -250,16 +256,46 @@ export default function OrderDispatchHubPage() {
 
   // Action: Resend WhatsApp Alert
   const handleResendWhatsApp = (inv: any) => {
-    const custPhone = (inv.customerPhone || "").replace(/\D/g, "");
     const trackUrl = `${window.location.origin}/track/${inv.invoiceNumber}`;
     const otpText = inv.deliveryOtp ? `\n🔑 *Delivery OTP*: *${inv.deliveryOtp}*` : "";
     const driverText = inv.driverName ? `\n👤 *Driver*: ${inv.driverName} (${inv.driverPhone || "7985803562"})\n🚗 *Vehicle*: ${inv.driverVehicleNo || "UP53"}` : "";
     const msg = `🚚 *VALUE PLUS - Delivery Update*\n\nNamaste *${inv.customerName}*,\nOrder Ref: *#${inv.invoiceNumber}*\nStatus: *${(inv.deliveryStatus || "PENDING").toUpperCase()}*${otpText}${driverText}\n\n🌐 *Live Order Status*: ${trackUrl}\n\n— *VALUE PLUS* (रिश्ता विश्वास का)`;
 
-    if (custPhone.length === 10) {
-      window.open(`https://api.whatsapp.com/send?phone=91${custPhone}&text=${encodeURIComponent(msg)}`, "_blank");
-    } else {
-      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, "_blank");
+    openWhatsApp(inv.customerPhone, msg);
+  };
+
+  // Action: the customer came and took the goods himself. Cashier / Store Manager / Admin add 3 photos and the bill
+  // is marked delivered (no delivery boy, no OTP).
+  const canMarkSelf = ["cashier", "manager", "admin", "superadmin"].includes(viewerRole);
+  const handleReceivedBySelf = async () => {
+    if (!selfItem) return;
+    if (selfPhotos.length < 3) {
+      toast.error(`Add 3 photos of the goods handed over (${selfPhotos.length} added).`);
+      return;
+    }
+    setIsSubmittingSelf(true);
+    try {
+      const form = new FormData();
+      form.append("invoiceNumber", selfItem.invoiceNumber);
+      selfPhotos.forEach((f) => form.append("file", f));
+      const up = await (await fetch("/api/delivery/proof", { method: "POST", body: form })).json();
+      if (!up.success) throw new Error(up.error || "Photos could not be saved");
+      const res = await (
+        await fetch("/api/delivery/verify-otp", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "received_by_self", invoiceNumber: selfItem.invoiceNumber }),
+        })
+      ).json();
+      if (!res.success) throw new Error(res.error || "Could not mark the bill");
+      toast.success(`✅ ${selfItem.invoiceNumber} marked as received by the customer.`);
+      setSelfItem(null);
+      setSelfPhotos([]);
+      fetchOrders();
+    } catch (e: any) {
+      toast.error(e.message || "Could not mark the bill as received");
+    } finally {
+      setIsSubmittingSelf(false);
     }
   };
 
@@ -537,6 +573,16 @@ export default function OrderDispatchHubPage() {
                               <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 font-bold text-[10px] py-1">
                                 ✅ Delivered
                               </Badge>
+                              {inv.deliverySerial && (
+                                <span className="block font-mono text-[10px] font-bold text-sky-800" title={inv.deliverySerialMatched ? "Scanned by the delivery boy; it is on the bill" : "Scanned by the delivery boy; the bill had no serial number to match"}>
+                                  🔖 Serial {inv.deliverySerial} {inv.deliverySerialMatched ? "✓ matched" : "scanned"}
+                                </span>
+                              )}
+                              {inv.receivedBySelf && (
+                                <span className="block text-[10px] font-bold text-emerald-700">
+                                  🧍 Received by customer{inv.receivedBySelfBy ? ` · marked by ${inv.receivedBySelfBy}` : ""}
+                                </span>
+                              )}
                               {(inv.deliveryProofKeys?.length > 0 || inv.deliveryProofKey) && ["admin", "superadmin", "manager"].includes(viewerRole) && (
                                 <div><DeliveryPhotos invoiceNumber={inv.invoiceNumber} count={inv.deliveryProofKeys?.length || 1} by={inv.deliveryProofBy} /></div>
                               )}
@@ -568,7 +614,9 @@ export default function OrderDispatchHubPage() {
 
                         {/* 7. Driver Info */}
                         <td className="px-4 py-3 text-center">
-                          {inv.driverName ? (
+                          {inv.receivedBySelf ? (
+                            <span className="text-emerald-700 text-[10px] font-bold">Customer collected himself</span>
+                          ) : inv.driverName ? (
                             <div>
                               <p className="font-bold text-slate-800 text-[11px]">{inv.driverName}</p>
                               <p className="font-mono text-[10px] text-slate-500">{inv.driverPhone || "No Phone"}</p>
@@ -607,6 +655,18 @@ export default function OrderDispatchHubPage() {
                               </Button>
                             )}
 
+                            {!isDelivered && canMarkSelf && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => { setSelfItem(inv); setSelfPhotos([]); }}
+                                className="h-7 px-2 text-[11px] font-bold border-emerald-300 bg-emerald-50/70 text-emerald-800 hover:bg-emerald-600 hover:text-white rounded-lg"
+                                title="The customer came and took the goods himself"
+                              >
+                                <UserCheck className="w-3 h-3 mr-1" /> Received by self
+                              </Button>
+                            )}
+
                             <Button
                               size="sm"
                               variant="outline"
@@ -636,6 +696,78 @@ export default function OrderDispatchHubPage() {
             </table>
           </div>
         </div>
+
+        {/* ─── RECEIVED BY SELF (customer collects the goods) ────────── */}
+        <Dialog open={!!selfItem} onOpenChange={(o) => { if (!o && !isSubmittingSelf) { setSelfItem(null); setSelfPhotos([]); } }}>
+          <DialogContent className="max-w-md p-0 rounded-2xl overflow-y-auto max-h-[92vh] shadow-2xl border-none">
+            <div className="bg-[#1B2537] text-white p-5 flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-xl bg-emerald-600/30 flex items-center justify-center border border-emerald-400/30">
+                <UserCheck className="w-5 h-5 text-emerald-300" />
+              </div>
+              <div>
+                <h3 className="font-bold text-sm">Received by self</h3>
+                <p className="text-[11px] text-slate-300">
+                  Bill: <span className="font-mono text-emerald-300 font-bold">{selfItem?.invoiceNumber}</span>
+                </p>
+              </div>
+            </div>
+            <div className="p-5 space-y-4 bg-white">
+              <div className="p-3 bg-emerald-50/70 rounded-xl border border-emerald-100 text-xs space-y-0.5">
+                <p className="font-bold text-slate-900">{selfItem?.customerName} ({selfItem?.customerPhone || "N/A"})</p>
+                <p className="text-[11px] text-slate-600">
+                  The customer came to the showroom and took the goods himself. Add 3 photos of the goods handed over; the bill is then marked Delivered.
+                </p>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-bold text-slate-700">Photos of the goods handed over * ({selfPhotos.length}/3)</Label>
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" size="sm" onClick={() => setSelfCameraOpen(true)} disabled={selfPhotos.length >= 6 || isSubmittingSelf} className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold">
+                    📷 {selfPhotos.length === 0 ? "Take photo" : "Take another photo"}
+                  </Button>
+                  <label className="inline-flex cursor-pointer items-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50">
+                    Choose from gallery
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        const picked = Array.from(e.target.files || []);
+                        e.target.value = "";
+                        setSelfPhotos((p) => [...p, ...picked].slice(0, 6));
+                      }}
+                    />
+                  </label>
+                </div>
+                <CameraCapture
+                  open={selfCameraOpen}
+                  onClose={() => setSelfCameraOpen(false)}
+                  onCapture={(f) => setSelfPhotos((p) => [...p, f].slice(0, 6))}
+                  facing="environment"
+                  title={`Photo ${Math.min(selfPhotos.length + 1, 3)} of 3`}
+                />
+                {selfPhotos.length > 0 && (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {selfPreviews.map((src, i) => (
+                      <div key={i} className="relative">
+                        <img src={src} alt={`Photo ${i + 1}`} className="h-16 w-16 rounded-lg object-cover border" />
+                        <button type="button" onClick={() => setSelfPhotos((p) => p.filter((_, k) => k !== i))} className="absolute -right-1.5 -top-1.5 h-5 w-5 rounded-full bg-rose-600 text-[11px] font-bold text-white" aria-label="Remove photo">x</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center gap-2 pt-1">
+                <Button variant="outline" onClick={() => { setSelfItem(null); setSelfPhotos([]); }} disabled={isSubmittingSelf} className="w-1/2 rounded-xl text-xs h-9">
+                  Cancel
+                </Button>
+                <Button onClick={handleReceivedBySelf} disabled={isSubmittingSelf || selfPhotos.length < 3} className="w-1/2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs h-9 font-bold">
+                  {isSubmittingSelf ? "Saving..." : "Mark delivered"}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* ─── OUT FOR DELIVERY DISPATCH MODAL ───────────────────────── */}
         <Dialog open={dispatchModalOpen} onOpenChange={setDispatchModalOpen}>

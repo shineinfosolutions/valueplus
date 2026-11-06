@@ -1,5 +1,6 @@
 import FinanceTransaction from "@/models/FinanceTransaction";
 import { classifyPaymentMode } from "@/lib/payment-modes";
+import { doRecordOverrides } from "@/lib/do-parser";
 
 /**
  * Finance DOs.
@@ -187,5 +188,7 @@ export async function createFinanceDO(
     approvalStatus: financeSplitAmount > 0 ? "Pending" : body.financeApprovalStatus || "Pending",
     uploadedPdfUrl: files[0] || "",
     uploadedPdfUrls: files.length ? files : undefined,
+    // What the uploaded DO itself says, instead of the estimates above.
+    ...(financeSplitAmount > 0 ? {} : doRecordOverrides(body)),
   });
 }

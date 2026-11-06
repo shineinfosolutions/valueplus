@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import connectDB from "@/lib/db";
 import Invoice from "@/models/Invoice";
 import DeliveryChallan from "@/models/DeliveryChallan";
+import { getActor } from "@/lib/requirePermission";
 
 export async function POST(req: NextRequest) {
   try {
@@ -66,6 +67,40 @@ export async function POST(req: NextRequest) {
           customerName: invoice?.customerName || challan?.destinationParty || "Customer",
           trackingUrl,
         }
+      });
+    }
+
+    // ─── ACTION: RECEIVED BY SELF ─────────────────────────────────────
+    // The customer came to the showroom and took the goods himself: no delivery boy, no OTP. The cashier, Store
+    // Manager or Admin marks it, after adding the 3 photos (uploaded through /api/delivery/proof first).
+    if (action === "received_by_self") {
+      const actor = await getActor();
+      if (!actor) return NextResponse.json({ success: false, error: "You must be signed in to do this." }, { status: 401 });
+      if (!["cashier", "manager", "admin", "superadmin"].includes(actor.role)) {
+        return NextResponse.json({ success: false, error: "Only the cashier, Store Manager or Admin can mark a bill as received by the customer." }, { status: 403 });
+      }
+      if (!invoice) return NextResponse.json({ success: false, error: "Bill not found." }, { status: 404 });
+      if (invoice.deliveryStatus === "delivered") {
+        return NextResponse.json({ success: false, error: "This bill is already marked delivered." }, { status: 409 });
+      }
+      if ((invoice.deliveryProofKeys?.length || 0) < 3) {
+        return NextResponse.json({ success: false, error: "Add 3 photos of the goods handed over first." }, { status: 400 });
+      }
+      const now = new Date();
+      invoice.deliveryStatus = "delivered";
+      invoice.deliveredAt = now;
+      invoice.receivedBySelf = true;
+      invoice.receivedBySelfBy = actor.name;
+      await invoice.save();
+      if (challan) {
+        challan.status = "delivered";
+        challan.deliveredAt = now;
+        await challan.save();
+      }
+      return NextResponse.json({
+        success: true,
+        message: "Marked as received by the customer.",
+        data: { invoiceNumber: invoice.invoiceNumber, deliveryStatus: "delivered", deliveredAt: now, receivedBySelf: true, receivedBySelfBy: actor.name },
       });
     }
 

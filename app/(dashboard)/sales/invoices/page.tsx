@@ -555,9 +555,9 @@ function SalesInvoicesContent() {
                             {inv.dispatchType === "delayed_delivery" && inv.deliveryStatus === "delivered" && inv.status !== "cancelled" && (
                               <span
                                 className="ml-1 font-mono text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-300"
-                                title={inv.deliveredAt ? `Delivered on ${formatDate(inv.deliveredAt)}` : "Delivered"}
+                                title={`${inv.deliveredAt ? `Delivered on ${formatDate(inv.deliveredAt)}` : "Delivered"}${inv.deliverySerial ? ` · serial ${inv.deliverySerial} scanned${inv.deliverySerialMatched ? " and matched" : ""}` : ""}`}
                               >
-                                ✅ Delivered{inv.deliveredAt ? ` ${formatDate(inv.deliveredAt)}` : ""}
+                                ✅ Delivered{inv.deliveredAt ? ` ${formatDate(inv.deliveredAt)}` : ""}{inv.deliverySerial ? " · serial scanned" : ""}
                               </span>
                             )}
                             {inv.deliveryProofKey && ["admin", "superadmin", "manager"].includes(userRole) && (

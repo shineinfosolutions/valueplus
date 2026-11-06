@@ -1,6 +1,7 @@
 "use client";
 
 import { CameraCapture } from "@/components/shared/CameraCapture";
+import { BarcodeScanner } from "@/components/shared/BarcodeScanner";
 import { PageShell } from "@/components/shared/page-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,6 +54,16 @@ export default function DriverDeliveriesPage() {
   const cameraOnly = ["driver", "courier", "delivery"].includes(String(userRole).toLowerCase());
   const REQUIRED_PHOTOS = 3;
   const [cameraOpen, setCameraOpen] = useState(false);
+  // The serial-number barcode: scanned with the camera, and its photo is one of the 3 photos.
+  const [serialScan, setSerialScan] = useState<{ code: string; photo: File } | null>(null);
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const serialRequired = cameraOnly;
+  // Step 1: the scanned serial is checked against the bill at once. Step 2 (3 photos) opens when it is OK, step 3 (OTP) when the photos are in.
+  const [serialOk, setSerialOk] = useState(false);
+  const [checkingSerial, setCheckingSerial] = useState(false);
+  const photosUnlocked = !serialRequired || serialOk;
+  const totalPhotos = photos.length;
+  const otpUnlocked = photosUnlocked && photos.length >= REQUIRED_PHOTOS;
 
   const fetchDriverOrders = async () => {
     setLoading(true);
@@ -118,7 +129,37 @@ export default function DriverDeliveriesPage() {
     setSelectedOrder(order);
     setOtpInput("");
     setPhotos([]);
+    setSerialScan(null);
+    setSerialOk(false);
     setOtpModalOpen(true);
+  };
+
+  // The serial barcode was read: check it against this bill straight away, before any photo is taken.
+  const handleSerialScanned = async (code: string, photo: File) => {
+    if (!selectedOrder) return;
+    setCheckingSerial(true);
+    setSerialScan(null);
+    setSerialOk(false);
+    try {
+      const res = await (
+        await fetch("/api/delivery/verify-serial", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ invoiceNumber: selectedOrder.invoiceNumber, serial: code }),
+        })
+      ).json();
+      if (!res.success) {
+        toast.error(res.error || "This serial number is not on the bill.");
+        return;
+      }
+      setSerialScan({ code, photo });
+      setSerialOk(true);
+      toast.success(res.data?.matched ? "✓ Serial number matches this bill." : "Serial scanned (this bill has no serial number to match it with).");
+    } catch {
+      toast.error("Could not check the serial number. Please scan again.");
+    } finally {
+      setCheckingSerial(false);
+    }
   };
 
   const handleVerifyOtp = async () => {
@@ -127,8 +168,12 @@ export default function DriverDeliveriesPage() {
       return;
     }
 
-    if (photos.length < REQUIRED_PHOTOS) {
-      toast.error(`Take ${REQUIRED_PHOTOS} photos of the delivered goods first (${photos.length} taken).`);
+    if (serialRequired && !serialOk) {
+      toast.error("Scan the serial number barcode of the product first.");
+      return;
+    }
+    if (totalPhotos < REQUIRED_PHOTOS) {
+      toast.error(`Take ${REQUIRED_PHOTOS} photos of the delivered goods first (${totalPhotos} taken).`);
       return;
     }
 
@@ -137,6 +182,11 @@ export default function DriverDeliveriesPage() {
       {
         const form = new FormData();
         form.append("invoiceNumber", selectedOrder.invoiceNumber);
+        // The serial barcode photo goes first, with the text that was scanned from it.
+        if (serialScan) {
+          form.append("file", serialScan.photo);
+          form.append("serial", serialScan.code);
+        }
         photos.forEach((f) => form.append("file", f));
         const up = await (await fetch("/api/delivery/proof", { method: "POST", body: form })).json();
         if (!up.success) {
@@ -480,33 +530,40 @@ export default function DriverDeliveriesPage() {
               </div>
             </div>
 
-            <div className="p-5 space-y-4 bg-white text-center">
-              <p className="text-xs text-slate-600 leading-relaxed">
-                Ask the customer for the **4-Digit OTP** sent to their WhatsApp / tracking link and enter it:
-              </p>
-
-              <div className="space-y-1">
-                <Input
-                  autoFocus
-                  maxLength={4}
-                  value={otpInput}
-                  onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, ''))}
-                  placeholder="• • • •"
-                  className="h-14 text-center font-mono text-3xl font-black tracking-widest text-[#30539C] border-2 border-emerald-300 focus:ring-emerald-500 rounded-2xl"
-                />
+            <div className="p-5 space-y-4 bg-white text-left">
+              {/* STEP 1: scan the serial number barcode; it is checked against the bill at once. */}
+              <div className="space-y-1.5">
+                <p className="text-xs font-black text-slate-800">1. Scan the serial number barcode {serialRequired ? "*" : <span className="font-normal text-slate-500">(optional)</span>}</p>
+                <div className={cn("rounded-xl border p-2.5 space-y-1.5", serialOk ? "border-emerald-300 bg-emerald-50/60" : "border-sky-200 bg-sky-50/60")}>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button type="button" size="sm" onClick={() => setScannerOpen(true)} disabled={checkingSerial} className="bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold">
+                      📦 {checkingSerial ? "Checking..." : serialScan ? "Scan again" : "Scan serial barcode"}
+                    </Button>
+                    {serialScan ? (
+                      <span className="text-[11px] font-bold text-emerald-700 break-all">✓ Verified · <span className="font-mono">{serialScan.code}</span></span>
+                    ) : (
+                      <span className="text-[11px] text-slate-500">Hold the camera over the barcode sticker</span>
+                    )}
+                  </div>
+                  {serialScan && <img src={URL.createObjectURL(serialScan.photo)} alt="Serial number barcode" className="h-16 rounded-lg object-cover border" />}
+                </div>
+                <BarcodeScanner open={scannerOpen} onClose={() => setScannerOpen(false)} onScan={handleSerialScanned} />
               </div>
 
-              <div className="space-y-1 text-left">
-                <label className="text-xs font-bold text-slate-700">Photos of the delivered goods * ({photos.length}/{REQUIRED_PHOTOS})</label>
-                <p className="text-[11px] text-slate-500">Take {REQUIRED_PHOTOS} photos with the camera{cameraOnly ? "" : " (or pick them from the gallery)"}. The phone will ask for camera permission.</p>
+              {/* STEP 2: the 3 photos of the delivered goods (open once the serial is verified). */}
+              <div className={cn("space-y-1", !photosUnlocked && "opacity-50")}>
+                <p className="text-xs font-black text-slate-800">2. Photos of the delivered goods * ({photos.length}/{REQUIRED_PHOTOS})</p>
+                <p className="text-[11px] text-slate-500">
+                  {photosUnlocked ? `Take ${REQUIRED_PHOTOS} photos with the camera${cameraOnly ? "" : " (or pick them from the gallery)"}.` : "Scan the serial number barcode first."}
+                </p>
                 <div className="flex flex-wrap gap-2">
-                  <Button type="button" size="sm" onClick={() => setCameraOpen(true)} disabled={photos.length >= 6} className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold">
+                  <Button type="button" size="sm" onClick={() => setCameraOpen(true)} disabled={!photosUnlocked || photos.length >= 6} className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold">
                     📷 {photos.length === 0 ? "Take photo" : "Take another photo"}
                   </Button>
                   {!cameraOnly && (
-                    <label className="inline-flex cursor-pointer items-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50">
+                    <label className={cn("inline-flex cursor-pointer items-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50", !photosUnlocked && "pointer-events-none")}>
                       Choose from gallery
-                      <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => setPhotos((p) => [...p, ...Array.from(e.target.files || [])].slice(0, 6))} />
+                      <input type="file" accept="image/*" multiple className="hidden" disabled={!photosUnlocked} onChange={(e) => setPhotos((p) => [...p, ...Array.from(e.target.files || [])].slice(0, 6))} />
                     </label>
                   )}
                 </div>
@@ -523,13 +580,29 @@ export default function DriverDeliveriesPage() {
                 )}
               </div>
 
+              {/* STEP 3: the customer's 4-digit OTP / PIN (open once the photos are in). */}
+              <div className={cn("space-y-1 text-center", !otpUnlocked && "opacity-50")}>
+                <p className="text-left text-xs font-black text-slate-800">3. Customer&apos;s 4-digit OTP</p>
+                <p className="text-left text-[11px] text-slate-500">
+                  {otpUnlocked ? "Ask the customer for the OTP sent to their WhatsApp / tracking link and enter it." : "Open after the serial barcode and the 3 photos."}
+                </p>
+                <Input
+                  maxLength={4}
+                  value={otpInput}
+                  disabled={!otpUnlocked}
+                  onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, ''))}
+                  placeholder="• • • •"
+                  className="h-14 text-center font-mono text-3xl font-black tracking-widest text-[#30539C] border-2 border-emerald-300 focus:ring-emerald-500 rounded-2xl"
+                />
+              </div>
+
               <div className="flex items-center gap-2 pt-2">
                 <Button variant="outline" onClick={() => setOtpModalOpen(false)} className="w-1/2 rounded-xl text-xs h-9">
                   Cancel
                 </Button>
                 <Button
                   onClick={handleVerifyOtp}
-                  disabled={isVerifying || otpInput.length < 4}
+                  disabled={isVerifying || !otpUnlocked || otpInput.length < 4}
                   className="w-1/2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs h-9 font-bold"
                 >
                   {isVerifying ? "Verifying..." : "✅ Confirm Delivery"}

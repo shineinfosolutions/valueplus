@@ -26,6 +26,7 @@ import { publishChange } from "@/lib/realtime";
 import { onsitegoIncentiveOf } from "@/lib/onsitego";
 import { stampLineIncentives } from "@/lib/incentive-server";
 import { checkDoId, checkExtraDos, createExtraDOs, extraDosOf, financeFilesOf, linkBillToDO } from "@/lib/finance-do";
+import { doRecordOverrides } from "@/lib/do-parser";
 
 /**
  * What a plain update may change on a sales bill: contact and delivery details only.
@@ -746,6 +747,7 @@ export async function POST(req: Request) {
           const netDisb = Math.max(0, grossLoan - deductions);
 
           await FinanceTransaction.create({
+            // (the figures below are estimates; the uploaded DO's own figures replace them, see the end of this object)
             financeProvider: body.financeProvider || "Bajaj Finance Limited",
             customerName: invoice.customerName,
             customerMobile: invoice.customerPhone || "N/A",
@@ -776,6 +778,8 @@ export async function POST(req: Request) {
             approvalStatus: financeSplitAmount > 0 ? "Pending" : body.financeApprovalStatus || "Pending",
             uploadedPdfUrl: financeFilesOf(body)[0] || "",
             uploadedPdfUrls: financeFilesOf(body).length ? financeFilesOf(body) : undefined,
+            // What the uploaded DO itself says (scheme, EMI, fees, subvention, payout) instead of the estimates above.
+            ...(financeSplitAmount > 0 ? {} : doRecordOverrides(body)),
           });
         }
         // The bill's other DOs (checked before the bill was saved): one DO record each.

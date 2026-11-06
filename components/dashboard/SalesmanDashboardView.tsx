@@ -543,6 +543,14 @@ export function SalesmanDashboardView({ session }: { session: any }) {
                       <td className="p-3 font-mono font-bold text-[#30539C]">
                         {inv.invoiceNumber}
                         <span className="block text-[10px] font-sans font-normal text-slate-400">{formatDate(inv.date)}</span>
+                        {inv.deliveryStatus === "delivered" && inv.status !== "cancelled" && (
+                          <span
+                            className="mt-0.5 inline-block font-sans text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-300"
+                            title={`${inv.deliveredAt ? `Delivered on ${formatDate(inv.deliveredAt)}` : "Delivered"}${inv.deliverySerial ? ` · serial ${inv.deliverySerial} scanned` : ""}`}
+                          >
+                            ✅ Delivered{inv.deliveredAt ? ` ${formatDate(inv.deliveredAt)}` : ""}{inv.deliverySerial ? " · serial scanned" : ""}
+                          </span>
+                        )}
                       </td>
 
                       <td className="p-3 font-medium text-slate-900">

@@ -577,3 +577,49 @@
 - **2026-11-05** — Deployed to production (version 8e5e709f) with the dashboard filters and delivery boys batches. `/delivery/:path*` was added to the middleware matcher, so the new page redirects to login when signed out.
   - Smoke test: login 200; `/delivery/boys`, `/dashboard` and `/sales/dispatch` return 307 when signed out; APIs return 401.
   - Checked signed in: Delivery Boy Status works, and the dashboard shows "20 orders • 28 units".
+- **2026-11-06** — DO upload on the bill form (new bills, `mode === "invoice"`):
+  - **Where:** a "Finance sale? Upload the DO" box right under the company (showroom) picker.
+  - **What it does:** a PDF DO is attached to the bill and read at once; what it says is copied into the bill, and every field stays editable:
+    - customer name, mobile (which also finds an existing customer), address and pin
+    - finance company, DO number, deal ID and down payment
+    - loan terms, and the payment mode set to Finance
+  - **What the card shows:** a summary, plus warnings:
+    - DO number already used on another bill
+    - something not on the DO, such as no mobile number on IDFC and Bajaj
+    - DO older than 15 days
+    - bill total different from the DO product price
+  - **Reader:** `lib/do-parser.ts` (`parseDeliveryOrder`) has a reader each for Bajaj Finance, HDB Financial Services and IDFC First Bank; any other company gets only DO number, name and mobile. The text comes from pdf-parse in `/api/finance/parse-do`, which saves nothing.
+    - A photo or scanned DO cannot be read; it can still be attached and its details typed.
+    - Tested on the 3 sample DOs in `Assets/DO`: all fields were read correctly.
+  - **Finance record:** the bill sends the read figures as `financeDoData`. `doRecordOverrides` puts the DO's own scheme, EMI, fees, subvention, margin, loan and net payout on the `FinanceTransaction` instead of the old estimates (3.54% subsidy, Rs 270 fee).
+    - The loan and payout figures are used only if the down payment is still what the DO says and the bill has no extra DOs.
+    - The net payout the DO states is what the payout form offers by default.
+  - **Bill:** `financeTenureMonths`, `financeInterestRate` and `financeMarginMoney` are also saved on the bill.
+  - Product lines are NOT added automatically (stock and serial numbers); the card tells the cashier what to add and checks the total.
+  - Checked in the browser with the 3 sample DOs: the card, the customer fields, the finance section, the DO number and the down payment fill correctly. Nothing was saved.
+  - Not deployed.
+- **2026-11-06** — Order Dispatch & Deliveries:
+  - **Received by self:** the customer collects the goods himself. The cashier, Store Manager or Admin presses the new "Received by self" button, adds 3 photos (camera or gallery), and the bill becomes Delivered.
+    - There is no delivery boy and no OTP.
+    - API: `/api/delivery/proof` saves the photos (cashier added to its upload roles), then `/api/delivery/verify-otp` with `action: "received_by_self"` (role-checked, needs 3 photos, refuses a bill already delivered).
+    - Saved as `Invoice.receivedBySelf` and `receivedBySelfBy`. The Delivered row shows "Received by customer · marked by X", and the driver column shows "Customer collected himself".
+  - **WhatsApp on Dispatch:** `lib/whatsapp-open.ts` `openWhatsApp()` opens the WhatsApp desktop app first and falls back to WhatsApp Web. A browser cannot ask whether the app is installed, so if the page does not lose focus within 2.2 s, WhatsApp Web opens; on a phone the normal link opens the app. The first time, the browser asks "Open WhatsApp?" and "Always allow" should be ticked. Used for the Out For Delivery message and the resend button.
+  - Known gap, not changed: `/api/delivery/verify-otp` still has no sign-in check for its other actions.
+  - Not deployed.
+- **2026-11-06** — Serial-number barcode scan at delivery (delivery boy, `/driver/deliveries`):
+  - **Flow (changed the same day: barcode first, then photos, then OTP):** in the "Enter Customer OTP & Complete" dialog there are 3 steps:
+    1. The delivery boy presses "Scan serial barcode"; the camera reads the sticker by itself. The scan is checked against the bill at once (`/api/delivery/verify-serial`); a serial that is not on the bill is refused and he scans again.
+    2. The 3 photos of the delivered goods open only after the serial is verified.
+    3. The customer's 4-digit OTP opens only after the 3 photos.
+    - The barcode's own photo is saved too, as the first delivery photo, so a bill ends with 4 photos.
+    - Scan is required for delivery staff and optional for Admin / Manager / Warehouse, whose steps are open at once.
+  - The match rule lives in `lib/delivery-serial.ts`, used by both the instant check and the photo save.
+  - **Scanner:** `components/shared/BarcodeScanner.tsx` uses ZXing (`@zxing/browser`, `@zxing/library`, new dependencies; loaded only when the scanner opens). It reads Code 128 / 39 / 93, EAN, UPC, ITF, Codabar, QR and Data Matrix.
+  - **Server:** `/api/delivery/proof` takes `serial` (the first file is its photo). Delivery staff must send it. It is checked against the serial numbers on the bill's items (letters and digits only, and a match inside a longer code when 6+ characters). A serial that is not on the bill is refused. A bill with no serial recorded accepts the scan, and `deliverySerialMatched` stays false.
+  - **Saved:** `Invoice.deliverySerial` and `deliverySerialMatched`.
+  - **Where delivered shows:**
+    - Order Dispatch Delivered row: "🔖 Serial X ✓ matched"
+    - Sales > Invoices (cashier / manager / admin): "✅ Delivered · serial scanned", with the serial in the tooltip
+    - Salesman dashboard bills table: the same badge, so the salesman who sold it sees it delivered
+  - **Deployed to production (version 70587915)** together with the DO upload on the bill form, Received by self, and WhatsApp app-then-Web on Dispatch. Smoke test: login 200; the pages return 307 when signed out; the new APIs (`parse-do`, `verify-serial`, `proof`, `boys`) and `verify-otp` return 401 without a sign-in. A signed-in check on production was not done (the preview pane was not signed in there).
+  - **Tested:** the dialog and scanner open, the camera permission message shows, and ZXing decodes a QR through the same reader settings. The camera is blocked in the preview pane, so a real 1D barcode scan on a phone was NOT tested. Not deployed.
