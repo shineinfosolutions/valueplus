@@ -9,7 +9,9 @@ export const dynamic = "force-dynamic";
 const DRIVER_ROLES = ["driver", "courier", "delivery"];
 /** Placeholder names written when no real driver was chosen; never a delivery boy of their own. */
 const PLACEHOLDER = new Set(["", "delivery team", "delivery boy"]);
-const NOT_A_SALE = ["credit-note", "proforma", "sales-order", "estimate", "quotation"];
+/** Sample names the old dispatch form pre-filled; a bill carrying one is not counted as a delivery boy's delivery. */
+const SAMPLE_DRIVER_NAMES = new Set(["ramesh yadav"]);
+const NOT_A_SALE =["credit-note", "proforma", "sales-order", "estimate", "quotation"];
 
 const norm = (s: any) => String(s || "").replace(/\(.*?\)/g, "").replace(/\s+/g, " ").trim().toLowerCase();
 const indiaDay = (d: any) => {
@@ -119,6 +121,8 @@ export async function GET(req: Request) {
     });
     // Drivers typed on bills who have no staff login: still shown, so no delivery goes uncounted.
     for (const [key, d] of byDriver) {
+      // "Ramesh Yadav" was the sample driver the dispatch form used to fill in; he is no delivery boy.
+      if (SAMPLE_DRIVER_NAMES.has(key)) continue;
       data.push({ id: `name:${key}`, name: d.name, phone: d.phone, email: "", vehicleNumber: "", joiningDate: "", address: "", avatar: "", status: "active", registered: false, ...summarise(d.rows) });
     }
     data.sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));

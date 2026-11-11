@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { DateRangeFilter, resolveDateRange } from "@/components/shared/date-range-filter";
+import { DateRangeFilter, dayLabelIST, resolveDateRange } from "@/components/shared/date-range-filter";
 import { PartyLedgerPanel } from "@/components/PartyLedgerPanel";
 import { ShoppingBag, AlertTriangle, ArrowRight } from "lucide-react";
 import { formatNumber } from "@/lib/utils";
@@ -106,13 +106,7 @@ export function PurchaseDistributionCard({
   };
 
   const rangeLabel = (() => {
-    const asDay = (d: Date) => `${d.getDate()} ${d.toLocaleString("en-IN", { month: "short" })}`;
-    if (filter.value === "Today") return asDay(new Date());
-    if (filter.value === "Yesterday") {
-      const y = new Date();
-      y.setDate(y.getDate() - 1);
-      return asDay(y);
-    }
+    if (filter.value === "Today" || filter.value === "Yesterday") return dayLabelIST(resolveDateRange(filter.value).start);
     return filter.value;
   })();
 

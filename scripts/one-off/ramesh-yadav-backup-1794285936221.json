@@ -1,0 +1,33 @@
+[
+ {
+  "_id": "6a894bb7042e6e0265e73e46",
+  "name": "Ramesh Yadav (Godown Incharge)",
+  "email": "warehouse@valueplus.in",
+  "password": "$2a$10$CxjUIO8XOJWZfzr5jrY8zOnkPZYqufnoYn3hKRrLhFcER75mfyYvK",
+  "role": "warehouse",
+  "mobile": "9839123456",
+  "avatar": "",
+  "address": "",
+  "city": "Gorakhpur",
+  "state": "Uttar Pradesh",
+  "pincode": "273008",
+  "idProofType": "Aadhaar Card",
+  "idProofNumber": "6543 2198 7654",
+  "idProofDoc": "",
+  "designation": "Chief Logistics Officer",
+  "monthlySalary": 35000,
+  "salaryType": "Fixed",
+  "advanceBalance": 0,
+  "monthlyAdvanceDeduction": 0,
+  "bankName": "",
+  "bankAccountNo": "",
+  "bankIfsc": "",
+  "assignedWarehouseId": "",
+  "assignedWarehouseName": "Gorakhpur Central Godown & Logistics Hub",
+  "status": "active",
+  "joiningDate": "2026-08-22",
+  "createdAt": "2026-08-22T07:11:51.655Z",
+  "updatedAt": "2026-10-24T05:08:16.195Z",
+  "__v": 0
+ }
+]

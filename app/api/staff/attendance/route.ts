@@ -230,18 +230,20 @@ export async function POST(req: Request) {
         });
       }
 
-      if (lateMinutes > 0) {
-        try {
-          await notifyRoles(["manager", "admin", "superadmin"], {
-            type: "general",
-            title: `${lateMinutes} min late: ${staffName}`,
-            message: `${staffName} checked in at ${currentISTTime}, ${lateMinutes} minute${lateMinutes === 1 ? "" : "s"} after the 10:00 start.`,
-            link: "/staff/directory",
-            createdBy: staffName,
-          }, me.id);
-        } catch (e) {
-          console.warn("Notice: late alert:", e);
-        }
+      // The Admin is told of every check-in; the Store Manager only when it was late.
+      try {
+        const late = lateMinutes > 0;
+        const notice = {
+          type: "general" as const,
+          title: late ? `${lateMinutes} min late: ${staffName}` : `${staffName} checked in`,
+          message: `${staffName} checked in at ${currentISTTime}${late ? `, ${lateMinutes} minute${lateMinutes === 1 ? "" : "s"} after the 10:00 start` : ""}.`,
+          link: "/staff/directory",
+          createdBy: staffName,
+        };
+        await notifyRoles(["admin", "superadmin"], notice, me.id);
+        if (late) await notifyRoles(["manager"], notice, me.id);
+      } catch (e) {
+        console.warn("Notice: check-in notice:", e);
       }
 
       return NextResponse.json({

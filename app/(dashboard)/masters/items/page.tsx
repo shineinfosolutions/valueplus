@@ -825,6 +825,28 @@ function ItemsPageContent() {
             )}
           </div>
 
+          {/* Both companies' products in one list; these buttons narrow it to one company, with how many each has. */}
+          <div className="flex flex-wrap items-center gap-2 w-full">
+            {(
+              [
+                ["all", "All products", items.length],
+                ...BILLING_ENTITY_LIST.map((e) => [e.key, e.label, items.filter((i: any) => entityOf(i) === e.key).length] as const),
+              ] as const
+            ).map(([key, label, count]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => { setEntityFilter(key); setPage(1); }}
+                className={cn(
+                  "px-3 h-8 rounded-full border text-xs font-bold transition-colors",
+                  entityFilter === key ? "bg-[#30539C] border-[#30539C] text-white" : "bg-white border-slate-300 text-slate-700 hover:bg-slate-50"
+                )}
+              >
+                {label} <span className={entityFilter === key ? "text-blue-100" : "text-slate-400"}>({count})</span>
+              </button>
+            ))}
+          </div>
+
           <div className="flex flex-wrap items-center gap-2">
             {/* Company Filter */}
             <Select value={entityFilter} onValueChange={(v) => { setEntityFilter(v); setPage(1); }}>

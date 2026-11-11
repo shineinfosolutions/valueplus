@@ -47,6 +47,12 @@ async function buildLines(wanted: { itemCode: string; warehouse?: string; quanti
 }
 
 /** A salesman sees his own requests; the Admin, manager and cashier see all of them. */
+/** The highest serial already used this year (not a document count: deleted or merged requests would repeat a number). */
+async function lastRequestSerial(year: number): Promise<number> {
+  const rows: any[] = await StockOrderRequest.find({ requestNumber: { $regex: `^SO-${year}-` } }, { requestNumber: 1 }).lean();
+  return rows.reduce((max, r) => Math.max(max, parseInt(String(r.requestNumber).split("-")[2], 10) || 0), 0);
+}
+
 export async function GET(req: Request) {
   try {
     const actor = await getActor();
@@ -89,8 +95,8 @@ export async function POST(req: Request) {
     const totalQuantity = lines.reduce((t, l) => t + l.quantity, 0);
     const year = new Date().getFullYear();
     let created: any = null;
-    for (let attempt = 0; attempt < 3 && !created; attempt++) {
-      const count = await StockOrderRequest.countDocuments();
+    for (let attempt = 0; attempt < 5 && !created; attempt++) {
+      const count = await lastRequestSerial(year);
       try {
         created = await StockOrderRequest.create({
           requestNumber: `SO-${year}-${String(count + 1 + attempt).padStart(4, "0")}`,
@@ -178,8 +184,8 @@ export async function PATCH(req: Request) {
       const year = new Date().getFullYear();
       const names = [...new Set(sources.map((s) => s.salesperson))];
       let created: any = null;
-      for (let attempt = 0; attempt < 3 && !created; attempt++) {
-        const count = await StockOrderRequest.countDocuments();
+      for (let attempt = 0; attempt < 5 && !created; attempt++) {
+        const count = await lastRequestSerial(year);
         try {
           created = await StockOrderRequest.create({
             requestNumber: `SO-${year}-${String(count + 1 + attempt).padStart(4, "0")}`,

@@ -4,7 +4,7 @@ import ScheduledRun from "@/models/ScheduledRun";
 import User from "@/models/User";
 import Attendance from "@/models/Attendance";
 import LeaveRequest from "@/models/LeaveRequest";
-import { notifyRoles } from "@/lib/notify";
+import { notifyAssignee, notifyRoles } from "@/lib/notify";
 import { normName } from "@/lib/staff-incentive";
 import { getShift } from "@/lib/shift-settings";
 import { publishChange } from "@/lib/realtime";
@@ -29,39 +29,42 @@ async function claim(key: string): Promise<boolean> {
 }
 
 /**
- * From 10:00 sharp (then every 15 minutes until 12:00) the Store Manager and Admin are told who has not checked
- * in yet and how many minutes late they are, with a sound on the phone. Staff on approved leave / weekly off are left out.
+ * The staff who have not checked in on `day`: working staff only (not on leave / weekly off, not inactive).
+ * Used for the "please check in" reminders, which go to these people and nobody else.
+ */
+export async function staffNotCheckedIn(day: string): Promise<any[]> {
+  const staff: any[] = await User.find({ role: { $in: STAFF_ROLES }, status: { $nin: ["inactive", "terminated", "suspended"] } }).select("name role").lean();
+  const todays: any[] = await Attendance.find({ date: day }, { staffName: 1, checkInTime: 1, status: 1 }).lean();
+  const here = new Set(todays.filter((a) => (a.checkInTime && a.checkInTime !== "--") || a.status === "On Leave").map((a) => normName(a.staffName)));
+  const away: any[] = await LeaveRequest.find({ status: "approved", kind: { $ne: "break" }, fromDate: { $lte: day }, toDate: { $gte: day } }, { staffName: 1 }).lean();
+  for (const l of away) here.add(normName(l.staffName));
+  return staff.filter((u) => !here.has(normName(u.name)));
+}
+
+/**
+ * After the 10:00 reminder (every 15 minutes until 12:00) each person who has still not checked in is reminded, on
+ * their own phone, how many minutes late they are, with a sound. Nobody else is told: the Admin and Store Manager
+ * get a notice when a staff member DOES check in (see the check-in in app/api/staff/attendance), not a list of
+ * people who have not. Staff on approved leave / weekly off are left out.
  */
 async function notLateCheckedInAlert(now: ReturnType<typeof istNow>): Promise<number> {
-  if (now.minutes < SHIFT_START_MIN || now.minutes > 12 * 60 || now.minute % 15 !== 0) return 0;
+  if (now.minutes <= SHIFT_START_MIN || now.minutes > 12 * 60 || now.minute % 15 !== 0) return 0;
   if (!(await claim(`late-check:${now.day}:${now.hour}${String(now.minute).padStart(2, "0")}`))) return 0;
 
-  const staff: any[] = await User.find({ role: { $in: STAFF_ROLES }, status: { $nin: ["inactive", "terminated", "suspended"] } }).select("name role").lean();
-  const todays: any[] = await Attendance.find({ date: now.day }, { staffName: 1, checkInTime: 1, status: 1 }).lean();
-  const here = new Set(todays.filter((a) => (a.checkInTime && a.checkInTime !== "--") || a.status === "On Leave").map((a) => normName(a.staffName)));
-  const away: any[] = await LeaveRequest.find({ status: "approved", kind: { $ne: "break" }, fromDate: { $lte: now.day }, toDate: { $gte: now.day } }, { staffName: 1 }).lean();
-  for (const l of away) here.add(normName(l.staffName));
-
-  const late = staff.filter((u) => !here.has(normName(u.name)));
+  const late = await staffNotCheckedIn(now.day);
   if (late.length === 0) return 0;
   const lateBy = now.minutes - SHIFT_START_MIN;
-  // One notification for each person (not one for everybody), so each can be opened and dealt with on its own.
-  // A late Manager is not told about themselves.
+  // One notification for each person who has not checked in, to that person only.
   for (const u of late) {
-    const name = String(u.name).replace(/\s*\(.*\)\s*$/, "");
-    await notifyRoles(
-      ["manager", "admin", "superadmin"],
-      {
-        type: "general",
-        title: lateBy === 0 ? `${name} has not checked in` : `${name} is ${lateBy} min late`,
-        message: `${name} (${u.role}) has not checked in yet${lateBy > 0 ? ` — ${lateBy} minutes after 10:00` : ""}.`,
-        link: "/staff/directory",
-        createdBy: "System",
-        refType: "late-checkin",
-        refId: `${now.day}:${String(u._id)}`,
-      },
-      String(u._id)
-    );
+    await notifyAssignee(String(u.name), String(u._id), {
+      type: "general",
+      title: `You are ${lateBy} min late: please check in`,
+      message: `You have not checked in yet. It is ${lateBy} minutes after the 10:00 start. Please check in now.`,
+      link: "/dashboard",
+      createdBy: "System",
+      refType: "late-checkin",
+      refId: `${now.day}:${String(u._id)}`,
+    });
   }
   return late.length;
 }

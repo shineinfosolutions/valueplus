@@ -34,44 +34,58 @@ export const DATE_FILTER_OPTIONS = [
 
 export type DateFilterType = (typeof DATE_FILTER_OPTIONS)[number]["value"];
 
+// ── India-time calendar maths ─────────────────────────────────────────────────────────────────────────
+// Every day here is a plain "YYYY-MM-DD" in India time. Moving a day or a month is done on that date itself
+// (in UTC, which only does calendar arithmetic and has no clock in it), never on `new Date()` and then
+// `toISOString()`: that gives the UTC day, which is still yesterday between 12:00 am and 5:30 am in India, so
+// "Yesterday" showed the day before yesterday in those hours while a Custom Date for the same day was right.
+const ymdParts = (ymd: string) => {
+  const [y, m, d] = ymd.split("-").map(Number);
+  return { y, m, d };
+};
+const ymdOf = (date: Date) => date.toISOString().slice(0, 10);
+const daysInMonth = (y: number, m: number) => new Date(Date.UTC(y, m, 0)).getUTCDate(); // m: 1..12
+
+/** `ymd` moved by whole days. */
+export function addDaysIST(ymd: string, days: number): string {
+  const { y, m, d } = ymdParts(ymd);
+  return ymdOf(new Date(Date.UTC(y, m - 1, d + days)));
+}
+
+/** `ymd` moved by whole months, keeping the day of the month (or the month's last day when it is shorter). */
+export function addMonthsIST(ymd: string, months: number): string {
+  const { y, m, d } = ymdParts(ymd);
+  const first = new Date(Date.UTC(y, m - 1 + months, 1));
+  const ty = first.getUTCFullYear();
+  const tm = first.getUTCMonth() + 1;
+  return ymdOf(new Date(Date.UTC(ty, tm - 1, Math.min(d, daysInMonth(ty, tm)))));
+}
+
+/** "8 Nov" for a YYYY-MM-DD day (used for the labels of a period). */
+export function dayLabelIST(ymd: string): string {
+  const { y, m, d } = ymdParts(ymd);
+  return `${d} ${new Date(Date.UTC(y, m - 1, d)).toLocaleString("en-IN", { month: "short", timeZone: "UTC" })}`;
+}
+
 export function resolveDateRange(filter: string, customStart?: string, customEnd?: string) {
-  const today = new Date();
-  today.setHours(23, 59, 59, 999);
-  let start = todayInIndia();
-  let end = todayInIndia();
+  const today = todayInIndia();
+  let start = today;
+  let end = today;
 
   if (filter === "Yesterday") {
-    const y = new Date();
-    y.setDate(y.getDate() - 1);
-    start = y.toISOString().split("T")[0];
-    end = start;
+    start = end = addDaysIST(today, -1);
   } else if (filter === "Last 7 Days") {
-    const d = new Date();
-    d.setDate(d.getDate() - 7);
-    start = d.toISOString().split("T")[0];
-    end = todayInIndia();
+    start = addDaysIST(today, -7);
   } else if (filter === "This Month") {
-    const d = new Date();
-    d.setDate(1);
-    start = d.toISOString().split("T")[0];
-    end = todayInIndia();
+    start = `${today.slice(0, 8)}01`;
   } else if (filter === "Last Month") {
-    const d = new Date();
-    d.setMonth(d.getMonth() - 1);
-    d.setDate(1);
-    const endD = new Date(d.getFullYear(), d.getMonth() + 1, 0);
-    start = d.toISOString().split("T")[0];
-    end = endD.toISOString().split("T")[0];
+    const first = addMonthsIST(`${today.slice(0, 8)}01`, -1);
+    start = first;
+    end = addDaysIST(`${today.slice(0, 8)}01`, -1);
   } else if (filter === "Last 3 Months") {
-    const d = new Date();
-    d.setMonth(d.getMonth() - 3);
-    start = d.toISOString().split("T")[0];
-    end = todayInIndia();
+    start = addMonthsIST(today, -3);
   } else if (filter === "Last Year") {
-    const d = new Date();
-    d.setFullYear(d.getFullYear() - 1);
-    start = d.toISOString().split("T")[0];
-    end = todayInIndia();
+    start = addMonthsIST(today, -12);
   } else if (filter === "Custom Date" && customStart && customEnd) {
     start = customStart;
     end = customEnd;

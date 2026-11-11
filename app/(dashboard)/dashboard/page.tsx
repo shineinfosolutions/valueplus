@@ -40,7 +40,8 @@ import { toast } from "sonner";
 import { cn, formatCurrency, formatNumber, indianNumberFormat, formatDateShort } from "@/lib/utils";
 import ValueplusInvoice from "@/app/invoice/page";
 import { InvoiceCreationModal } from "@/components/InvoiceCreationModal";
-import { DateRangeFilter, resolveDateRange, isDateInRange } from "@/components/shared/date-range-filter";
+import { DateRangeFilter, dayLabelIST, resolveDateRange, isDateInRange } from "@/components/shared/date-range-filter";
+import { BillEditDetailDialog } from "@/components/dashboard/BillEditDetailDialog";
 import { StaffFilter, useStaffParam, sameStaff, normStaff, UNASSIGNED } from "@/components/shared/StaffFilter";
 import { Skeleton, MetricCardsShimmer, TableShimmer, ChartShimmer, DistributionShimmer } from "@/components/shared/shimmer-skeleton";
 import {
@@ -344,6 +345,8 @@ export default function DashboardPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [expenseViewTab, setExpenseViewTab] = useState<"purpose" | "mode">("purpose");
   const [expenseModalModeFilter, setExpenseModalModeFilter] = useState<string>("all");
+  // A bill from the Bills Modified list, opened to see what was changed in it (before and now).
+  const [editDetail, setEditDetail] = useState<any | null>(null);
   const [leakageModal, setLeakageModal] = useState<{
     type: string;
     title: string;
@@ -1420,14 +1423,8 @@ export default function DashboardPage() {
   // Human readable label for the distribution card period ("02 Sep", "Last 7 Days", ...)
   const pieRangeLabel = (() => {
     const f = widgetFilters.pie || "Today";
-    const asDay = (d: Date) =>
-      `${d.getDate()} ${d.toLocaleString("en-IN", { month: "short" })}`;
-    if (f === "Today") return asDay(new Date());
-    if (f === "Yesterday") {
-      const y = new Date();
-      y.setDate(y.getDate() - 1);
-      return asDay(y);
-    }
+    // The same India-time day the data is fetched for (not this computer's clock).
+    if (f === "Today" || f === "Yesterday") return dayLabelIST(resolveDateRange(f).start);
     return f;
   })();
 
@@ -2146,7 +2143,7 @@ export default function DashboardPage() {
                 onClick={() => setLeakageModal({
                   type: "billsModified",
                   title: "Bills Modified Post-Punching",
-                  description: "Invoices with a discount, and bills entered with a back date",
+                  description: "Bills that were edited after punching, invoices with a discount, and bills entered with a back date",
                   invoices: leakage.billsModified?.invoices || [],
                   color: "#F97316"
                 })}
@@ -2164,6 +2161,7 @@ export default function DashboardPage() {
                 <span className="text-xs text-orange-800 font-semibold flex items-center justify-between pt-1.5 border-t border-orange-200/60">
                   <span>
                     Price diff
+                    {(leakage.billsModified?.editedCount || 0) > 0 && ` · ${leakage.billsModified.editedCount} edited`}
                     {(leakage.billsModified?.backDatedCount || 0) > 0 && ` · ${leakage.billsModified.backDatedCount} back-dated`}
                   </span>{" "}
                   <ArrowRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
@@ -4425,6 +4423,7 @@ export default function DashboardPage() {
       })()}
 
       {/* ─── PAYMENT LEAKAGE & VOID AUDIT DETAILS MODAL ────────────────── */}
+      <BillEditDetailDialog bill={editDetail} onClose={() => setEditDetail(null)} />
       <Dialog open={!!leakageModal} onOpenChange={() => setLeakageModal(null)}>
         <DialogContent className="max-w-4xl p-0 rounded-2xl overflow-y-auto border-none shadow-2xl">
           {/* Header */}
@@ -4470,7 +4469,12 @@ export default function DashboardPage() {
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-medium">
                     {leakageModal.invoices.map((inv: any, idx: number) => (
-                      <tr key={inv._id || inv.invoiceNumber || idx} className="hover:bg-slate-50/80 transition-colors">
+                      <tr
+                        key={inv._id || inv.invoiceNumber || idx}
+                        onClick={inv.edits?.length ? () => setEditDetail(inv) : undefined}
+                        title={inv.edits?.length ? "Click to see what was changed" : undefined}
+                        className={`hover:bg-slate-50/80 transition-colors ${inv.edits?.length ? "cursor-pointer" : ""}`}
+                      >
                         <td className="p-3 font-mono font-bold text-slate-900">
                           {inv.invoiceNumber || inv.id}
                           {inv.docType && inv.docType !== "Invoice" && (
@@ -4543,14 +4547,25 @@ export default function DashboardPage() {
                               </span>
                             )
                           ) : (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => setActivePrintInvoice(inv)}
-                              className="h-7 px-2 text-[10px] font-bold text-[#3F63AD] border-[#3F63AD]/30 hover:bg-blue-50"
-                            >
-                              <Eye className="w-3 h-3 mr-1" /> View Bill
-                            </Button>
+                            <div className="flex flex-col items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                              {inv.edits?.length > 0 && (
+                                <Button
+                                  size="sm"
+                                  onClick={() => setEditDetail(inv)}
+                                  className="h-7 px-2 text-[10px] font-bold bg-orange-500 hover:bg-orange-600 text-white"
+                                >
+                                  What changed
+                                </Button>
+                              )}
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setActivePrintInvoice(inv)}
+                                className="h-7 px-2 text-[10px] font-bold text-[#3F63AD] border-[#3F63AD]/30 hover:bg-blue-50"
+                              >
+                                <Eye className="w-3 h-3 mr-1" /> View Bill
+                              </Button>
+                            </div>
                           )}
                         </td>
                       </tr>

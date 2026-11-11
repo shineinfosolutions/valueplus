@@ -5,6 +5,9 @@ import User from "@/models/User";
 import Lead from "@/models/Lead";
 import StaffTask from "@/models/StaffTask";
 import IncentivePayout from "@/models/IncentivePayout";
+import Attendance from "@/models/Attendance";
+import LeaveRequest from "@/models/LeaveRequest";
+import { todayInIndia } from "@/lib/today";
 import { getActor } from "@/lib/requirePermission";
 import { loadIncentiveBook, normName, summarise } from "@/lib/staff-incentive";
 
@@ -14,8 +17,8 @@ const VIEW_ROLES = ["admin", "superadmin", "manager"];
 
 /**
  * Staff Directory (Admin and Store Manager).
- *   GET            -> every staff member with incentive earned / received / balance
- *   GET ?id=<user> -> one person's full data: profile, incentive, payouts, bills, leads, tasks
+ *   GET            -> every staff member with incentive earned / received / balance, and today's attendance
+ *   GET ?id=<user> -> one person's full data: profile, incentive, payouts, bills, leads, tasks, attendance
  */
 export async function GET(req: Request) {
   try {
@@ -33,9 +36,28 @@ export async function GET(req: Request) {
         .select("name email role mobile designation status joiningDate assignedBrand")
         .sort({ name: 1 })
         .lean();
+      // Today's attendance, for the "present / late / not checked in" cards.
+      const today = todayInIndia();
+      const todays: any[] = await Attendance.find({ date: today }, { staffName: 1, checkInTime: 1, checkOutTime: 1, status: 1, lateMinutes: 1, isLate: 1 }).lean();
+      const byName = new Map<string, any>(todays.map((a) => [normName(a.staffName), a]));
+      const away: any[] = await LeaveRequest.find({ status: "approved", kind: { $ne: "break" }, fromDate: { $lte: today }, toDate: { $gte: today } }, { staffName: 1 }).lean();
+      const onLeave = new Set(away.map((l) => normName(l.staffName)));
       const data = users.map((u) => {
         const inc = summarise(book, String(u._id), u.name);
+        const rec = byName.get(normName(u.name));
+        const checkedIn = !!rec && !!rec.checkInTime && rec.checkInTime !== "--";
+        const todayStatus = checkedIn
+          ? rec.isLate || rec.status === "Late"
+            ? "Late"
+            : "Present"
+          : rec?.status === "On Leave" || onLeave.has(normName(u.name))
+            ? "On leave"
+            : "Not checked in";
         return {
+          todayStatus,
+          checkInTime: checkedIn ? rec.checkInTime : "",
+          checkOutTime: rec?.checkOutTime && rec.checkOutTime !== "--" ? rec.checkOutTime : "",
+          lateMinutes: checkedIn ? Number(rec.lateMinutes) || 0 : 0,
           _id: String(u._id),
           name: u.name,
           email: u.email,
@@ -67,6 +89,28 @@ export async function GET(req: Request) {
     const myTasks = tasks.filter((t) => String(t.assignedStaffId || "") === String(user._id) || normName(t.assignedStaff) === k);
 
     const payouts = await IncentivePayout.find({ userId: String(user._id) }).sort({ date: -1, createdAt: -1 }).limit(200).lean();
+
+    // Attendance: this month's counts, and the last 20 days with the times.
+    const attRows: any[] = await Attendance.find({ staffName: user.name }).sort({ date: -1 }).limit(60).lean();
+    const monthAtt = attRows.filter((a) => String(a.date).slice(0, 7) === month);
+    const attendance = {
+      month: {
+        present: monthAtt.filter((a) => a.status === "Present").length,
+        late: monthAtt.filter((a) => a.status === "Late" || a.isLate).length,
+        halfDay: monthAtt.filter((a) => a.status === "Half-Day").length,
+        absent: monthAtt.filter((a) => a.status === "Absent").length,
+        onLeave: monthAtt.filter((a) => a.status === "On Leave").length,
+        days: monthAtt.length,
+      },
+      recent: attRows.slice(0, 20).map((a) => ({
+        date: a.date,
+        checkInTime: a.checkInTime && a.checkInTime !== "--" ? a.checkInTime : "",
+        checkOutTime: a.checkOutTime && a.checkOutTime !== "--" ? a.checkOutTime : "",
+        status: a.status,
+        lateMinutes: Number(a.lateMinutes) || 0,
+        hours: a.workingDurationMinutes ? Math.round((Number(a.workingDurationMinutes) / 60) * 10) / 10 : 0,
+      })),
+    };
     const sum = (list: any[], f: (x: any) => number) => list.reduce((t, x) => t + f(x), 0);
 
     return NextResponse.json({
@@ -85,6 +129,7 @@ export async function GET(req: Request) {
           address: user.address || "",
         },
         incentive: summarise(book, String(user._id), user.name),
+        attendance,
         payouts,
         bills,
         sales: {

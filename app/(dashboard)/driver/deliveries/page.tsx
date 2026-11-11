@@ -36,7 +36,7 @@ import { ExportMenu } from "@/components/shared/ExportMenu";
 
 export default function DriverDeliveriesPage() {
   const { data: session } = useSession();
-  const driverName = session?.user?.name || "Ramesh Yadav";
+  const driverName = session?.user?.name || "Delivery Boy";
   const userRole = (session?.user as any)?.role || "driver";
 
   const [invoices, setInvoices] = useState<any[]>([]);

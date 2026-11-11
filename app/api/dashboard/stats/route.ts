@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import Invoice from "@/models/Invoice";
+import AuditLog from "@/models/AuditLog";
+import { describeEdit } from "@/lib/bill-edit-diff";
 import Item from "@/models/Item";
 import Customer from "@/models/Customer";
 import Supplier from "@/models/Supplier";
@@ -1081,8 +1083,33 @@ export async function GET(request: Request) {
       const enteredAt = new Date(inv.createdAt);
       if (isNaN(enteredAt.getTime()) || enteredAt < rangeStart || enteredAt > rangeEnd) return false;
       const billDay = String(inv.date).slice(0, 10);
-      return /^d{4}-d{2}-d{2}$/.test(billDay) && billDay < istDay(enteredAt);
+      return /^\d{4}-\d{2}-\d{2}$/.test(billDay) && billDay < istDay(enteredAt);
     });
+
+    // ─── EDITED BILLS ────────────────────────────────────────────────────────
+    // A bill changed after it was punched ("Edit Invoice" by the Admin / Store Manager, or a change to its contact /
+    // delivery details). Read from the audit trail and matched on WHEN the edit was made (India day), so a bill from
+    // an earlier day edited today shows up today. It used to be missing from this card: only discounts and
+    // back-dated bills were counted.
+    const editWindowStart = startDateParam && endDateParam ? new Date(`${startDateParam}T00:00:00+05:30`) : rangeStart;
+    const editWindowEnd = startDateParam && endDateParam ? new Date(`${endDateParam}T23:59:59.999+05:30`) : rangeEnd;
+    let editLogs: any[] = [];
+    try {
+      editLogs = await AuditLog.find({
+        action: { $in: ["invoice.edit", "invoice.details.edit"] },
+        createdAt: { $gte: editWindowStart, $lte: editWindowEnd },
+      })
+        .sort({ createdAt: -1 })
+        .lean();
+    } catch (editErr) {
+      console.warn("Notice: edited-bills bucket:", editErr);
+    }
+    const editsByBill = new Map<string, any[]>();
+    for (const log of editLogs) {
+      if (!log.entityRef || !invoiceByNumber.has(log.entityRef)) continue;
+      editsByBill.set(log.entityRef, [...(editsByBill.get(log.entityRef) || []), log]);
+    }
+    const editedCount = editsByBill.size;
 
     const billsModifiedByNumber = new Map<string, any>();
     for (const inv of discountedInvoices as any[]) {
@@ -1104,9 +1131,34 @@ export async function GET(request: Request) {
         auditAt: inv.createdAt || "",
       });
     }
-    // Back-dated bills first: they are the ones someone has to look into.
+    for (const [no, logs] of editsByBill) {
+      const latest = logs[0];
+      const inv = invoiceByNumber.get(no);
+      const reason = `Edited${logs.length > 1 ? ` ${logs.length} times` : ""}: ${String(latest.reason || "").trim() || (latest.action === "invoice.details.edit" ? "contact / delivery details changed" : "bill changed")}`;
+      const existing = billsModifiedByNumber.get(no);
+      billsModifiedByNumber.set(no, {
+        ...(existing || inv),
+        isEdited: true,
+        auditReason: existing ? `${reason} · ${existing.auditReason}` : reason,
+        auditBy: latest.performedBy || "",
+        auditAt: latest.createdAt || "",
+        usedLegacyPin: latest.usedLegacyPin,
+        // Every edit of this bill, newest first: who, when, why, and each field's before and after.
+        edits: logs.map((l: any) => ({
+          at: l.createdAt,
+          by: l.performedBy,
+          role: l.performedByRole,
+          reason: l.reason,
+          kind: l.action === "invoice.details.edit" ? "details" : "bill",
+          changes: describeEdit(l.metadata),
+        })),
+      });
+    }
+    // Edited and back-dated bills first: they are the ones someone has to look into.
     const billsModifiedInvoices = Array.from(billsModifiedByNumber.values()).sort(
-      (a: any, b: any) => Number(Boolean(b.isBackDated)) - Number(Boolean(a.isBackDated))
+      (a: any, b: any) =>
+        Number(Boolean(b.isBackDated || b.isEdited)) - Number(Boolean(a.isBackDated || a.isEdited)) ||
+        String(b.auditAt || "").localeCompare(String(a.auditAt || ""))
     );
     const billsModifiedCount = billsModifiedInvoices.length;
     // The card's amount stays the discount total ("price diff"); a back-dated bill
@@ -1201,7 +1253,7 @@ export async function GET(request: Request) {
       deleted: deletedBucket,
       modified: { count: modifiedCount, amount: modifiedAmount, invoices: modifiedInvoices.slice(0, 10) },
       shifted: { count: shiftedCount, amount: shiftedAmount, invoices: shiftedInvoices.slice(0, 10) },
-      billsModified: { count: billsModifiedCount, amount: billsModifiedAmount, backDatedCount, invoices: billsModifiedInvoices.slice(0, 25) },
+      billsModified: { count: billsModifiedCount, amount: billsModifiedAmount, backDatedCount, editedCount, invoices: billsModifiedInvoices.slice(0, 25) },
       reprinted: { count: reprintedCount, totalPrints: totalReprintTimes, amount: reprintedAmount, invoices: reprintedInvoices.slice(0, 10) },
       waivedOff: { count: waivedCount, amount: waivedAmount, invoices: waivedInvoices.slice(0, 10) },
     };

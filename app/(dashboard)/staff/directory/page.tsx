@@ -19,6 +19,24 @@ import { todayInIndia } from "@/lib/today";
 import { StaffFilter, useStaffParam, sameStaff } from "@/components/shared/StaffFilter";
 import { awaySummary, periodLine } from "@/lib/away-format";
 
+/** Today's attendance of one person: Present / Late (with the minutes) / On leave / Not checked in, with the check-in time. */
+function TodayBadge({ s }: { s: any }) {
+  const st = s.todayStatus || "";
+  if (!st) return <span className="text-slate-400">—</span>;
+  const tone =
+    st === "Present" ? "text-emerald-700 bg-emerald-50 border-emerald-200"
+    : st === "Late" ? "text-amber-800 bg-amber-50 border-amber-200"
+    : st === "On leave" ? "text-sky-800 bg-sky-50 border-sky-200"
+    : "text-rose-700 bg-rose-50 border-rose-200";
+  return (
+    <span className={cn("inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] font-bold", tone)}>
+      {st}
+      {s.checkInTime ? <span className="font-mono font-normal">· {s.checkInTime}</span> : null}
+      {st === "Late" && s.lateMinutes > 0 ? <span className="font-normal">· {s.lateMinutes} min</span> : null}
+    </span>
+  );
+}
+
 export default function StaffDirectoryPage() {
   const { data: session } = useSession();
   const role = String((session?.user as any)?.role || "").toLowerCase();
@@ -27,6 +45,8 @@ export default function StaffDirectoryPage() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
+  // A summary card opened to list the people behind its number.
+  const [cardOpen, setCardOpen] = useState<null | "staff" | "present" | "late" | "notIn" | "earned" | "paid" | "toPay">(null);
   const [payOpen, setPayOpen] = useState(false);
   const [pay, setPay] = useState({ amount: "", date: todayInIndia(), paymentMode: "Cash", note: "" });
 
@@ -77,6 +97,31 @@ export default function StaffDirectoryPage() {
     }),
     [staff]
   );
+  // Working staff only for the attendance cards (not inactive, not the Admin).
+  const working = useMemo(() => staff.filter((s) => s.status !== "inactive" && !["admin", "superadmin"].includes(String(s.role).toLowerCase())), [staff]);
+  const todayCount = (st: string) => working.filter((s) => s.todayStatus === st).length;
+  const cardRows = useMemo(() => {
+    const by = (list: any[], key: string) => [...list].sort((a, b) => (b[key] || 0) - (a[key] || 0));
+    switch (cardOpen) {
+      case "staff": return staff;
+      case "present": return working.filter((s) => s.todayStatus === "Present" || s.todayStatus === "Late");
+      case "late": return by(working.filter((s) => s.todayStatus === "Late"), "lateMinutes");
+      case "notIn": return working.filter((s) => s.todayStatus === "Not checked in");
+      case "earned": return by(staff.filter((s) => s.earned > 0), "earned");
+      case "paid": return by(staff.filter((s) => s.received > 0), "received");
+      case "toPay": return by(staff.filter((s) => s.balance > 0), "balance");
+      default: return [];
+    }
+  }, [cardOpen, staff, working]);
+  const CARD_TITLES: Record<string, string> = {
+    staff: "All staff",
+    present: "Present today (checked in)",
+    late: "Late today",
+    notIn: "Not checked in yet",
+    earned: "Incentive earned, staff-wise",
+    paid: "Incentive paid, staff-wise",
+    toPay: "Incentive still to pay, staff-wise",
+  };
 
   const payout = useMutation({
     mutationFn: async () => {
@@ -129,16 +174,27 @@ export default function StaffDirectoryPage() {
       ) : (
         <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            {[
-              { label: "Staff", value: staff.length, money: false },
-              { label: "Incentive earned", value: totals.earned, money: true },
-              { label: "Incentive paid", value: totals.received, money: true },
-              { label: "Incentive to pay", value: totals.balance, money: true },
-            ].map((c) => (
-              <div key={c.label} className="metric-card">
-                <p className="text-xl font-black font-mono">{c.money ? formatCurrency(c.value) : c.value}</p>
-                <p className="text-xs text-muted-foreground mt-1">{c.label}</p>
-              </div>
+            {(
+              [
+                { key: "staff", label: "Staff", value: staff.length, money: false, tone: "" },
+                { key: "present", label: "Present today", value: todayCount("Present") + todayCount("Late"), money: false, tone: "text-emerald-700" },
+                { key: "late", label: "Late today", value: todayCount("Late"), money: false, tone: "text-amber-700" },
+                { key: "notIn", label: "Not checked in yet", value: todayCount("Not checked in"), money: false, tone: "text-rose-700" },
+                { key: "earned", label: "Incentive earned", value: totals.earned, money: true, tone: "" },
+                { key: "paid", label: "Incentive paid", value: totals.received, money: true, tone: "" },
+                { key: "toPay", label: "Incentive to pay", value: totals.balance, money: true, tone: "" },
+              ] as const
+            ).map((c) => (
+              <button
+                key={c.key}
+                type="button"
+                onClick={() => setCardOpen(c.key)}
+                className="metric-card text-left transition hover:shadow-md hover:border-[#30539C]/40 cursor-pointer"
+                title="Click to see the full list"
+              >
+                <p className={cn("text-xl font-black font-mono", c.tone)}>{c.money ? formatCurrency(c.value) : c.value}</p>
+                <p className="text-xs text-muted-foreground mt-1">{c.label} <span className="text-[#30539C]">›</span></p>
+              </button>
             ))}
           </div>
 
@@ -157,6 +213,7 @@ export default function StaffDirectoryPage() {
                     <th className="px-3 py-2.5 text-left">Name</th>
                     <th className="px-3 py-2.5 text-left">Role</th>
                     <th className="px-3 py-2.5 text-left">Mobile</th>
+                    <th className="px-3 py-2.5 text-left">Today</th>
                     <th className="px-3 py-2.5 text-left">Away today</th>
                     <th className="px-3 py-2.5 text-right">Bills</th>
                     <th className="px-3 py-2.5 text-right">Incentive earned</th>
@@ -167,9 +224,9 @@ export default function StaffDirectoryPage() {
                 </thead>
                 <tbody className="divide-y">
                   {isLoading ? (
-                    <tr><td colSpan={9} className="px-3 py-8 text-center text-muted-foreground">Loading…</td></tr>
+                    <tr><td colSpan={10} className="px-3 py-8 text-center text-muted-foreground">Loading…</td></tr>
                   ) : rows.length === 0 ? (
-                    <tr><td colSpan={9} className="px-3 py-8 text-center text-muted-foreground">No staff found</td></tr>
+                    <tr><td colSpan={10} className="px-3 py-8 text-center text-muted-foreground">No staff found</td></tr>
                   ) : (
                     rows.map((s) => (
                       <tr key={s._id} onClick={() => setOpenId(s._id)} className="cursor-pointer hover:bg-slate-50" title="Click for the full details">
@@ -179,6 +236,7 @@ export default function StaffDirectoryPage() {
                         </td>
                         <td className="px-3 py-2.5 text-xs capitalize text-slate-600 whitespace-nowrap">{s.designation || s.role}</td>
                         <td className="px-3 py-2.5 font-mono text-xs text-slate-600 whitespace-nowrap">{s.mobile || "—"}</td>
+                        <td className="px-3 py-2.5 text-xs whitespace-nowrap"><TodayBadge s={s} /></td>
                         {(() => {
                           const rec = presenceRows.find((r: any) => sameStaff(r.staffName, s.name));
                           const text = awaySummary(rec);
@@ -202,6 +260,63 @@ export default function StaffDirectoryPage() {
               </table>
             </div>
           </div>
+
+          <Dialog open={!!cardOpen} onOpenChange={(o) => { if (!o) setCardOpen(null); }}>
+            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>{cardOpen ? CARD_TITLES[cardOpen] : ""} <span className="text-sm font-normal text-slate-500">· {cardRows.length}</span></DialogTitle>
+                <DialogDescription>Click a name to see everything about that person.</DialogDescription>
+              </DialogHeader>
+              <div className="rounded-xl border overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-slate-50">
+                    <tr className="text-left text-[10px] uppercase text-slate-500">
+                      <th className="px-3 py-2">Name</th>
+                      <th className="px-3 py-2">Role</th>
+                      <th className="px-3 py-2">Mobile</th>
+                      <th className="px-3 py-2">Today</th>
+                      <th className="px-3 py-2 text-right">Bills</th>
+                      <th className="px-3 py-2 text-right">Earned</th>
+                      <th className="px-3 py-2 text-right">Paid</th>
+                      <th className="px-3 py-2 text-right">Left to pay</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {cardRows.length === 0 ? (
+                      <tr><td colSpan={8} className="px-3 py-6 text-center text-slate-400">Nobody here.</td></tr>
+                    ) : (
+                      cardRows.map((s) => (
+                        <tr key={s._id} onClick={() => { setCardOpen(null); setOpenId(s._id); }} className="cursor-pointer hover:bg-slate-50">
+                          <td className="px-3 py-2 font-semibold text-slate-900 whitespace-nowrap">
+                            {s.name}
+                            {s.status === "inactive" && <Badge variant="outline" className="ml-2 text-[10px] text-slate-500">inactive</Badge>}
+                          </td>
+                          <td className="px-3 py-2 capitalize text-slate-600 whitespace-nowrap">{s.designation || s.role}</td>
+                          <td className="px-3 py-2 font-mono text-slate-600 whitespace-nowrap">{s.mobile || "—"}</td>
+                          <td className="px-3 py-2 whitespace-nowrap"><TodayBadge s={s} /></td>
+                          <td className="px-3 py-2 text-right font-mono">{s.bills}</td>
+                          <td className="px-3 py-2 text-right font-mono font-bold text-emerald-700">{formatCurrency(s.earned)}</td>
+                          <td className="px-3 py-2 text-right font-mono text-blue-700">{formatCurrency(s.received)}</td>
+                          <td className={cn("px-3 py-2 text-right font-mono font-black", s.balance > 0 ? "text-amber-700" : "text-slate-400")}>{formatCurrency(s.balance)}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                  {cardRows.length > 0 && ["staff", "earned", "paid", "toPay"].includes(cardOpen || "") && (
+                    <tfoot className="bg-slate-50 font-black">
+                      <tr>
+                        <td className="px-3 py-2" colSpan={4}>Total</td>
+                        <td className="px-3 py-2 text-right font-mono">{cardRows.reduce((t, s) => t + (s.bills || 0), 0)}</td>
+                        <td className="px-3 py-2 text-right font-mono text-emerald-700">{formatCurrency(cardRows.reduce((t, s) => t + (s.earned || 0), 0))}</td>
+                        <td className="px-3 py-2 text-right font-mono text-blue-700">{formatCurrency(cardRows.reduce((t, s) => t + (s.received || 0), 0))}</td>
+                        <td className="px-3 py-2 text-right font-mono text-amber-700">{formatCurrency(cardRows.reduce((t, s) => t + (s.balance || 0), 0))}</td>
+                      </tr>
+                    </tfoot>
+                  )}
+                </table>
+              </div>
+            </DialogContent>
+          </Dialog>
 
           <Dialog open={!!openId} onOpenChange={(o) => { if (!o) setOpenId(null); }}>
             <DialogContent className="max-w-3xl max-h-[92vh] overflow-y-auto">
@@ -242,6 +357,39 @@ export default function StaffDirectoryPage() {
                       <p className="text-[10px] text-slate-500">{detail.sales.billsThisMonth} bills · all time {formatCurrency(detail.sales.revenueAllTime)} ({detail.sales.billsAllTime})</p>
                     </div>
                   </div>
+
+                  {detail.attendance && (
+                    <div>
+                      <p className="text-xs font-black uppercase text-slate-600 mb-1.5">
+                        Attendance this month
+                        <span className="ml-2 normal-case font-semibold text-slate-500">
+                          {detail.attendance.month.present} present · {detail.attendance.month.late} late · {detail.attendance.month.halfDay} half-day · {detail.attendance.month.absent} absent · {detail.attendance.month.onLeave} leave
+                        </span>
+                      </p>
+                      <div className="rounded-xl border overflow-hidden max-h-56 overflow-y-auto">
+                        <table className="w-full text-xs">
+                          <thead className="bg-slate-50 sticky top-0"><tr className="text-left text-[10px] uppercase text-slate-500"><th className="px-3 py-2">Date</th><th className="px-3 py-2">In</th><th className="px-3 py-2">Out</th><th className="px-3 py-2">Hours</th><th className="px-3 py-2">Status</th></tr></thead>
+                          <tbody className="divide-y">
+                            {detail.attendance.recent.length === 0 ? (
+                              <tr><td colSpan={5} className="px-3 py-4 text-center text-slate-400">No attendance recorded yet.</td></tr>
+                            ) : (
+                              detail.attendance.recent.map((a: any) => (
+                                <tr key={a.date}>
+                                  <td className="px-3 py-2 font-mono">{a.date}</td>
+                                  <td className="px-3 py-2 font-mono">{a.checkInTime || "—"}</td>
+                                  <td className="px-3 py-2 font-mono">{a.checkOutTime || "—"}</td>
+                                  <td className="px-3 py-2 font-mono">{a.hours ? `${a.hours} h` : "—"}</td>
+                                  <td className={cn("px-3 py-2 font-semibold", a.status === "Late" || a.status === "Half-Day" ? "text-amber-700" : a.status === "Absent" ? "text-rose-700" : "text-emerald-700")}>
+                                    {a.status}{a.lateMinutes > 0 ? ` · ${a.lateMinutes} min late` : ""}
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-2 gap-2.5 text-xs">
                     <div className="rounded-xl border p-3">

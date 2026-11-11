@@ -30,7 +30,7 @@ import { ExportMenu } from "@/components/shared/ExportMenu";
 
 export default function DriverSalaryPage() {
   const { data: session } = useSession();
-  const driverName = session?.user?.name || "Ramesh Yadav";
+  const driverName = session?.user?.name || "Delivery Boy";
 
   // Mock driver profile details matching user model
   const monthlySalary = 18000;

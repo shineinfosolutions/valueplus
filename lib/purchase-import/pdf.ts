@@ -7,7 +7,7 @@
 // defined".
 import "./pdf-env";
 import { extractEmbeddedCode } from "./match-item";
-import { parseValuePlusRetailLines } from "./valueplus-retail";
+import { parseValuePlusRetailArLines, parseValuePlusRetailLines } from "./valueplus-retail";
 
 /**
  * Break one extracted text line into cells resolveRows() can read as
@@ -145,10 +145,26 @@ function extractSupplierInfo(text: string): ExtractedSupplier {
     }
   }
 
+  // The ARInvoice print has no "GSTIN/PAN :" with a value after it: the supplier's own line is "GSTIN : <15 chars>" and
+  // its company name sits a few lines around it (the buyer's name is far away from that line).
+  let gstin = gstinMatch ? gstinMatch[1].toUpperCase() : undefined;
+  if (!name) {
+    const at = lines.findIndex((l) => /^GSTIN\s*:\s*[0-9A-Z]{15}\s*$/i.test(l));
+    if (at !== -1) {
+      gstin = gstin || lines[at].replace(/^GSTIN\s*:\s*/i, "").trim().toUpperCase();
+      for (let i = Math.max(0, at - 4); i < Math.min(lines.length, at + 5); i++) {
+        if (nameSuffix.test(lines[i]) && !/^(name|bill to|contact no)\b/i.test(lines[i]) && !/website|www\./i.test(lines[i])) {
+          name = lines[i];
+          break;
+        }
+      }
+    }
+  }
+
   return {
     name,
     phone: phoneMatch ? phoneMatch[1] : undefined,
-    gstin: gstinMatch ? gstinMatch[1].toUpperCase() : undefined,
+    gstin,
   };
 }
 
@@ -243,7 +259,9 @@ export async function extractRowsFromPdf(
     // The distributor's own invoice layout is known exactly — read it as such
     // (full wrapped names, right qty/rate) before falling back to guessing.
     const knownLayoutGrid = parseValuePlusRetailLines(itemLines);
-    const grid = knownLayoutGrid || itemLines.map((line) => splitPdfTextLine(line));
+    // The other Value Plus Retail print ("ARInvoice"): description first, Amount last, serials inside the item.
+    const arLayout = knownLayoutGrid ? null : parseValuePlusRetailArLines(itemLines);
+    const grid = knownLayoutGrid || arLayout?.grid || itemLines.map((line) => splitPdfTextLine(line));
 
     // Column positions in this section aren't reliable as flat text (the
     // same reversed/merged-cell issue the item table has), so each unit's
@@ -262,7 +280,12 @@ export async function extractRowsFromPdf(
       textSerialGrid = [["Description", "Serial Number"], ...serialEntries.map((e) => [e.code, e.serial])];
     }
 
-    return { grid, serialGrid: textSerialGrid, usedTableExtraction: Boolean(knownLayoutGrid), rawText, supplier };
+    // That print has no separate serial page: each unit's serial is on its item.
+    if (textSerialGrid.length === 0 && arLayout && arLayout.serials.length > 0) {
+      textSerialGrid = [["Description", "Serial Number"], ...arLayout.serials.map((e) => [e.code, e.serial])];
+    }
+
+    return { grid, serialGrid: textSerialGrid, usedTableExtraction: Boolean(knownLayoutGrid || arLayout), rawText, supplier };
   } finally {
     await parser.destroy();
   }

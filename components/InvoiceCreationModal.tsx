@@ -14,7 +14,7 @@ import {
   XCircle, Phone, UserCheck, UserPlus, X, Shield, AlertTriangle, FileText, CheckCircle2, Truck, Clock, ChevronsDownUp, Wallet, Upload
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { BillingEntityPicker } from "@/components/shared/BillingEntityPicker";
+import { BillingEntityBadge, BillingEntityPicker } from "@/components/shared/BillingEntityPicker";
 import { AuthorizePinDialog, type PinAuthResult } from "@/components/AuthorizePinDialog";
 import { BILLING_ENTITIES, entityOf, entityLabel, type BillingEntity } from "@/lib/billing-entity";
 import { toast } from "sonner";
@@ -1213,6 +1213,24 @@ export function InvoiceCreationModal({
       return;
     }
 
+    // A product of the other company: the bill moves to that company, as long as no product of this bill's own
+    // company is already on it (a bill carries one company's products: its number series and GST depend on it).
+    const prodEntity = entityOf(prod);
+    if (billingEntity && prodEntity !== billingEntity) {
+      const ownLines = billingForm.lineItems.filter((line: any, i: number) => {
+        if (i === idx || !line.itemId) return false;
+        const lineProduct = catalogItems.find((cat: any) => cat._id === line.itemId);
+        return !!lineProduct && entityOf(lineProduct) === billingEntity;
+      });
+      if (ownLines.length > 0) {
+        toast.error(`"${prod.name}" belongs to ${entityLabel(prodEntity)}, but this bill already has ${entityLabel(billingEntity)} products. Make a separate bill for it.`);
+        return;
+      }
+      setBillingEntity(prodEntity);
+      setBillingForm((prev) => ({ ...prev, invoiceNo: "" }));
+      toast.info(`This bill is now for ${entityLabel(prodEntity)}.`);
+    }
+
     const updated = [...billingForm.lineItems];
     const itemVpCode = prod.vpCode || prod.code;
     const itemShowroomStock = prod.showroomStock !== undefined ? prod.showroomStock : (prod.currentStock || 0);
@@ -2084,7 +2102,7 @@ export function InvoiceCreationModal({
               question="Is this bill for Value Plus or Ashoka Enterprises?"
               hint={
                 billingEntity
-                  ? `Only ${entityLabel(billingEntity)} products are listed below. Changing this removes the other company's products from the bill.`
+                  ? `The product list opens with ${entityLabel(billingEntity)} products; searching also finds the other company's, and picking one moves this bill to that company (a bill carries one company's products).`
                   : "Choose one to start. The product list will show only that company's products."
               }
             />
@@ -2729,15 +2747,14 @@ export function InvoiceCreationModal({
                   const lineTotal = lineTaxable + lineGst + warrantyAmt;
 
                   const query = (item.name || "").toLowerCase().trim();
-                  // The product list is limited to the company this bill is for.
-                  const entityProducts = billingEntity
-                    ? catalogItems.filter((p: any) => entityOf(p) === billingEntity)
-                    : [];
+                  // The list opens with this bill's company; once something is typed, the other company's matching products are
+                  // shown too (marked with their company). Picking one of them moves the bill to that company.
+                  const matches = (p: any) => p.name.toLowerCase().includes(query) || (p.code || "").toLowerCase().includes(query) || (p.vpCode || "").toLowerCase().includes(query);
+                  const sameCompany = billingEntity ? catalogItems.filter((p: any) => entityOf(p) === billingEntity) : [];
+                  const otherCompany = billingEntity ? catalogItems.filter((p: any) => entityOf(p) !== billingEntity) : [];
                   const suggestions = query === ""
-                    ? entityProducts
-                    : entityProducts.filter(
-                        (p: any) => p.name.toLowerCase().includes(query) || (p.code || "").toLowerCase().includes(query) || (p.vpCode || "").toLowerCase().includes(query)
-                      );
+                    ? sameCompany
+                    : [...sameCompany.filter(matches), ...otherCompany.filter(matches)];
 
                   // Filter available serial numbers for this item with robust matching
                   const itNameLower = (item.name || "").toLowerCase().trim();
@@ -2944,6 +2961,7 @@ export function InvoiceCreationModal({
                                   >
                                     <div className="min-w-0 pr-3">
                                       <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                                        <BillingEntityBadge entity={entityOf(prod)} />
                                         <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-[#3F63AD]">{prod.category || "Electronics"}</span>
                                         <span className="text-[9px] font-mono font-bold text-slate-600">VP: {prod.vpCode || prod.code}</span>
                                         {prod.brand && (

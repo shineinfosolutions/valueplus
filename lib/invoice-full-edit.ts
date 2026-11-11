@@ -70,6 +70,7 @@ export function summariseInvoice(inv: any) {
   const pays = (inv.payments || []).map((p: any) => `${txt(p.mode)} ${money(p.amount)}${txt(p.txnId) ? ` (${txt(p.txnId)})` : ""}`);
   return {
     customer: `${txt(inv.customerName)} ${txt(inv.customerPhone)}`.trim(),
+    salesExecutive: txt(inv.salesExecutive),
     customerGST: txt(inv.customerGST),
     customerAddress: txt(inv.customerAddress),
     placeOfSupply: txt(inv.placeOfSupply),
