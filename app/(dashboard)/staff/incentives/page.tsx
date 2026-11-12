@@ -41,7 +41,8 @@ export default function SalesIncentivesPage() {
   const { data: session } = useSession();
   const userRole = ((session?.user as any)?.role || "admin").toLowerCase();
   const currentUserName = session?.user?.name || "Sales Executive";
-  const isIndividualSalesman = userRole === "salesman" || userRole === "cashier" || userRole === "sales";
+  // Salesmen, cashiers and managers see only their own incentive; the Admin (and HR) see everybody's, person by person.
+  const isIndividualSalesman = ["salesman", "cashier", "sales", "manager"].includes(userRole);
 
   const [search, setSearch] = useState("");
   const [selectedStaff, setSelectedStaff] = useState(isIndividualSalesman ? currentUserName : "all");
@@ -75,12 +76,9 @@ export default function SalesIncentivesPage() {
       const exec = (share.name || "Counter / Direct").trim();
 
       // If individual salesman, skip invoices not belonging to them
-      if (isIndividualSalesman) {
-        const firstName = currentUserName.toLowerCase().split(" ")[0];
-        if (!exec.toLowerCase().includes(firstName) && exec.toLowerCase() !== currentUserName.toLowerCase()) {
-          return;
-        }
-      }
+      // Each person sees only his own incentive: the full name must match (a first name alone would also pick up
+      // another "Amit").
+      if (isIndividualSalesman && normPerson(share.name) !== normPerson(currentUserName)) return;
 
       if (!map[exec]) {
         map[exec] = {
@@ -114,12 +112,7 @@ export default function SalesIncentivesPage() {
       const q = search.toLowerCase();
 
       // If individual salesman, only return the bills he has a part in (his own, or his lines on a shared bill)
-      if (isIndividualSalesman && !shareOf(inv, currentUserName)) {
-        const firstName = currentUserName.toLowerCase().split(" ")[0];
-        if (!exec.includes(firstName) && exec !== currentUserName.toLowerCase()) {
-          return false;
-        }
-      }
+      if (isIndividualSalesman && !shareOf(inv, currentUserName)) return false;
 
       const people = incentiveShares(inv).map((sh) => sh.name || "Counter / Direct");
       const matchesSearch = !search || exec.includes(q) || num.includes(q) || cust.includes(q) || people.some((n) => n.toLowerCase().includes(q));
