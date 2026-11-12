@@ -97,7 +97,7 @@ export function MobileBottomNav() {
           { label: "Home", href: "/dashboard", icon: LayoutDashboard },
           { label: "Godown", href: "/warehouse", icon: Warehouse },
           { isFab: true },
-          { label: "Dispatch", href: "/sales/dispatch", icon: Truck },
+          { label: "Delivery", href: "/sales/dispatch", icon: Truck },
           { label: "Menu", isMenu: true, icon: Menu },
         ];
       case "accounts":
@@ -121,7 +121,7 @@ export function MobileBottomNav() {
           { label: "Home", href: "/dashboard", icon: LayoutDashboard },
           { label: "Billing", href: "/sales/invoices", icon: Receipt },
           { isFab: true },
-          { label: "Dispatch", href: "/sales/dispatch", icon: Truck },
+          { label: "Delivery", href: "/sales/dispatch", icon: Truck },
           { label: "Menu", isMenu: true, icon: Menu },
         ];
       default: // admin

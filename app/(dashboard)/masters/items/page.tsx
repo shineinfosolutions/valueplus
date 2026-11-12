@@ -1,6 +1,8 @@
 "use client";
 
 import { MySalesOfProduct } from "@/components/masters/MySalesOfProduct";
+import { PriceAndIncentive } from "@/components/masters/PriceAndIncentive";
+import { CategoryBrandSearch } from "@/components/shared/CategoryBrandSearch";
 import { useState, useMemo, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -43,6 +45,7 @@ import { ItemIncentiveDialog } from "@/components/items/ItemIncentiveDialog";
 import { cleanRules, flatFieldsFor, liveRulesOf, rulesOf, ruleText } from "@/lib/incentive-rules";
 import { ProductReferenceImportModal } from "@/components/masters/ProductReferenceImportModal";
 import { VspSheetImportModal } from "@/components/masters/VspSheetImportModal";
+import { VpCodeImportModal } from "@/components/masters/VpCodeImportModal";
 import { BillingEntityBadge } from "@/components/shared/BillingEntityPicker";
 import { BILLING_ENTITY_LIST, entityOf } from "@/lib/billing-entity";
 import { BrandSelect } from "@/components/shared/brand-select";
@@ -122,6 +125,8 @@ function ItemsPageContent() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState(queryCategory || "all");
+  // The search box next to it picks a category or a brand.
+  const [brandFilter, setBrandFilter] = useState("all");
   // Value Plus / Ashoka Enterprises — which company's products to list.
   const [entityFilter, setEntityFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -162,6 +167,9 @@ function ItemsPageContent() {
   const canSetIncentive = ["admin", "superadmin", "manager", "cashier"].includes(userRole);
   const [productReferenceOpen, setProductReferenceOpen] = useState(false);
   const [vspImportOpen, setVspImportOpen] = useState(false);
+  const [vpCodeImportOpen, setVpCodeImportOpen] = useState(false);
+  // Putting VP codes on products from a sheet: the same people who can update prices from a sheet.
+  const canImportVpCodes = ["admin", "superadmin", "manager", "accounts"].includes(userRole);
   const [formSerials, setFormSerials] = useState<FormSerialItem[]>([]);
   const [newSerialInput, setNewSerialInput] = useState("");
   const [batchNoInput, setBatchNoInput] = useState("");
@@ -280,6 +288,7 @@ function ItemsPageContent() {
         (item.brand && item.brand.toLowerCase().includes(search.toLowerCase()));
       
       const matchCategory = categoryFilter === "all" || item.category === categoryFilter;
+      const matchBrand = brandFilter === "all" || String(item.brand || "").trim().toLowerCase() === brandFilter.toLowerCase();
 
       const showroomQty = Number(item.showroomStock ?? item.currentStock ?? 0);
       const godownQty = Number(item.godownStock ?? item.currentStock ?? 0);
@@ -306,9 +315,16 @@ function ItemsPageContent() {
 
       const matchEntity = entityFilter === "all" || entityOf(item) === entityFilter;
 
-      return matchSearch && matchCategory && matchLocation && matchStatus && matchEntity;
+      return matchSearch && matchCategory && matchBrand && matchLocation && matchStatus && matchEntity;
     });
-  }, [items, search, categoryFilter, stockLocationFilter, statusFilter, entityFilter]);
+  }, [items, search, categoryFilter, brandFilter, stockLocationFilter, statusFilter, entityFilter]);
+
+  // Names offered by the category / brand search box.
+  const categoryNames = useMemo(() => categories.map((c: any) => String(c.name || "").trim()).filter(Boolean), [categories]);
+  const brandNames = useMemo(
+    () => Array.from(new Set((Array.isArray(items) ? items : []).map((i: any) => String(i?.brand || "").trim()).filter(Boolean))) as string[],
+    [items]
+  );
 
   const paginated = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
   const totalPages = Math.ceil(filtered.length / PER_PAGE);
@@ -663,6 +679,17 @@ function ItemsPageContent() {
             >
               <UploadCloud className="w-3.5 h-3.5 mr-1.5" /> Update Prices from Sheet
             </Button>
+            {canImportVpCodes && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setVpCodeImportOpen(true)}
+                className="text-xs border-sky-300 text-sky-700 hover:bg-sky-50"
+                title="Upload a sheet with VP code and product name to put the VP codes on the products"
+              >
+                <UploadCloud className="w-3.5 h-3.5 mr-1.5" /> Import VP Codes
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"
@@ -859,16 +886,18 @@ function ItemsPageContent() {
               </SelectContent>
             </Select>
 
-            {/* Category Filter */}
-            <Select value={categoryFilter} onValueChange={(v) => { setCategoryFilter(v); setPage(1); }}>
-              <SelectTrigger className="w-[calc(50%-0.25rem)] sm:w-40 bg-white">
-                <SelectValue placeholder="Category" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Categories</SelectItem>
-                {categories.map((c: any) => <SelectItem key={c._id || c.id || c.name} value={c.name}>{c.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            {/* Category / brand: type to search, pick one */}
+            <CategoryBrandSearch
+              className="w-[calc(50%-0.25rem)] sm:w-64"
+              categories={categoryNames}
+              brands={brandNames}
+              value={categoryFilter !== "all" ? { type: "category", name: categoryFilter } : brandFilter !== "all" ? { type: "brand", name: brandFilter } : null}
+              onChange={(c) => {
+                setCategoryFilter(c?.type === "category" ? c.name : "all");
+                setBrandFilter(c?.type === "brand" ? c.name : "all");
+                setPage(1);
+              }}
+            />
 
             {/* Status Filter */}
             <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1); }}>
@@ -1936,6 +1965,7 @@ function ItemsPageContent() {
                     <p className="font-bold text-emerald-700">{formatCurrency(viewingItem?.vsp || viewingItem?.sellingPrice || 0)}</p>
                   </div>
                 </div>
+                {!isFullViewer && viewingItem && <PriceAndIncentive item={viewingItem} role={userRole} />}
               </div>
             </div>
             
@@ -2162,6 +2192,12 @@ function ItemsPageContent() {
       <ProductReferenceImportModal
         open={productReferenceOpen}
         onOpenChange={setProductReferenceOpen}
+      />
+
+      <VpCodeImportModal
+        open={vpCodeImportOpen}
+        onOpenChange={setVpCodeImportOpen}
+        onApplied={() => queryClient.invalidateQueries({ queryKey: ["items"] })}
       />
 
       <VspSheetImportModal

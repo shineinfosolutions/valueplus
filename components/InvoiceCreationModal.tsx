@@ -787,6 +787,27 @@ export function InvoiceCreationModal({
       lineItems: newItems,
     }));
 
+    // A finance sale sent with its DO: the bill opens with the finance company, DO number, down payment and loan terms.
+    if (est.financeProvider || est.financeDoData || (Array.isArray(est.financePdfUrls) && est.financePdfUrls.length > 0)) {
+      setBillingForm((prev: any) => ({
+        ...prev,
+        ...(est.financeDoData ? { financeDoData: est.financeDoData } : {}),
+        ...(est.financeProvider ? { financeProvider: est.financeProvider } : {}),
+        ...(est.financeDoId ? { financeDoId: est.financeDoId } : {}),
+        ...(est.financeAppId ? { financeAppId: est.financeAppId } : {}),
+        ...(Number(est.financeDownPayment) > 0 ? { financeDownPayment: Number(est.financeDownPayment) } : {}),
+        ...(Number(est.financeTenureMonths) > 0 ? { financeTenureMonths: Number(est.financeTenureMonths) } : {}),
+        ...(Number(est.financeInterestRate) > 0 ? { financeInterestRate: Number(est.financeInterestRate) } : {}),
+        ...(Array.isArray(est.financePdfUrls) && est.financePdfUrls.length > 0
+          ? { financePdfUrls: est.financePdfUrls, financePdfUrl: est.financePdfUrls[0] }
+          : est.financePdfUrl ? { financePdfUrls: [est.financePdfUrl], financePdfUrl: est.financePdfUrl } : {}),
+        financeApprovalStatus: "Approved",
+        // The cashier's bill becomes a Finance bill; the salesman's own estimate keeps its payment mode.
+        ...(mode === "invoice" ? { paymentMode: "Finance" } : {}),
+      }));
+      if (est.financeDoData) setDoRead({ data: est.financeDoData, existing: null, missing: [], fileName: "the DO sent by the salesman" });
+    }
+
     if (Number(est.paidAmount || est.advanceAmount || 0) > 0) {
       setApplyAdvanceCredit(true);
       setCustomAdvanceAdjusted(Number(est.paidAmount || est.advanceAmount));
@@ -1318,6 +1339,20 @@ export function InvoiceCreationModal({
               advanceMode: payload.paymentMode !== "N/A" ? payload.paymentMode : "",
               advanceTxnRef: payload.paymentMode !== "N/A" ? billingForm.upiTxnId || billingForm.creditCardTxnId || billingForm.debitCardTxnId || billingForm.onlineTxnId || "" : "",
               kind: billRequest || editEstimate?.kind === "bill" ? "bill" : "estimate",
+              // A finance sale: the DO the salesman uploaded goes with the bill, so the cashier's invoice opens filled in.
+              ...((billRequest || editEstimate?.kind === "bill") && (billingForm.financeDoData || billingForm.financeProvider || (billingForm.financePdfUrls || []).length > 0)
+                ? {
+                    financeProvider: billingForm.financeProvider || "",
+                    financeDoId: billingForm.financeDoId || "",
+                    financeAppId: billingForm.financeAppId || "",
+                    financeDownPayment: Number(billingForm.financeDownPayment) || 0,
+                    financeTenureMonths: Number(billingForm.financeTenureMonths) || 0,
+                    financeInterestRate: Number(billingForm.financeInterestRate) || 0,
+                    financePdfUrl: (billingForm.financePdfUrls || [])[0] || billingForm.financePdfUrl || "",
+                    financePdfUrls: billingForm.financePdfUrls || [],
+                    financeDoData: billingForm.financeDoData || undefined,
+                  }
+                : {}),
               priceUnlockPin: unlockPinRef.current || undefined,
             }),
           });
@@ -1418,7 +1453,7 @@ export function InvoiceCreationModal({
     },
     onError: (error: any, variables: any) => {
       if (error?.discountApproval) {
-        // A discount above 5% needs the Cashier's / Store Manager's / Admin's approval: ask, wait, then save again.
+        // A discount above 7% needs the Cashier's / Store Manager's / Admin's approval: ask, wait, then save again.
         askDiscountApproval(variables);
         return;
       }
@@ -1650,7 +1685,7 @@ export function InvoiceCreationModal({
         ...(d.interestRate ? { financeInterestRate: d.interestRate } : {}),
         financeApprovalStatus: "Approved",
         // A split bill keeps its own payment rows; a plain bill becomes a Finance bill.
-        ...(isSplitPayment ? {} : { paymentMode: "Finance" }),
+        ...(isSplitPayment || mode === "estimate" ? {} : { paymentMode: "Finance" }),
       }));
       // The mobile number also finds an existing customer (and then that customer's saved details are used).
       if (d.customerPhone) handlePhoneLookup(String(d.customerPhone).replace(/\D/g, "").slice(-10));
@@ -2114,7 +2149,7 @@ export function InvoiceCreationModal({
               aria-disabled={!billingEntity}
             >
             {/* DO UPLOAD: for a finance sale, the DO fills the customer, finance company, DO number, down payment and loan terms. */}
-            {mode === "invoice" && !isEditingInvoice && (() => {
+            {((mode === "invoice" && !isEditingInvoice) || (mode === "estimate" && billRequest)) && (() => {
               const d = doRead?.data;
               const hasProducts = billingForm.lineItems.some((it: any) => it.name);
               const priceGap = d && d.productPrice > 0 && hasProducts ? Math.abs(billCalculations.grandTotal - d.productPrice) : 0;
@@ -4268,7 +4303,7 @@ export function InvoiceCreationModal({
           <DialogHeader>
             <DialogTitle>Waiting for discount approval</DialogTitle>
             <DialogDescription>
-              The discount was sent for approval: the Cashier (5–10%), the Store Manager (10–12%) or the Admin (above 12%). This bill is saved by itself as soon as they approve.
+              The discount was sent for approval: the Cashier (8–10%), the Store Manager (11–12%) or the Admin (13% and above). This bill is saved by itself as soon as they approve.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">

@@ -22,6 +22,8 @@ const EDITABLE_FIELDS = [
   "customerName", "customerPhone", "customerAddress", "customerGST", "customerCompanyName",
   "date", "expiryDate", "items", "subTotal", "taxTotal", "total", "notes",
   "advanceAmount", "advanceMode", "advanceTxnRef",
+  "financeProvider", "financeDoId", "financeAppId", "financeDownPayment", "financeTenureMonths", "financeInterestRate",
+  "financePdfUrl", "financePdfUrls", "financeDoData",
 ];
 const num0 = (v: any) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 

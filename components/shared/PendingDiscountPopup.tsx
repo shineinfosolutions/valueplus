@@ -12,8 +12,8 @@ import { formatCurrency } from "@/lib/utils";
 import { playNotificationSound } from "@/lib/notification-sound";
 
 /**
- * Pops up for whoever can decide a discount request — the Cashier (above 5%, below 10%), the Store Manager (up to
- * 12%) and the Admin (all) — when someone asks for a discount above 5% below a product's selling price: who asked, the product and brand, the percent and the amount.
+ * Pops up for whoever can decide a discount request — the Cashier (above 7%, up to 10%), the Store Manager (up to
+ * 12%) and the Admin (all) — when someone asks for a discount above 7% below a product's selling price: who asked, the product and brand, the percent and the amount.
  * Checked the moment a discount request is sent or decided (live-update socket), since the person at the counter is waiting.
  */
 export function PendingDiscountPopup() {
@@ -87,7 +87,7 @@ export function PendingDiscountPopup() {
                 <div><p className="text-slate-500">Offered</p><p className="font-bold">{formatCurrency(r.price)}</p></div>
                 <div><p className="text-slate-500">Less (total)</p><p className="font-bold text-rose-700">{formatCurrency((r.sellingPrice - r.price) * (r.quantity || 1))}</p></div>
               </div>
-              <p className="mt-1 text-xs">Requested by <b>{r.requestedBy}</b> <span className="capitalize text-slate-500">({r.requestedByRole})</span>{r.tier === "admin" ? " · above 12%, Admin only" : r.tier === "manager" ? " · 10–12%, Store Manager" : " · 5–10%, Cashier"}</p>
+              <p className="mt-1 text-xs">Requested by <b>{r.requestedBy}</b> <span className="capitalize text-slate-500">({r.requestedByRole})</span>{r.tier === "admin" ? " · above 12%, Admin only" : r.tier === "manager" ? " · 11–12%, Store Manager" : " · 8–10%, Cashier"}</p>
               <div className="mt-2 flex gap-2">
                 <Button size="sm" className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700" onClick={() => decide(r, "approve")}>Approve</Button>
                 <Button size="sm" variant="outline" className="h-7 text-xs text-rose-700 border-rose-300" onClick={() => decide(r, "reject")}>Reject</Button>

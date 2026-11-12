@@ -3,12 +3,14 @@ import connectDB from "@/lib/db";
 import Invoice from "@/models/Invoice";
 import DeliveryChallan from "@/models/DeliveryChallan";
 import { getActor } from "@/lib/requirePermission";
+import { markOutForDelivery } from "@/lib/delivery-dispatch";
+import AuditLog from "@/models/AuditLog";
 
 export async function POST(req: NextRequest) {
   try {
     await connectDB();
     const body = await req.json();
-    const { action, invoiceNumber, challanNo, otp, driverName, driverPhone, vehicleNo } = body;
+    const { action, invoiceNumber, challanNo, otp, driverName, driverPhone, vehicleNo, skipReason } = body;
 
     if (!invoiceNumber && !challanNo) {
       return NextResponse.json({ success: false, error: "Invoice Number or Challan Number is required" }, { status: 400 });
@@ -23,51 +25,43 @@ export async function POST(req: NextRequest) {
 
     // ─── ACTION: OUT FOR DELIVERY ─────────────────────────────────────
     if (action === "out_for_delivery") {
-      // Bajaj Finance asks for the vehicle on the delivery; no other bill needs one.
-      if (/bajaj/i.test(String(invoice?.financeProvider || "")) && !String(vehicleNo || invoice?.driverVehicleNo || "").trim()) {
-        return NextResponse.json(
-          { success: false, error: "Vehicle number is compulsory for a Bajaj Finance delivery." },
-          { status: 400 }
-        );
+      const actor = await getActor();
+      if (!actor) return NextResponse.json({ success: false, error: "You must be signed in to do this." }, { status: 401 });
+      if (!["admin", "superadmin", "manager", "cashier", "warehouse"].includes(actor.role)) {
+        return NextResponse.json({ success: false, error: "Only the cashier, Store Manager, Admin or godown can send a bill out for delivery." }, { status: 403 });
       }
-      const generatedOtp = invoice?.deliveryOtp || challan?.deliveryOtp || Math.floor(1000 + Math.random() * 9000).toString();
-      
+      // The goods must be scanned and photographed on the way out ("Take out") before a bill goes Out for Delivery.
+      // A bill already out for delivery can be re-assigned (driver / vehicle) without a new scan. The Admin or Store
+      // Manager can skip the scan, with a reason that is kept on record.
       if (invoice) {
-        invoice.deliveryStatus = "out_for_delivery";
-        invoice.deliveryOtp = generatedOtp;
-        if (driverName) invoice.driverName = driverName;
-        if (driverPhone) invoice.driverPhone = driverPhone;
-        if (vehicleNo) invoice.driverVehicleNo = vehicleNo;
-        await invoice.save();
-      }
-
-      if (challan) {
-        challan.status = "in-transit";
-        challan.deliveryOtp = generatedOtp;
-        if (driverName) challan.driverName = driverName;
-        if (driverPhone) challan.driverPhone = driverPhone;
-        if (vehicleNo) challan.vehicleNo = vehicleNo;
-        await challan.save();
-      }
-
-      const invNo = invoice?.invoiceNumber || challan?.invoiceNumber || challanNo;
-      const trackingUrl = `/track/${invNo}`;
-
-      return NextResponse.json({
-        success: true,
-        message: "Status updated to Out For Delivery",
-        data: {
-          invoiceNumber: invNo,
-          deliveryStatus: "out_for_delivery",
-          otp: generatedOtp,
-          driverName: driverName || invoice?.driverName || "Delivery Boy",
-          driverPhone: driverPhone || invoice?.driverPhone || "",
-          vehicleNo: vehicleNo || invoice?.driverVehicleNo || "",
-          customerPhone: invoice?.customerPhone || challan?.customerPhone || "",
-          customerName: invoice?.customerName || challan?.destinationParty || "Customer",
-          trackingUrl,
+        const alreadyOut = ["out_for_delivery", "in-transit"].includes(String((invoice as any).deliveryStatus));
+        const scanned = !!(invoice as any).storeExit?.completedAt;
+        if (!alreadyOut && !scanned) {
+          const reason = String(skipReason || "").trim();
+          if (!["admin", "superadmin", "manager"].includes(actor.role) || reason.length < 3) {
+            return NextResponse.json(
+              { success: false, error: "Take the goods out first: scan every product and take its photos (the Take out button). Only the Admin or Store Manager can skip this, with a reason." },
+              { status: 403 }
+            );
+          }
+          await AuditLog.create({
+            action: "dispatch.scan.skipped",
+            entityType: "Invoice",
+            entityRef: String((invoice as any).invoiceNumber),
+            entityId: String((invoice as any)._id),
+            partyName: (invoice as any).customerName || "",
+            amount: Number((invoice as any).total) || 0,
+            reason,
+            performedBy: actor.name,
+            performedByUserId: actor.id,
+            performedByRole: actor.role,
+            pinVerified: false,
+          }).catch(() => {});
         }
-      });
+      }
+      const result = await markOutForDelivery(invoice, challan, { driverName, driverPhone, vehicleNo, fallbackNumber: challanNo });
+      if (!result.ok) return NextResponse.json({ success: false, error: result.error }, { status: result.status });
+      return NextResponse.json({ success: true, message: "Status updated to Out For Delivery", data: result.data });
     }
 
     // ─── ACTION: RECEIVED BY SELF ─────────────────────────────────────

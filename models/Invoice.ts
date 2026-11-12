@@ -219,6 +219,16 @@ export interface IInvoice extends Document {
   deliveryProofAt?: Date | string;
   deliveryProofBy?: string;
   deliveredAt?: Date | string;
+  /** The product check when the goods leave the store: per product line a serial-number scan (its photo first) and
+   *  front / back / side photos, then how they left (customer in person, or sent for delivery). */
+  storeExit?: {
+    lines: { lineIndex: number; itemName: string; serial: string; serialMatched: boolean; photoKeys: string[]; by: string; at: Date | string }[];
+    mode?: "self" | "delivery";
+    takenByName?: string;
+    takenByPhone?: string;
+    completedBy?: string;
+    completedAt?: Date | string;
+  };
 
   deliveryChallanNo?: string;
   creditNoteRef?: string;
@@ -438,6 +448,7 @@ const InvoiceSchema = new Schema<IInvoice>(
     deliveryProofAt: { type: Date },
     deliveryProofBy: { type: String, default: "" },
     deliveredAt: { type: Date },
+    storeExit: { type: mongoose.Schema.Types.Mixed, default: undefined },
 
     deliveryChallanNo: String,
     creditNoteRef: String,

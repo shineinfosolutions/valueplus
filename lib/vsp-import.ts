@@ -76,6 +76,9 @@ const MODEL_HEADER_FALLBACK = /^(model\s*(no\.?|number|code)|product|product\s*(
 // description ("VOLTAS CVF191SA3-P-GE"); the model is read out of that text.
 const DESCRIPTION_HEADER = /^(material\s*)?desc(ription)?$/i;
 const isModelHeader = (c: string) => MODEL_HEADER.test(c) || MODEL_HEADER_FALLBACK.test(c) || DESCRIPTION_HEADER.test(c);
+// Some tabs (e.g. Lloyd washing machines and refrigerators) have no model column, only the brand's material code
+// ("GLWS705ARDVG"), which is the model. Used only when a tab has none of the columns above.
+const MATERIAL_HEADER = /^material(\s*code)?$/i;
 
 /**
  * Model numbers found in free text: every word that has both letters and digits and
@@ -106,7 +109,8 @@ export function parseVspWorkbook(data: Buffer | ArrayBuffer | Uint8Array): { row
 
     // The header is the first row that names a model column ("Model", or
     // "Product" / "Model No."); a tab without one is reported, not guessed at.
-    const headerIndex = grid.findIndex((r) => r.some((c) => isModelHeader(clean(c))));
+    let headerIndex = grid.findIndex((r) => r.some((c) => isModelHeader(clean(c))));
+    if (headerIndex < 0) headerIndex = grid.findIndex((r) => r.some((c) => MATERIAL_HEADER.test(clean(c))));
     if (headerIndex < 0) {
       notes.push({ sheet, message: `Sheet "${sheet}" was skipped: it has no "Model" or "Product" column.` });
       continue;
@@ -129,10 +133,20 @@ export function parseVspWorkbook(data: Buffer | ArrayBuffer | Uint8Array): { row
       modelIndexes = header.map((c, i) => (MODEL_HEADER_FALLBACK.test(c) ? i : -1)).filter((i) => i >= 0);
     }
     const descIndexes = header.map((c, i) => (DESCRIPTION_HEADER.test(c) ? i : -1)).filter((i) => i >= 0);
+    if (modelIndexes.length === 0 && descIndexes.length === 0) {
+      modelIndexes = header.map((c, i) => (MATERIAL_HEADER.test(c) ? i : -1)).filter((i) => i >= 0);
+    }
     const sapIndex = header.findIndex((c) => /sap\s*code/i.test(c) || /^vp\s*code$/i.test(c));
     const codeIndexes = header
       .map((c, i) => (/sap\s*code|^vp\s*code$|^material\s*code$/i.test(c) ? i : -1))
       .filter((i) => i >= 0);
+    // A tab whose first column holds VP codes under a wrong heading ("Status"): read that column as the code column.
+    if (!codeIndexes.some((i) => /sap\s*code|^vp\s*code$/i.test(header[i]))) {
+      const firstCells = grid.slice(headerIndex + 1).map((r) => clean(r[0]).toUpperCase()).filter(Boolean);
+      if (firstCells.length >= 3 && firstCells.filter((v) => /^VP\d{6,8}$/.test(v)).length >= firstCells.length * 0.5 && !codeIndexes.includes(0)) {
+        codeIndexes.push(0);
+      }
+    }
 
     for (let i = headerIndex + 1; i < grid.length; i++) {
       const row = grid[i];

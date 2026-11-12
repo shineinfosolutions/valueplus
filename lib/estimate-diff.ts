@@ -46,7 +46,13 @@ export function estimateFieldChanged(field: string, saved: any, incoming: any): 
     case "taxTotal":
     case "total":
     case "advanceAmount":
+    case "financeDownPayment":
+    case "financeTenureMonths":
+    case "financeInterestRate":
       return Math.abs(num(saved) - num(incoming)) > 0.5;
+    case "financePdfUrls":
+    case "financeDoData":
+      return JSON.stringify(saved ?? null) !== JSON.stringify(incoming ?? null);
     case "notes":
       return note(saved) !== note(incoming);
     default:

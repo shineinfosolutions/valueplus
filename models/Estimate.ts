@@ -45,6 +45,16 @@ export interface IEstimate extends Document {
   advanceAmount?: number;
   advanceMode?: string;
   advanceTxnRef?: string;
+  /** A finance sale: the DO the salesman uploaded and what was read from it, so the cashier's bill opens filled in. */
+  financeProvider?: string;
+  financeDoId?: string;
+  financeAppId?: string;
+  financeDownPayment?: number;
+  financeTenureMonths?: number;
+  financeInterestRate?: number;
+  financePdfUrl?: string;
+  financePdfUrls?: string[];
+  financeDoData?: any;
   priceUnlock?: {
     by: string;
     byRole: string;
@@ -95,6 +105,15 @@ const EstimateSchema = new Schema<IEstimate>(
     advanceAmount: { type: Number, default: 0 },
     advanceMode: { type: String, default: "" },
     advanceTxnRef: { type: String, default: "" },
+    financeProvider: { type: String, default: "" },
+    financeDoId: { type: String, default: "" },
+    financeAppId: { type: String, default: "" },
+    financeDownPayment: { type: Number, default: 0 },
+    financeTenureMonths: { type: Number, default: 0 },
+    financeInterestRate: { type: Number, default: 0 },
+    financePdfUrl: { type: String, default: "" },
+    financePdfUrls: { type: [String], default: [] },
+    financeDoData: { type: Schema.Types.Mixed, default: undefined },
     priceUnlock: {
       type: new Schema(
         {

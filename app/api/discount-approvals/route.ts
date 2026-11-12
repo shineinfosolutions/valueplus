@@ -11,7 +11,7 @@ const inr = (n: number) => `₹${Number(n).toLocaleString("en-IN", { maximumFrac
 
 /**
  * GET ?ids=a,b           -> the status of the person's own requests (the form waits on these)
- * GET ?status=pending    -> requests this person may decide (Cashier: 5–10%; Store Manager: 5–12%; Admin: all)
+ * GET ?status=pending    -> requests this person may decide (Cashier: 7–10%; Store Manager: 7–12%; Admin: all)
  */
 export async function GET(req: Request) {
   try {

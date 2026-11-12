@@ -189,8 +189,8 @@ export async function POST(req: Request) {
         body.salesperson = body.salesExecutive;
       }
     }
-    // A discount above 5% below the product's selling price needs approval: the Cashier (below 10%), the Store
-    // Manager (10–12%) or the Admin (above 12%) — see lib/discount-approval.ts. An estimate is checked by the Estimates API; a bill made from an approved
+    // A discount above 7% below the product's selling price needs approval: the Cashier (up to 10%), the Store
+    // Manager (up to 12%) or the Admin (above 12%) — see lib/discount-approval.ts. An estimate is checked by the Estimates API; a bill made from an approved
     // bill is covered for the lines at the same price. An offline bill cannot wait for an answer.
     if (postActor && body.type !== "proforma" && !body.offlineId && (!body.type || body.type === "tax-invoice")) {
       const linkedForDiscount: any = body.linkedEstimateNumber ? await Estimate.findOne({ estimateNumber: body.linkedEstimateNumber }).lean() : null;

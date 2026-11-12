@@ -36,17 +36,24 @@ import { TableShimmer } from "@/components/shared/shimmer-skeleton";
 import { ExportMenu } from "@/components/shared/ExportMenu";
 import { CameraCapture } from "@/components/shared/CameraCapture";
 import { openWhatsApp } from "@/lib/whatsapp-open";
+import { TakeOutList } from "@/components/delivery/TakeOutList";
+import { useQueryClient } from "@tanstack/react-query";
+import { StoreExitPhotos } from "@/components/delivery/StoreExitPhotos";
 
 /** A bill financed through Bajaj Finance: its delivery must carry a vehicle number. */
 const isBajajBill = (inv: any) => /bajaj/i.test(String(inv?.financeProvider || ""));
 
 export default function OrderDispatchHubPage() {
   const { data: dispatchSession } = useSession();
+  const queryClient = useQueryClient();
   const viewerRole = String((dispatchSession?.user as any)?.role || "").toLowerCase();
   const [invoices, setInvoices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
+  // "todo" = bills still to take out of the store (scan + photos); then Out For Delivery and Delivered.
+  const [statusFilter, setStatusFilter] = useState("todo");
+  // Admin / Manager only: why a bill goes out for delivery without the store scan.
+  const [skipReason, setSkipReason] = useState("");
   const [dateFilter, setDateFilter] = useState("This Month");
   const [dateRange, setDateRange] = useState(() => resolveDateRange("This Month"));
 
@@ -108,7 +115,8 @@ export default function OrderDispatchHubPage() {
         inv.deliveryStatus === "out_for_delivery" ||
         inv.deliveryStatus === "in-transit" ||
         Boolean(inv.deliveryOtp && inv.dispatchType !== "immediate") ||
-        Boolean(inv.deliveryChallanNo && inv.dispatchType !== "immediate");
+        Boolean(inv.deliveryChallanNo && inv.dispatchType !== "immediate") ||
+        Boolean(inv.storeExit?.completedAt);
       return isDelayed;
     });
   }, [invoices]);
@@ -131,7 +139,10 @@ export default function OrderDispatchHubPage() {
 
       // Status filter
       const curStatus = inv.deliveryStatus || "pending_dispatch";
-      const matchStatus = statusFilter === "all" || curStatus === statusFilter;
+      const matchStatus =
+        statusFilter === "all" ||
+        curStatus === statusFilter ||
+        (statusFilter === "out_for_delivery" && curStatus === "in-transit");
 
       // The date filter is only for the Delivered list (when it was delivered); every other list shows everything.
       const matchDate = statusFilter !== "delivered" || isDateInRange(inv.deliveredAt || inv.date, dateRange.start, dateRange.end);
@@ -160,8 +171,15 @@ export default function OrderDispatchHubPage() {
     setDriverName(inv.driverName || "");
     setDriverPhone(inv.driverPhone || "");
     setVehicleNo(inv.driverVehicleNo || inv.vehicleNumber || "");
+    setSkipReason("");
     setDispatchModalOpen(true);
   };
+
+  // A bill that is not out yet and was never taken out through the scan: only the Admin / Manager can send it, with a reason.
+  const needsSkipReason =
+    !!activeDispatchItem &&
+    !["out_for_delivery", "in-transit"].includes(String(activeDispatchItem.deliveryStatus)) &&
+    !activeDispatchItem.storeExit?.completedAt;
 
   // Action: Confirm Out for Delivery
   const handleConfirmDispatch = async () => {
@@ -179,6 +197,10 @@ export default function OrderDispatchHubPage() {
       toast.error("Vehicle number is compulsory for a Bajaj Finance delivery.");
       return;
     }
+    if (needsSkipReason && skipReason.trim().length < 3) {
+      toast.error("This bill was not scanned. Write the reason for sending it without the scan.");
+      return;
+    }
 
     setIsSubmittingDispatch(true);
     try {
@@ -191,6 +213,7 @@ export default function OrderDispatchHubPage() {
           driverName: driverName.trim(),
           driverPhone: driverPhone.trim(),
           vehicleNo: vehicleNo.trim(),
+          skipReason: needsSkipReason ? skipReason.trim() : undefined,
         }),
       });
       const json = await res.json();
@@ -198,6 +221,7 @@ export default function OrderDispatchHubPage() {
         toast.success("🚚 Order marked Out For Delivery!");
         setDispatchModalOpen(false);
         fetchOrders();
+        queryClient.invalidateQueries({ queryKey: ["store-exit"] });
 
         // Send the customer the WhatsApp message: the WhatsApp app if it is on this computer, else WhatsApp Web.
         const trackUrl = `${window.location.origin}/track/${activeDispatchItem.invoiceNumber}`;
@@ -299,13 +323,11 @@ export default function OrderDispatchHubPage() {
     }
   };
 
-  // The dispatch and delivery screen is for the cashier, Store Manager, Admin (and the godown); not the salesman.
+  // The salesman takes his own bills out of the store (scan + photos); the rest of this screen is not his.
   if (["salesman", "sales"].includes(viewerRole)) {
     return (
-      <PageShell title="Order Dispatch & Deliveries">
-        <div className="max-w-xl rounded-xl border border-amber-200 bg-amber-50/70 p-4 text-xs text-amber-900">
-          Order dispatch and deliveries are handled by the cashier, Store Manager and Admin.
-        </div>
+      <PageShell title="Out for Delivery" subtitle="Before goods leave the store: scan each product's serial barcode and take its front, back and side photos, then send it for delivery or hand it to the customer.">
+        <TakeOutList />
       </PageShell>
     );
   }
@@ -319,14 +341,14 @@ export default function OrderDispatchHubPage() {
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-black tracking-tight text-slate-900 flex items-center gap-2">
                 <Truck className="w-6 h-6 text-[#30539C]" />
-                Customer Order Dispatch & Delivery Hub
+                Out for Delivery
               </h1>
               <Badge className="bg-blue-100 text-[#30539C] border-blue-200 font-bold text-xs">
                 Store Manager & Godown
               </Badge>
             </div>
             <p className="text-xs text-slate-500 mt-1">
-              Manage home deliveries, assign driver details, trigger WhatsApp live tracking, and verify delivery via customer OTP.
+              Take goods out of the store (scan and photos), send them for delivery with the driver, OTP and WhatsApp tracking, or hand them to the customer, and verify delivery with the customer OTP.
             </p>
           </div>
 
@@ -357,60 +379,46 @@ export default function OrderDispatchHubPage() {
           </div>
         </div>
 
-        {/* ─── STATS CARDS ──────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div 
-            onClick={() => setStatusFilter("all")}
-            className={cn(
-              "p-3.5 rounded-2xl border bg-white shadow-xs cursor-pointer transition-all hover:shadow-md",
-              statusFilter === "all" ? "ring-2 ring-[#30539C] border-[#30539C]" : "border-slate-200"
-            )}
-          >
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Total Shipments</span>
-            <span className="font-mono text-2xl font-black text-slate-900 mt-1 block">{metrics.total}</span>
-          </div>
-
-          <div 
-            onClick={() => setStatusFilter("pending_dispatch")}
-            className={cn(
-              "p-3.5 rounded-2xl border bg-white shadow-xs cursor-pointer transition-all hover:shadow-md",
-              statusFilter === "pending_dispatch" ? "ring-2 ring-amber-500 border-amber-500" : "border-slate-200"
-            )}
-          >
-            <span className="text-[11px] font-bold text-amber-700 uppercase tracking-wider block flex items-center gap-1">
-              <Clock className="w-3.5 h-3.5" /> Pending Dispatch
-            </span>
-            <span className="font-mono text-2xl font-black text-amber-600 mt-1 block">{metrics.pending}</span>
-          </div>
-
-          <div 
-            onClick={() => setStatusFilter("out_for_delivery")}
-            className={cn(
-              "p-3.5 rounded-2xl border bg-white shadow-xs cursor-pointer transition-all hover:shadow-md",
-              statusFilter === "out_for_delivery" ? "ring-2 ring-blue-600 border-blue-600" : "border-slate-200"
-            )}
-          >
-            <span className="text-[11px] font-bold text-blue-700 uppercase tracking-wider block flex items-center gap-1">
-              <Truck className="w-3.5 h-3.5" /> Out For Delivery
-            </span>
-            <span className="font-mono text-2xl font-black text-blue-600 mt-1 block">{metrics.out}</span>
-          </div>
-
-          <div 
-            onClick={() => setStatusFilter("delivered")}
-            className={cn(
-              "p-3.5 rounded-2xl border bg-white shadow-xs cursor-pointer transition-all hover:shadow-md",
-              statusFilter === "delivered" ? "ring-2 ring-emerald-600 border-emerald-600" : "border-slate-200"
-            )}
-          >
-            <span className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider block flex items-center gap-1">
-              <CheckCircle2 className="w-3.5 h-3.5" /> Delivered (Completed)
-            </span>
-            <span className="font-mono text-2xl font-black text-emerald-600 mt-1 block">{metrics.delivered}</span>
-          </div>
+        {/* ─── TABS: to take out / out for delivery / delivered ───────── */}
+        <div className="grid grid-cols-3 gap-3">
+          {[
+            { key: "todo", label: "To take out", icon: Clock, color: "amber", count: null as number | null },
+            { key: "out_for_delivery", label: "Out For Delivery", icon: Truck, color: "blue", count: metrics.out },
+            { key: "delivered", label: "Delivered", icon: CheckCircle2, color: "emerald", count: metrics.delivered },
+          ].map((t) => (
+            <div
+              key={t.key}
+              onClick={() => setStatusFilter(t.key)}
+              className={cn(
+                "p-3.5 rounded-2xl border bg-white shadow-xs cursor-pointer transition-all hover:shadow-md",
+                statusFilter === t.key
+                  ? t.color === "amber" ? "ring-2 ring-amber-500 border-amber-500" : t.color === "blue" ? "ring-2 ring-blue-600 border-blue-600" : "ring-2 ring-emerald-600 border-emerald-600"
+                  : "border-slate-200"
+              )}
+            >
+              <span className={cn("text-[11px] font-bold uppercase tracking-wider flex items-center gap-1", t.color === "amber" ? "text-amber-700" : t.color === "blue" ? "text-blue-700" : "text-emerald-700")}>
+                <t.icon className="w-3.5 h-3.5" /> {t.label}
+              </span>
+              {t.count !== null && (
+                <span className={cn("font-mono text-2xl font-black mt-1 block", t.color === "blue" ? "text-blue-600" : "text-emerald-600")}>{t.count}</span>
+              )}
+            </div>
+          ))}
         </div>
 
+        {/* ─── TO TAKE OUT: scan + photos, then delivery or the customer takes it ─── */}
+        {statusFilter === "todo" && (
+          <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-xs">
+            <TakeOutList
+              tabs={["todo"]}
+              onChanged={fetchOrders}
+              onSkipScan={["admin", "superadmin", "manager"].includes(viewerRole) ? (b) => handleOpenDispatch(invoices.find((i) => i.invoiceNumber === b.invoiceNumber) || b) : undefined}
+            />
+          </div>
+        )}
+
         {/* ─── SEARCH & FILTER BAR ──────────────────────────────────── */}
+        {statusFilter !== "todo" && (
         <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row items-center gap-3 justify-between">
           <div className="relative flex-1 w-full">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -423,18 +431,6 @@ export default function OrderDispatchHubPage() {
           </div>
 
           <div className="flex items-center gap-2 w-full md:w-auto">
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="h-9 text-xs font-semibold w-48 rounded-xl bg-slate-50 border-slate-200">
-                <SelectValue placeholder="All Statuses" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Dispatch Statuses</SelectItem>
-                <SelectItem value="pending_dispatch">⏳ Pending Dispatch</SelectItem>
-                <SelectItem value="out_for_delivery">🚚 Out For Delivery</SelectItem>
-                <SelectItem value="delivered">✅ Delivered</SelectItem>
-              </SelectContent>
-            </Select>
-
             {statusFilter === "delivered" && (
               <DateRangeFilter
                 value={dateFilter}
@@ -448,8 +444,10 @@ export default function OrderDispatchHubPage() {
             )}
           </div>
         </div>
+        )}
 
         {/* ─── ORDERS DISPATCH TABLE ────────────────────────────────── */}
+        {statusFilter !== "todo" && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
@@ -478,9 +476,9 @@ export default function OrderDispatchHubPage() {
                     <td colSpan={8} className="py-12 text-center text-slate-400">
                       <div className="max-w-md mx-auto space-y-2">
                         <Truck className="w-8 h-8 text-slate-300 mx-auto" />
-                        <p className="font-bold text-slate-700 text-xs">No Delayed Home Deliveries Found</p>
+                        <p className="font-bold text-slate-700 text-xs">{statusFilter === "delivered" ? "No delivered bills found" : "Nothing is out for delivery"}</p>
                         <p className="text-[11px] text-slate-400">
-                          Only orders billed with **"Delayed Home Delivery / Godown Dispatch"** selected by the cashier appear in this dispatch list.
+                          Bills appear here once they are taken out of the store (Take out) and sent for delivery.
                         </p>
                       </div>
                     </td>
@@ -586,6 +584,9 @@ export default function OrderDispatchHubPage() {
                               {(inv.deliveryProofKeys?.length > 0 || inv.deliveryProofKey) && ["admin", "superadmin", "manager"].includes(viewerRole) && (
                                 <div><DeliveryPhotos invoiceNumber={inv.invoiceNumber} count={inv.deliveryProofKeys?.length || 1} by={inv.deliveryProofBy} /></div>
                               )}
+                              {inv.storeExit?.lines?.length > 0 && ["admin", "superadmin", "manager"].includes(viewerRole) && (
+                                <div><StoreExitPhotos invoiceNumber={inv.invoiceNumber} lines={inv.storeExit.lines} by={inv.storeExit.completedBy} /></div>
+                              )}
                             </div>
                           ) : isOut ? (
                             <div className="space-y-1">
@@ -596,6 +597,9 @@ export default function OrderDispatchHubPage() {
                                 <span className="block font-mono text-[10px] font-bold text-slate-600">
                                   OTP: <span className="text-orange-600 font-black">{inv.deliveryOtp}</span>
                                 </span>
+                              )}
+                              {inv.storeExit?.lines?.length > 0 && ["admin", "superadmin", "manager"].includes(viewerRole) && (
+                                <div><StoreExitPhotos invoiceNumber={inv.invoiceNumber} lines={inv.storeExit.lines} by={inv.storeExit.completedBy} /></div>
                               )}
                             </div>
                           ) : (
@@ -632,14 +636,14 @@ export default function OrderDispatchHubPage() {
                         {/* 8. Action Buttons */}
                         <td className="px-4 py-3 text-center">
                           <div className="flex items-center justify-center gap-1.5 flex-wrap">
-                            {!isDelivered && (
+                            {isOut && (
                               <Button
                                 size="sm"
                                 onClick={() => handleOpenDispatch(inv)}
                                 className="h-7 px-2 text-[11px] font-bold bg-[#30539C] hover:bg-[#203E78] text-white rounded-lg shadow-xs"
-                                title="Assign Driver & Mark Out For Delivery"
+                                title="Change the driver or vehicle and send the customer the message again"
                               >
-                                <Truck className="w-3 h-3 mr-1" /> {isOut ? "Re-Assign" : "Dispatch"}
+                                <Truck className="w-3 h-3 mr-1" /> Re-Assign
                               </Button>
                             )}
 
@@ -652,18 +656,6 @@ export default function OrderDispatchHubPage() {
                                 title="Enter 4-Digit Customer OTP to Complete Delivery"
                               >
                                 <ShieldCheck className="w-3 h-3 mr-1" /> OTP
-                              </Button>
-                            )}
-
-                            {!isDelivered && canMarkSelf && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => { setSelfItem(inv); setSelfPhotos([]); }}
-                                className="h-7 px-2 text-[11px] font-bold border-emerald-300 bg-emerald-50/70 text-emerald-800 hover:bg-emerald-600 hover:text-white rounded-lg"
-                                title="The customer came and took the goods himself"
-                              >
-                                <UserCheck className="w-3 h-3 mr-1" /> Received by self
                               </Button>
                             )}
 
@@ -696,6 +688,7 @@ export default function OrderDispatchHubPage() {
             </table>
           </div>
         </div>
+        )}
 
         {/* ─── RECEIVED BY SELF (customer collects the goods) ────────── */}
         <Dialog open={!!selfItem} onOpenChange={(o) => { if (!o && !isSubmittingSelf) { setSelfItem(null); setSelfPhotos([]); } }}>
@@ -843,6 +836,14 @@ export default function OrderDispatchHubPage() {
                   className="font-mono uppercase h-9 text-xs font-semibold"
                 />
               </div>
+
+              {needsSkipReason && (
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold text-rose-700">Reason for sending without the store scan *</Label>
+                  <Input value={skipReason} onChange={(e) => setSkipReason(e.target.value)} placeholder="e.g. camera not working" className="h-9 text-xs font-semibold border-rose-300" />
+                  <p className="text-[10px] text-slate-500">Normally every product is scanned and photographed first (Take out). This reason is kept on record.</p>
+                </div>
+              )}
 
               <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-[11px] text-amber-900 flex items-start gap-2">
                 <ShieldCheck className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />

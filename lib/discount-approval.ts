@@ -7,9 +7,9 @@ import DiscountApproval from "@/models/DiscountApproval";
  * Discount approval on estimates and bills.
  *
  * The discount is how far the price offered is below the product's selling price. Who may give it:
- *   up to 5%            the salesman himself (no approval)
- *   above 5%, below 10% the Cashier
- *   10% to 12%          the Store Manager
+ *   up to 7%            the salesman himself (no approval)
+ *   above 7%, up to 10% the Cashier
+ *   above 10%, up to 12% the Store Manager
  *   above 12%           the Admin only
  * A person never needs approval for a band at or below their own role, and may decide requests in those bands
  * (the Manager also decides the Cashier band; the Admin decides everything). An approval is for one person, one
@@ -17,21 +17,16 @@ import DiscountApproval from "@/models/DiscountApproval";
  * ask twice).
  */
 
-/** Up to this % anyone may give the discount without asking. */
-export const SELF_MAX_PERCENT = 5;
-/** Below this % (and above SELF_MAX_PERCENT) the Cashier approves. */
-export const CASHIER_BELOW_PERCENT = 10;
-/** Up to this % (from CASHIER_BELOW_PERCENT) the Store Manager approves; above it only the Admin. */
-export const MANAGER_MAX_PERCENT = 12;
+import {
+  canDecideDiscount,
+  exemptFrom,
+  tierFor,
+  tierRank,
+  type DiscountTier,
+} from "@/lib/discount-bands";
+export * from "@/lib/discount-bands";
+
 const VALID_HOURS = 24;
-
-export type DiscountTier = "cashier" | "manager" | "admin";
-
-export const TIER_LABEL: Record<DiscountTier, string> = {
-  cashier: "the Cashier",
-  manager: "the Store Manager",
-  admin: "the Admin",
-};
 
 export interface DiscountLine {
   itemId: string;
@@ -44,36 +39,9 @@ export interface DiscountLine {
   tier: DiscountTier;
 }
 
-export const tierFor = (percent: number): DiscountTier | null =>
-  percent <= SELF_MAX_PERCENT
-    ? null
-    : percent < CASHIER_BELOW_PERCENT
-    ? "cashier"
-    : percent <= MANAGER_MAX_PERCENT
-    ? "manager"
-    : "admin";
-
-const TIER_RANK: Record<DiscountTier, number> = { cashier: 1, manager: 2, admin: 3 };
-export const tierRank = (tier: any) => TIER_RANK[tier as DiscountTier] ?? 3;
-
-/** How far up the discount ladder a role reaches: salesman 0, cashier 1, manager 2, admin 3. */
-export const roleRank = (role: string) => {
-  const r = String(role || "").toLowerCase();
-  if (r === "admin" || r === "superadmin") return 3;
-  if (r === "manager") return 2;
-  if (r === "cashier") return 1;
-  return 0;
-};
-
-/** Does a person of this role never need approval for this tier? */
-export const exemptFrom = (role: string, tier: DiscountTier) => roleRank(role) >= tierRank(tier);
-
-/** Can a person of this role decide a request of this tier? */
-export const canDecideDiscount = (role: string, tier: DiscountTier) => roleRank(role) >= tierRank(tier);
-
 /** The tiers a role may decide (for listing its pending requests). */
 export const tiersDecidableBy = (role: string): DiscountTier[] =>
-  (Object.keys(TIER_RANK) as DiscountTier[]).filter((t) => canDecideDiscount(role, t));
+  (["cashier", "manager", "admin"] as DiscountTier[]).filter((t) => canDecideDiscount(role, t));
 
 /** The roles to tell about a request of this tier: everyone who can decide it. */
 export const decidersOf = (tier: DiscountTier): string[] =>
