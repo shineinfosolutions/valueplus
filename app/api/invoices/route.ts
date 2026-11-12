@@ -849,6 +849,45 @@ export async function POST(req: Request) {
               invoice.createdBy = matchedEst.salesperson || matchedEst.salesExecutive;
               await invoice.save();
             }
+          } else {
+            // A salesman's bill still waiting for the cashier, and this invoice is for the same customer and the same
+            // amount but was not made through "Make Bill" (so it carries no link): when exactly ONE pending bill fits,
+            // it is this one. It is marked invoiced so it stops asking for attention (and the pop-up stops coming).
+            try {
+              const pendingBills: any[] = await Estimate.find({
+                kind: "bill",
+                approvalStatus: "pending",
+                status: { $ne: "Converted" },
+                customerPhone: { $regex: phoneDigits.slice(-10) },
+                createdAt: { $gte: new Date(Date.now() - 3 * 86400000) },
+              });
+              const fits = pendingBills.filter((b) => Math.abs((Number(b.total) || 0) - (Number(invoice.total) || 0)) <= 1);
+              if (fits.length === 1) {
+                const bill = fits[0];
+                bill.status = "Converted";
+                bill.convertedInvoiceNumber = invoice.invoiceNumber;
+                bill.approvalStatus = "approved";
+                bill.approvedBy = postActor?.name || "";
+                bill.approvedAt = new Date();
+                bill.dealAmount = Number(bill.total) || Number(invoice.total) || 0;
+                bill.dealSalesperson = bill.salesperson || bill.salesExecutive;
+                await bill.save();
+                await notifyAssignee(bill.salesperson || bill.salesExecutive || "", undefined, {
+                  type: "approval_result",
+                  title: "Your bill was invoiced",
+                  message: `${bill.estimateNumber} → invoice ${invoice.invoiceNumber} (₹${Number(invoice.total || 0).toLocaleString("en-IN")}).`,
+                  link: "/sales/estimates",
+                  createdBy: postActor?.name || "",
+                });
+                if ((!invoice.salesExecutive || invoice.salesExecutive === "Admin" || invoice.salesExecutive === "Store Staff") && (bill.salesperson || bill.salesExecutive)) {
+                  invoice.salesExecutive = bill.salesperson || bill.salesExecutive;
+                  (invoice as any).createdBy = bill.salesperson || bill.salesExecutive;
+                  await invoice.save();
+                }
+              }
+            } catch (matchErr: any) {
+              console.warn("Notice: could not match the invoice to a pending salesman bill:", matchErr?.message);
+            }
           }
         }
       }

@@ -649,6 +649,8 @@ export function InvoiceCreationModal({
   const [isSplitPayment, setIsSplitPayment] = useState(false);
   const [isUploadingFinanceDoc, setIsUploadingFinanceDoc] = useState(false);
   // The DO uploaded at the top of the bill: what was read from it, and whether it is being read now.
+  // The product the DO's model number points to: added to the bill by itself once the bill has an empty product row.
+  const [doAutoProduct, setDoAutoProduct] = useState<any | null>(null);
   const [doRead, setDoRead] = useState<{ data: any; existing: { invoiceNumber: string; customerName: string } | null; missing: string[]; fileName: string } | null>(null);
   const [isReadingDo, setIsReadingDo] = useState(false);
   const [splitRows, setSplitRows] = useState<Array<{ mode: string; amount: string; txnId: string }>>([
@@ -1691,12 +1693,47 @@ export function InvoiceCreationModal({
       if (d.customerPhone) handlePhoneLookup(String(d.customerPhone).replace(/\D/g, "").slice(-10));
       setDoRead({ data: d, existing: read.existing || null, missing, fileName: file.name });
       toast.success(`DO read: ${d.provider || "finance company not recognised"}${d.doId ? ` · ${d.doId}` : ""}. Check the details below.`);
+
+      // The DO's model number picks the product: when the bill has no product yet and exactly one product in the list
+      // carries that model, it is added to the bill. Several or none: the cashier is told and chooses.
+      const modelText = String(d.model || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+      if (modelText.length >= 4 && !billingForm.lineItems.some((it: any) => it.name)) {
+        const norm = (v: any) => String(v || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+        const fits = (catalogItems as any[]).filter(
+          (c: any) => c.status !== "inactive" && (norm(c.name).includes(modelText) || norm(c.code) === modelText || norm(c.vpCode) === modelText)
+        );
+        if (fits.length === 1) {
+          setDoAutoProduct(fits[0]);
+        } else if (fits.length > 1) {
+          toast.info(`${fits.length} products carry the model ${d.model}. Choose the right one below.`);
+        } else {
+          toast.info(`The model ${d.model} is not in the product list. Add the product below.`);
+        }
+      }
     } catch (err: any) {
       toast.error(err.message || "Could not read the DO, please try again.");
     } finally {
       setIsReadingDo(false);
     }
   };
+
+  // The product found from the DO's model: an empty row is added (if there is none) and the product is selected on it.
+  useEffect(() => {
+    if (!doAutoProduct) return;
+    if (billingForm.lineItems.some((it: any) => it.name)) {
+      setDoAutoProduct(null); // the bill already has a product
+      return;
+    }
+    const blank = billingForm.lineItems.findIndex((it: any) => !it.name);
+    if (blank >= 0) {
+      const prod = doAutoProduct;
+      setDoAutoProduct(null);
+      selectProductSuggestion(blank, prod);
+    } else {
+      addLineItem();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doAutoProduct, billingForm.lineItems]);
 
   const handleFinalSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -2162,7 +2199,7 @@ export function InvoiceCreationModal({
                     ["DO date", d.date || "—"],
                     ["Customer", d.customerName || "—"],
                     ["Mobile", d.customerPhone || "—"],
-                    ["Product", [d.brand, d.model].filter(Boolean).join(" ") || "—"],
+                    ["Product", [d.brand, d.category, d.model].filter(Boolean).join(" ") || "—"],
                     ["Product price on DO", d.productPrice ? formatCurrency(d.productPrice) : "—"],
                     ["Loan (gross)", d.grossLoan ? formatCurrency(d.grossLoan) : "—"],
                     ["Customer down payment", d.downPayment ? formatCurrency(d.downPayment) : "—"],
@@ -2459,10 +2496,10 @@ export function InvoiceCreationModal({
                   {/* DISPATCH / DELIVERY TIMING MODE SELECTOR — bills only; an estimate
                       is a quotation, nothing is handed over yet. */}
                   {mode !== "estimate" && (
-                  <div className="pt-2 border-t border-blue-100/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="flex w-full flex-col gap-1.5 sm:w-auto sm:flex-row sm:items-center sm:gap-2">
+                  <div className="pt-2 border-t border-blue-100/80 flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-x-4 gap-y-2">
+                    <div className="flex w-full min-w-0 flex-col gap-1.5 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
                       <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wide">Dispatch Mode:</span>
-                      <div className="flex w-full rounded-lg border border-slate-200 bg-white p-0.5 shadow-2xs sm:inline-flex sm:w-auto">
+                      <div className="flex w-full flex-wrap gap-0.5 rounded-lg border border-slate-200 bg-white p-0.5 shadow-2xs sm:inline-flex sm:w-auto">
                         <button
                           type="button"
                           onClick={() => setBillingForm({ ...billingForm, dispatchType: "immediate" })}
@@ -2491,12 +2528,12 @@ export function InvoiceCreationModal({
                     </div>
 
                     {billingForm.dispatchType === "delayed_delivery" && (
-                      <span className="text-[11px] font-mono font-bold text-amber-800 bg-amber-100/80 px-2.5 py-1 rounded-md border border-amber-200 flex items-center gap-1.5">
+                      <span className="min-w-0 max-w-full text-[11px] font-mono font-bold text-amber-800 bg-amber-100/80 px-2.5 py-1 rounded-md border border-amber-200 flex items-center gap-1.5">
                         <span>🔑 Auto Delivery OTP & WhatsApp Tracking Link will be generated</span>
                       </span>
                     )}
                     {billingForm.dispatchType === "delayed_delivery" && (
-                      <label className="flex items-center gap-2 text-[11px] font-bold text-slate-700">
+                      <label className="flex flex-wrap items-center gap-2 text-[11px] font-bold text-slate-700">
                         Delivery date *
                         <input
                           type="date"

@@ -81,9 +81,15 @@ export async function POST(req: Request) {
         result.updates
           .filter((u) => mongoose.isValidObjectId(u.itemId))
           .map((u) => {
-            const set: Record<string, number> = {};
+            const set: Record<string, any> = {};
             if (u.newCost !== null) set.purchasePrice = u.newCost;
-            if (u.newVsp !== null) set.vsp = u.newVsp;
+            if (u.newVsp !== null) {
+              set.vsp = u.newVsp;
+              // Kept on the product, so the Admin / Manager can see when the VSP last changed and who changed it.
+              set.vspUpdatedAt = new Date();
+              set.vspUpdatedBy = actor.name;
+              set.vspUpdatedFrom = file.name;
+            }
             return { updateOne: { filter: { _id: u.itemId }, update: { $set: set } } };
           })
       );

@@ -1963,6 +1963,14 @@ function ItemsPageContent() {
                   <div>
                     <p className="text-xs text-muted-foreground font-semibold uppercase">VSP</p>
                     <p className="font-bold text-emerald-700">{formatCurrency(viewingItem?.vsp || viewingItem?.sellingPrice || 0)}</p>
+                    {/* Admin / Manager: when the VSP was last updated from a price sheet, and by whom. */}
+                    {["admin", "superadmin", "manager"].includes(userRole) && viewingItem?.vspUpdatedAt && (
+                      <p className="mt-0.5 text-[10px] leading-tight font-medium text-slate-500" title={viewingItem.vspUpdatedFrom ? `Sheet: ${viewingItem.vspUpdatedFrom}` : undefined}>
+                        Updated {new Date(viewingItem.vspUpdatedAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}
+                        {viewingItem.vspUpdatedBy ? ` by ${viewingItem.vspUpdatedBy}` : ""}
+                        {viewingItem.vspUpdatedFrom ? <span className="block truncate max-w-[220px]">from {viewingItem.vspUpdatedFrom}</span> : null}
+                      </p>
+                    )}
                   </div>
                 </div>
                 {!isFullViewer && viewingItem && <PriceAndIncentive item={viewingItem} role={userRole} />}

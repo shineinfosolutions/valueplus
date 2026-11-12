@@ -30,6 +30,10 @@ export interface IItem extends Document {
    *  doesn't constrain it (unlike minSellingPrice). Defaults to sellingPrice
    *  when not explicitly set, but is independently editable from there. */
   vsp?: number;
+  /** When the VSP was last changed from a price-list sheet, by whom, and from which file. */
+  vspUpdatedAt?: Date;
+  vspUpdatedBy?: string;
+  vspUpdatedFrom?: string;
   /** Which of the store's two billing names this product is sold under. Set when
    *  the product is purchased; absent on older products, which are Value Plus. */
   billingEntity?: "valueplus" | "ashoka";
@@ -112,6 +116,9 @@ const ItemSchema = new Schema<IItem>(
     purchaseIncludesGst: { type: Boolean, default: false },
     sellingPrice: { type: Number, required: true },
     vsp: { type: Number, default: 0 },
+    vspUpdatedAt: { type: Date },
+    vspUpdatedBy: { type: String, default: "" },
+    vspUpdatedFrom: { type: String, default: "" },
     minSellingPrice: { type: Number, default: 0 },
     lockedMinPrice: { type: Number, default: 0 },
     priceLockedBy: { type: String, default: "" },
