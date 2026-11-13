@@ -9,6 +9,7 @@ import { normName } from "@/lib/staff-incentive";
 import { getShift } from "@/lib/shift-settings";
 import { publishChange } from "@/lib/realtime";
 import { awayTooLongAlerts, closeAwayAtCheckout } from "@/lib/presence";
+import { ensureIndexesOnce } from "@/lib/ensure-indexes";
 
 /** Everyone who works at the store (not the Admin, not outside suppliers). */
 const STAFF_ROLES = ["salesman", "sales", "cashier", "manager", "warehouse", "accounts", "hr", "driver"];
@@ -159,5 +160,8 @@ export async function runAttendanceChecks(): Promise<{ late: number; breaks: num
   const autoCheckedOut = await autoCheckOut(now);
   // The cron is not a write through the API, so worker.ts does not announce it.
   if (autoCheckedOut > 0) publishChange(["/api/staff/attendance"]);
+  // One-time job: create the indexes the hot queries need (lib/ensure-indexes.ts). Runs until it has succeeded
+  // once, at most once an hour, and never throws.
+  await ensureIndexesOnce(claim);
   return { late, breaks, away, autoCheckedOut };
 }

@@ -1,0 +1,1853 @@
+{
+ "success": true,
+ "dateRange": {
+  "start": "2026-10-01",
+  "end": "2026-11-13"
+ },
+ "metrics": {
+  "totalRevenue": 33000,
+  "cashRevenue": 17500,
+  "upiRevenue": 31999,
+  "onlineRevenue": 750,
+  "cardRevenue": 10000,
+  "financeRevenue": 0,
+  "warrantyRevenue": 0,
+  "warrantyCount": 0,
+  "dueRevenue": 0,
+  "dueCount": 0,
+  "unclassifiedRevenue": 1250,
+  "dueSalesRevenue": 0,
+  "dueSalesCount": 0,
+  "duePendingRevenue": 0,
+  "duePendingCount": 0,
+  "dueClearedRevenue": 7000,
+  "dueClearedCount": 2,
+  "dueClearedByMode": {
+   "cash": 2000,
+   "upi": 5000
+  },
+  "financePendingRevenue": 0,
+  "financePendingCount": 0,
+  "financeReceivedRevenue": 87000,
+  "financeReceivedCount": 2,
+  "financeReceivedByAccount": {
+   "Bank account not recorded": 47000,
+   "HDFC 1234": 40000
+  },
+  "duesCollected": 28499,
+  "duesCollectedCount": 9,
+  "supplierPayouts": 36000,
+  "totalExpenses": 1800,
+  "netProfit": 31200,
+  "totalOrders": 2,
+  "totalUnits": 2,
+  "totalPurchaseAmount": 91500.5,
+  "totalPurchaseBills": 7,
+  "avgPurchaseValue": 13071.5,
+  "pendingOrders": 0,
+  "lowStockItems": 2,
+  "customersCount": 6,
+  "suppliersCount": 4
+ },
+ "transactions": {
+  "cash": [
+   {
+    "id": "VP-008",
+    "customer": "Rakesh Verma",
+    "amount": 2000,
+    "paidAmount": 2000,
+    "dueAmount": 0,
+    "time": "2026-11-13 (Receipt)",
+    "mode": "Cash",
+    "bucket": "cash",
+    "status": "paid",
+    "notes": "Due payment receipt (VP-008)",
+    "isReceipt": true
+   },
+   {
+    "id": "VP-022",
+    "customer": "Receipted Buyer",
+    "amount": 11000,
+    "paidAmount": 11000,
+    "dueAmount": 0,
+    "time": "2026-11-12 (Receipt)",
+    "mode": "Cash",
+    "bucket": "cash",
+    "status": "paid",
+    "notes": "Due payment receipt (VP-022)",
+    "isReceipt": true
+   },
+   {
+    "id": "VP-002",
+    "customer": "Old Receipt",
+    "amount": 4500,
+    "paidAmount": 4500,
+    "dueAmount": 0,
+    "time": "2026-10-27 (Receipt)",
+    "mode": "Cash",
+    "bucket": "cash",
+    "status": "paid",
+    "notes": "Due payment receipt (VP-002)",
+    "isReceipt": true
+   }
+  ],
+  "upi": [
+   {
+    "id": "VP-019",
+    "customer": "Branch Buyer",
+    "amount": 26000,
+    "paidAmount": 26000,
+    "dueAmount": 0,
+    "time": "2026-11-02 02:30 PM",
+    "mode": "UPI",
+    "bucket": "upi",
+    "isSplit": false,
+    "status": "paid",
+    "reprintCount": 0
+   },
+   {
+    "id": "VP-008",
+    "customer": "Rakesh Verma",
+    "amount": 5000,
+    "paidAmount": 5000,
+    "dueAmount": 0,
+    "time": "2026-11-10 (Receipt)",
+    "mode": "UPI",
+    "bucket": "upi",
+    "status": "paid",
+    "notes": "Part due",
+    "isReceipt": true
+   },
+   {
+    "id": "TXN-4004",
+    "customer": "Iso Date",
+    "amount": 999,
+    "paidAmount": 999,
+    "dueAmount": 0,
+    "time": "2026-11-02T10:00:00.000Z (Receipt)",
+    "mode": "GPay",
+    "bucket": "upi",
+    "status": "paid",
+    "notes": "Due payment receipt (Direct)",
+    "isReceipt": true
+   }
+  ],
+  "online": [
+   {
+    "id": "TXN-4002",
+    "customer": "Mystery",
+    "amount": 750,
+    "paidAmount": 750,
+    "dueAmount": 0,
+    "time": "2026-11-09 (Receipt)",
+    "mode": "Cheque",
+    "bucket": "online",
+    "status": "paid",
+    "notes": "Due payment receipt (Direct)",
+    "isReceipt": true
+   }
+  ],
+  "card": [
+   {
+    "id": "VP-021",
+    "customer": "Branch Name Buyer",
+    "amount": 7000,
+    "paidAmount": 7000,
+    "dueAmount": 0,
+    "time": "2026-11-03 02:30 PM",
+    "mode": "Card",
+    "bucket": "card",
+    "isSplit": false,
+    "status": "paid",
+    "reprintCount": 0
+   },
+   {
+    "id": "TXN-4001",
+    "customer": "Advance Guy",
+    "amount": 3000,
+    "paidAmount": 3000,
+    "dueAmount": 0,
+    "time": "2026-11-11 (Receipt)",
+    "mode": "Swipe Machine",
+    "bucket": "card",
+    "status": "paid",
+    "notes": "Due payment receipt (Direct)",
+    "isReceipt": true
+   }
+  ],
+  "finance": [],
+  "due": [],
+  "unclassified": [
+   {
+    "id": "TXN-4003",
+    "customer": "No Mode",
+    "amount": 1250,
+    "paidAmount": 1250,
+    "dueAmount": 0,
+    "time": "2026-11-13 (Receipt)",
+    "mode": "Unclassified",
+    "bucket": "unclassified",
+    "status": "paid",
+    "notes": "No payment mode recorded (Direct)",
+    "isReceipt": true
+   }
+  ],
+  "all": [
+   {
+    "id": "VP-008",
+    "customer": "Rakesh Verma",
+    "amount": 7000,
+    "paidAmount": 7000,
+    "dueAmount": 0,
+    "time": "2026-11-13 (Receipt)",
+    "mode": "Cash + UPI",
+    "bucket": "cash",
+    "status": "paid",
+    "notes": "Due payment receipt (VP-008)",
+    "isReceipt": true,
+    "partCount": 2,
+    "isSplit": true
+   },
+   {
+    "id": "VP-022",
+    "customer": "Receipted Buyer",
+    "amount": 11000,
+    "paidAmount": 11000,
+    "dueAmount": 0,
+    "time": "2026-11-12 (Receipt)",
+    "mode": "Cash",
+    "bucket": "cash",
+    "status": "paid",
+    "notes": "Due payment receipt (VP-022)",
+    "isReceipt": true,
+    "partCount": 1,
+    "isSplit": false
+   },
+   {
+    "id": "VP-002",
+    "customer": "Old Receipt",
+    "amount": 4500,
+    "paidAmount": 4500,
+    "dueAmount": 0,
+    "time": "2026-10-27 (Receipt)",
+    "mode": "Cash",
+    "bucket": "cash",
+    "status": "paid",
+    "notes": "Due payment receipt (VP-002)",
+    "isReceipt": true,
+    "partCount": 1,
+    "isSplit": false
+   },
+   {
+    "id": "VP-019",
+    "customer": "Branch Buyer",
+    "amount": 26000,
+    "paidAmount": 26000,
+    "dueAmount": 0,
+    "time": "2026-11-02 02:30 PM",
+    "mode": "UPI",
+    "bucket": "upi",
+    "isSplit": false,
+    "status": "paid",
+    "reprintCount": 0,
+    "partCount": 1
+   },
+   {
+    "id": "TXN-4004",
+    "customer": "Iso Date",
+    "amount": 999,
+    "paidAmount": 999,
+    "dueAmount": 0,
+    "time": "2026-11-02T10:00:00.000Z (Receipt)",
+    "mode": "GPay",
+    "bucket": "upi",
+    "status": "paid",
+    "notes": "Due payment receipt (Direct)",
+    "isReceipt": true,
+    "partCount": 1,
+    "isSplit": false
+   },
+   {
+    "id": "TXN-4002",
+    "customer": "Mystery",
+    "amount": 750,
+    "paidAmount": 750,
+    "dueAmount": 0,
+    "time": "2026-11-09 (Receipt)",
+    "mode": "Cheque",
+    "bucket": "online",
+    "status": "paid",
+    "notes": "Due payment receipt (Direct)",
+    "isReceipt": true,
+    "partCount": 1,
+    "isSplit": false
+   },
+   {
+    "id": "VP-021",
+    "customer": "Branch Name Buyer",
+    "amount": 7000,
+    "paidAmount": 7000,
+    "dueAmount": 0,
+    "time": "2026-11-03 02:30 PM",
+    "mode": "Card",
+    "bucket": "card",
+    "isSplit": false,
+    "status": "paid",
+    "reprintCount": 0,
+    "partCount": 1
+   },
+   {
+    "id": "TXN-4001",
+    "customer": "Advance Guy",
+    "amount": 3000,
+    "paidAmount": 3000,
+    "dueAmount": 0,
+    "time": "2026-11-11 (Receipt)",
+    "mode": "Swipe Machine",
+    "bucket": "card",
+    "status": "paid",
+    "notes": "Due payment receipt (Direct)",
+    "isReceipt": true,
+    "partCount": 1,
+    "isSplit": false
+   },
+   {
+    "id": "TXN-4003",
+    "customer": "No Mode",
+    "amount": 1250,
+    "paidAmount": 1250,
+    "dueAmount": 0,
+    "time": "2026-11-13 (Receipt)",
+    "mode": "Unclassified",
+    "bucket": "unclassified",
+    "status": "paid",
+    "notes": "No payment mode recorded (Direct)",
+    "isReceipt": true,
+    "partCount": 1,
+    "isSplit": false
+   }
+  ],
+  "details": {
+   "VP-021": {
+    "id": "VP-021",
+    "customer": "Branch Name Buyer",
+    "total": 7000,
+    "date": "2026-11-03",
+    "status": "paid",
+    "parts": [
+     {
+      "kind": "billing",
+      "bucket": "card",
+      "mode": "Card",
+      "amount": 7000,
+      "date": "2026-11-03",
+      "reference": ""
+     }
+    ]
+   },
+   "VP-019": {
+    "id": "VP-019",
+    "customer": "Branch Buyer",
+    "total": 26000,
+    "date": "2026-11-02",
+    "status": "paid",
+    "parts": [
+     {
+      "kind": "billing",
+      "bucket": "upi",
+      "mode": "UPI",
+      "amount": 26000,
+      "date": "2026-11-02",
+      "reference": ""
+     }
+    ]
+   },
+   "VP-008": {
+    "id": "VP-008",
+    "customer": "Rakesh Verma",
+    "total": 20000,
+    "date": "2026-11-06",
+    "status": "partial",
+    "parts": [
+     {
+      "kind": "due-clear",
+      "bucket": "cash",
+      "mode": "Cash",
+      "amount": 2000,
+      "date": "2026-11-13",
+      "reference": "TXN-DUE-2002",
+      "bankAccount": "",
+      "note": "Due cleared"
+     },
+     {
+      "kind": "due-clear",
+      "bucket": "upi",
+      "mode": "UPI",
+      "amount": 5000,
+      "date": "2026-11-10",
+      "reference": "TXN-DUE-2001",
+      "bankAccount": "",
+      "note": "Due cleared"
+     }
+    ]
+   },
+   "VP-022": {
+    "id": "VP-022",
+    "customer": "Receipted Buyer",
+    "total": 11000,
+    "date": "2026-11-12",
+    "status": "paid",
+    "parts": [
+     {
+      "kind": "receipt",
+      "bucket": "cash",
+      "mode": "Cash",
+      "amount": 11000,
+      "date": "2026-11-12",
+      "reference": "TXN-1001",
+      "bankAccount": "",
+      "note": ""
+     }
+    ]
+   },
+   "VP-002": {
+    "id": "VP-002",
+    "customer": "Sunita Devi",
+    "total": 24500,
+    "date": "2026-10-26",
+    "status": "paid",
+    "parts": [
+     {
+      "kind": "receipt",
+      "bucket": "cash",
+      "mode": "Cash",
+      "amount": 4500,
+      "date": "2026-10-27",
+      "reference": "TXN-4006",
+      "bankAccount": "",
+      "note": ""
+     }
+    ]
+   }
+  }
+ },
+ "payments": {
+  "duesCollected": 28499,
+  "duesCollectedCount": 9,
+  "supplierPayouts": 36000,
+  "recent": [
+   {
+    "_id": "000000000000000000000036",
+    "partyId": "CUST-X",
+    "partyType": "Customer",
+    "partyName": "Rakesh Verma",
+    "receivedBy": "Cashier",
+    "type": "received",
+    "bankAccountId": "",
+    "bankAccountRef": "",
+    "bankTxnRef": "",
+    "editCount": 0,
+    "transactionId": "TXN-DUE-2002",
+    "amount": 2000,
+    "paymentMode": "Cash",
+    "date": "2026-11-13",
+    "referenceId": "VP-008",
+    "createdAt": "2026-11-13T13:00:00.000Z"
+   },
+   {
+    "_id": "00000000000000000000003b",
+    "partyId": "CUST-X",
+    "partyType": "Customer",
+    "partyName": "No Mode",
+    "receivedBy": "Cashier",
+    "type": "received",
+    "bankAccountId": "",
+    "bankAccountRef": "",
+    "bankTxnRef": "",
+    "editCount": 0,
+    "transactionId": "TXN-4003",
+    "amount": 1250,
+    "date": "2026-11-13",
+    "createdAt": "2026-11-13T02:45:00.000Z"
+   },
+   {
+    "_id": "000000000000000000000038",
+    "partyId": "CUST-X",
+    "partyType": "Customer",
+    "partyName": "Deepak Yadav",
+    "receivedBy": "Cashier",
+    "type": "received",
+    "bankAccountId": "",
+    "bankAccountRef": "",
+    "bankTxnRef": "",
+    "editCount": 0,
+    "transactionId": "TXN-FIN-3002",
+    "amount": 47000,
+    "paymentMode": "NEFT",
+    "date": "2026-11-12",
+    "referenceId": "VP-006",
+    "createdAt": "2026-11-12T09:30:00.000Z"
+   },
+   {
+    "_id": "000000000000000000000034",
+    "partyId": "CUST-X",
+    "partyType": "Customer",
+    "partyName": "Receipted Buyer",
+    "receivedBy": "Cashier",
+    "type": "received",
+    "bankAccountId": "",
+    "bankAccountRef": "",
+    "bankTxnRef": "",
+    "editCount": 0,
+    "transactionId": "TXN-1001",
+    "amount": 11000,
+    "paymentMode": "Cash",
+    "date": "2026-11-12",
+    "referenceId": "VP-022",
+    "createdAt": "2026-11-12T06:31:00.000Z"
+   },
+   {
+    "_id": "000000000000000000000039",
+    "partyId": "CUST-X",
+    "partyType": "Customer",
+    "partyName": "Advance Guy",
+    "receivedBy": "Cashier",
+    "type": "received",
+    "bankAccountId": "",
+    "bankAccountRef": "",
+    "bankTxnRef": "",
+    "editCount": 0,
+    "transactionId": "TXN-4001",
+    "amount": 3000,
+    "paymentMode": "Swipe Machine",
+    "date": "2026-11-11",
+    "createdAt": "2026-11-11T04:30:00.000Z"
+   },
+   {
+    "_id": "000000000000000000000035",
+    "partyId": "CUST-X",
+    "partyType": "Customer",
+    "partyName": "Rakesh Verma",
+    "receivedBy": "Cashier",
+    "type": "received",
+    "bankAccountId": "",
+    "bankAccountRef": "",
+    "bankTxnRef": "",
+    "editCount": 0,
+    "transactionId": "TXN-DUE-2001",
+    "amount": 5000,
+    "paymentMode": "UPI",
+    "date": "2026-11-10",
+    "referenceId": "VP-008",
+    "notes": "Part due",
+    "createdAt": "2026-11-10T10:30:00.000Z"
+   },
+   {
+    "_id": "00000000000000000000003a",
+    "partyId": "CUST-X",
+    "partyType": "Customer",
+    "partyName": "Mystery",
+    "receivedBy": "Cashier",
+    "type": "received",
+    "bankAccountId": "",
+    "bankAccountRef": "",
+    "bankTxnRef": "",
+    "editCount": 0,
+    "transactionId": "TXN-4002",
+    "amount": 750,
+    "paymentMode": "Cheque",
+    "date": "2026-11-09",
+    "createdAt": "2026-11-09T16:00:00.000Z"
+   },
+   {
+    "_id": "000000000000000000000041",
+    "partyId": "00000000000000000000002a",
+    "partyType": "Supplier",
+    "partyName": "Gupta Electronics",
+    "receivedBy": "Cashier",
+    "type": "received",
+    "bankAccountId": "",
+    "bankAccountRef": "",
+    "bankTxnRef": "",
+    "editCount": 0,
+    "transactionId": "TXN-S-3",
+    "amount": 1000,
+    "paymentMode": "UPI",
+    "date": "2026-11-09",
+    "createdAt": "2026-11-09T05:30:00.000Z"
+   },
+   {
+    "_id": "000000000000000000000040",
+    "partyId": "SUP-2",
+    "partyType": "Supplier",
+    "partyName": "A.B. Traders (P) Ltd",
+    "receivedBy": "Cashier",
+    "type": "paid",
+    "bankAccountId": "",
+    "bankAccountRef": "",
+    "bankTxnRef": "",
+    "editCount": 0,
+    "transactionId": "TXN-S-2",
+    "amount": 4000,
+    "paymentMode": "Cash",
+    "date": "2026-11-08",
+    "createdAt": "2026-11-08T05:30:00.000Z"
+   },
+   {
+    "_id": "000000000000000000000037",
+    "partyId": "CUST-X",
+    "partyType": "Customer",
+    "partyName": "Old Finance",
+    "receivedBy": "Cashier",
+    "type": "received",
+    "bankAccountId": "",
+    "bankAccountRef": "HDFC 1234",
+    "bankTxnRef": "UTR998",
+    "editCount": 0,
+    "transactionId": "TXN-3001",
+    "amount": 40000,
+    "paymentMode": "Finance Disbursement",
+    "date": "2026-11-06",
+    "referenceId": "VP-023",
+    "createdAt": "2026-11-06T05:30:00.000Z"
+   },
+   {
+    "_id": "00000000000000000000003d",
+    "partyId": "CUST-X",
+    "partyType": "Customer",
+    "partyName": "Zero",
+    "receivedBy": "Cashier",
+    "type": "received",
+    "bankAccountId": "",
+    "bankAccountRef": "",
+    "bankTxnRef": "",
+    "editCount": 0,
+    "transactionId": "TXN-4005",
+    "amount": 0,
+    "paymentMode": "Cash",
+    "date": "2026-11-05",
+    "createdAt": "2026-11-05T03:30:00.000Z"
+   },
+   {
+    "_id": "00000000000000000000003c",
+    "partyId": "CUST-X",
+    "partyType": "Customer",
+    "partyName": "Iso Date",
+    "receivedBy": "Cashier",
+    "type": "received",
+    "bankAccountId": "",
+    "bankAccountRef": "",
+    "bankTxnRef": "",
+    "editCount": 0,
+    "transactionId": "TXN-4004",
+    "amount": 999,
+    "paymentMode": "GPay",
+    "date": "2026-11-02T10:00:00.000Z",
+    "createdAt": "2026-11-02T10:00:00.000Z"
+   },
+   {
+    "_id": "00000000000000000000003f",
+    "partyId": "00000000000000000000002a",
+    "partyType": "Supplier",
+    "partyName": "Gupta Electronics",
+    "receivedBy": "Cashier",
+    "type": "paid",
+    "bankAccountId": "",
+    "bankAccountRef": "",
+    "bankTxnRef": "",
+    "editCount": 0,
+    "transactionId": "TXN-S-1",
+    "amount": 30000,
+    "paymentMode": "NEFT",
+    "date": "2026-11-02",
+    "referenceId": "PB-1",
+    "createdAt": "2026-11-02T05:30:00.000Z"
+   },
+   {
+    "_id": "00000000000000000000003e",
+    "partyId": "CUST-X",
+    "partyType": "Customer",
+    "partyName": "Old Receipt",
+    "receivedBy": "Cashier",
+    "type": "received",
+    "bankAccountId": "",
+    "bankAccountRef": "",
+    "bankTxnRef": "",
+    "editCount": 0,
+    "transactionId": "TXN-4006",
+    "amount": 4500,
+    "paymentMode": "Cash",
+    "date": "2026-10-27",
+    "referenceId": "VP-002",
+    "createdAt": "2026-10-27T07:30:00.000Z"
+   },
+   {
+    "_id": "000000000000000000000042",
+    "partyId": "00000000000000000000002c",
+    "partyType": "Supplier",
+    "partyName": "Zero Dues Co",
+    "receivedBy": "Cashier",
+    "type": "paid",
+    "bankAccountId": "",
+    "bankAccountRef": "",
+    "bankTxnRef": "",
+    "editCount": 0,
+    "transactionId": "TXN-S-4",
+    "amount": 2000,
+    "paymentMode": "Cash",
+    "date": "2026-10-15",
+    "createdAt": "2026-10-15T05:30:00.000Z"
+   }
+  ]
+ },
+ "expenses": {
+  "total": 1800,
+  "cash": 300,
+  "upi": 0,
+  "bank": 0,
+  "card": 1500,
+  "categories": [
+   {
+    "category": "Repairs",
+    "amount": 1500,
+    "count": 1,
+    "percentage": 83
+   },
+   {
+    "category": "General",
+    "amount": 300,
+    "count": 1,
+    "percentage": 17
+   }
+  ],
+  "modes": [
+   {
+    "mode": "Card",
+    "amount": 1500,
+    "count": 1,
+    "percentage": 83
+   },
+   {
+    "mode": "Cash",
+    "amount": 300,
+    "count": 1,
+    "percentage": 17
+   }
+  ],
+  "recent": [
+   {
+    "_id": "000000000000000000000031",
+    "status": "paid",
+    "expenseNo": "EXP-4",
+    "category": "Repairs",
+    "description": "AC repair",
+    "amount": 1500,
+    "date": "2026-11-05",
+    "paymentMode": "Debit Card",
+    "createdAt": "2026-11-05T06:30:00.000Z",
+    "warehouse": "Main Branch"
+   },
+   {
+    "_id": "000000000000000000000033",
+    "status": "paid",
+    "expenseNo": "EXP-6",
+    "category": "",
+    "description": "Misc",
+    "amount": 300,
+    "date": "2026-10-28",
+    "paymentMode": "",
+    "createdAt": "2026-10-28T09:30:00.000Z",
+    "branchName": "Main Branch"
+   }
+  ],
+  "all": [
+   {
+    "_id": "000000000000000000000031",
+    "status": "paid",
+    "expenseNo": "EXP-4",
+    "category": "Repairs",
+    "description": "AC repair",
+    "amount": 1500,
+    "date": "2026-11-05",
+    "paymentMode": "Debit Card",
+    "createdAt": "2026-11-05T06:30:00.000Z",
+    "warehouse": "Main Branch"
+   },
+   {
+    "_id": "000000000000000000000033",
+    "status": "paid",
+    "expenseNo": "EXP-6",
+    "category": "",
+    "description": "Misc",
+    "amount": 300,
+    "date": "2026-10-28",
+    "paymentMode": "",
+    "createdAt": "2026-10-28T09:30:00.000Z",
+    "branchName": "Main Branch"
+   }
+  ]
+ },
+ "leakage": {
+  "cancelled": {
+   "count": 0,
+   "amount": 0,
+   "invoices": []
+  },
+  "deleted": {
+   "count": 2,
+   "amount": 6500,
+   "invoices": [
+    {
+     "_id": "00000000000000000000005d",
+     "invoiceNumber": "VP-099",
+     "docType": "Invoice",
+     "customerName": "Deleted Person",
+     "total": 5500,
+     "date": "2026-11-01",
+     "paymentMode": "Cash",
+     "status": "deleted",
+     "isDeleted": true,
+     "auditReason": "Duplicate bill",
+     "auditBy": "Admin",
+     "auditByRole": "admin",
+     "auditAt": "2026-11-12T12:30:00.000Z",
+     "usedLegacyPin": false,
+     "snapshot": {
+      "invoiceNumber": "VP-099",
+      "date": "2026-11-01",
+      "paymentMode": "Cash",
+      "total": 5500,
+      "items": [
+       {
+        "itemName": "Thing",
+        "quantity": 1
+       }
+      ]
+     }
+    },
+    {
+     "_id": "00000000000000000000005e",
+     "invoiceNumber": "PF-077",
+     "docType": "Estimate",
+     "customerName": "Old Quote",
+     "total": 1000,
+     "date": "",
+     "paymentMode": "",
+     "status": "deleted",
+     "isDeleted": true,
+     "auditReason": "Expired",
+     "auditBy": "Manager",
+     "auditAt": "2026-10-26T12:30:00.000Z",
+     "snapshot": {
+      "invoiceNumber": "PF-077"
+     }
+    }
+   ]
+  },
+  "modified": {
+   "count": 0,
+   "amount": 0,
+   "invoices": []
+  },
+  "shifted": {
+   "count": 0,
+   "amount": 0,
+   "invoices": []
+  },
+  "billsModified": {
+   "count": 2,
+   "amount": 0,
+   "backDatedCount": 0,
+   "editedCount": 2,
+   "invoices": [
+    {
+     "_id": "00000000000000000000001c",
+     "invoiceNumber": "VP-024",
+     "type": "tax-invoice",
+     "customerId": "CUST-024",
+     "customerName": "Edited Later",
+     "customerPhone": "9800000000",
+     "customerAddress": "Golghar, Gorakhpur",
+     "customerCity": "Gorakhpur",
+     "customerState": "Uttar Pradesh",
+     "placeOfSupply": "Uttar Pradesh(09)",
+     "billingEntity": "valueplus",
+     "date": "2026-10-28",
+     "dueDate": "2026-10-28",
+     "status": "paid",
+     "items": [
+      {
+       "itemId": "ITM-15",
+       "itemName": "Generic Product",
+       "itemCode": "8471",
+       "description": "Generic Product with standard warranty",
+       "quantity": 1,
+       "unit": "Pcs",
+       "rate": 13983,
+       "discount": 0,
+       "discountType": "amount",
+       "taxableAmount": 13983,
+       "gstRate": 18,
+       "cgst": 1258.47,
+       "sgst": 1258.47,
+       "igst": 0,
+       "amount": 16499.94,
+       "serialNumbers": [
+        "SN-GEN-1"
+       ]
+      }
+     ],
+     "subtotal": 16500,
+     "discount": 0,
+     "taxableAmount": 13983,
+     "cgst": 0,
+     "sgst": 0,
+     "igst": 0,
+     "totalGST": 2517,
+     "extendedWarrantyTotal": 0,
+     "roundOff": 0,
+     "total": 16500,
+     "paidAmount": 16500,
+     "balanceAmount": 0,
+     "paymentMode": "Cash",
+     "payments": [],
+     "paymentTerms": "Net 30",
+     "dueAdvanceAmount": 0,
+     "dueAdvanceMode": "Cash",
+     "deliveryStatus": "delivered",
+     "salesExecutive": "Amit Singh",
+     "reprintCount": 0,
+     "printLogs": [],
+     "createdAt": "2026-10-28T06:30:00.000Z",
+     "updatedAt": "2026-10-28T06:30:00.000Z",
+     "__v": 0,
+     "isEdited": true,
+     "auditReason": "Edited 2 times: contact / delivery details changed",
+     "auditBy": "Admin",
+     "auditAt": "2026-11-12T05:30:00.000Z",
+     "usedLegacyPin": true,
+     "edits": [
+      {
+       "at": "2026-11-12T05:30:00.000Z",
+       "by": "Admin",
+       "role": "admin",
+       "reason": "",
+       "kind": "details",
+       "changes": [
+        {
+         "field": "customerPhone",
+         "label": "Mobile",
+         "before": "9800000000",
+         "after": "9800000999"
+        }
+       ]
+      },
+      {
+       "at": "2026-11-12T04:30:00.000Z",
+       "by": "Store Manager",
+       "role": "manager",
+       "reason": "Wrong rate entered",
+       "kind": "bill",
+       "changes": [
+        {
+         "field": "total",
+         "label": "Bill total",
+         "before": "16000",
+         "after": "16500"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "_id": "00000000000000000000000b",
+     "invoiceNumber": "VP-011",
+     "type": "tax-invoice",
+     "customerId": "CUST-011",
+     "customerName": "Anil Mishra",
+     "customerPhone": "9800000000",
+     "customerAddress": "Golghar, Gorakhpur",
+     "customerCity": "Gorakhpur",
+     "customerState": "Uttar Pradesh",
+     "placeOfSupply": "Uttar Pradesh(09)",
+     "billingEntity": "valueplus",
+     "date": "2026-11-09",
+     "dueDate": "2026-11-09",
+     "status": "paid",
+     "items": [
+      {
+       "itemId": "ITM-17",
+       "itemName": "OnePlus Nord CE 4",
+       "itemCode": "8471",
+       "description": "OnePlus Nord CE 4 with standard warranty",
+       "quantity": 1,
+       "unit": "Pcs",
+       "rate": 23728,
+       "discount": 0,
+       "discountType": "amount",
+       "taxableAmount": 23728,
+       "gstRate": 18,
+       "cgst": 2135.52,
+       "sgst": 2135.52,
+       "igst": 0,
+       "amount": 27999.039999999997,
+       "serialNumbers": [
+        "SN-ONE-1"
+       ],
+       "extendedWarrantyPlan": "1 Year Onsitego"
+      }
+     ],
+     "subtotal": 27999,
+     "discount": 1500,
+     "taxableAmount": 23728,
+     "cgst": 0,
+     "sgst": 0,
+     "igst": 0,
+     "totalGST": 4271,
+     "extendedWarrantyTotal": 0,
+     "roundOff": -0.4,
+     "total": 27999,
+     "paidAmount": 27999,
+     "balanceAmount": 0,
+     "paymentMode": "Cash",
+     "payments": [],
+     "paymentTerms": "Net 30",
+     "dueAdvanceAmount": 0,
+     "dueAdvanceMode": "Cash",
+     "deliveryStatus": "delivered",
+     "salesExecutive": "Amit Singh",
+     "reprintCount": 2,
+     "printLogs": [
+      {
+       "printedAt": "2026-11-10T09:00:00.000Z",
+       "printedBy": "Cashier"
+      },
+      {
+       "printedAt": "2026-11-12T10:00:00.000Z",
+       "printedBy": "Admin"
+      }
+     ],
+     "createdAt": "2026-11-09T08:40:00.000Z",
+     "updatedAt": "2026-11-09T08:40:00.000Z",
+     "__v": 0,
+     "lastModifiedReason": "content-edit",
+     "lastPrintedAt": "2026-11-12T10:00:00.000Z",
+     "isEdited": true,
+     "auditReason": "Edited: Discount corrected",
+     "auditBy": "Admin",
+     "auditAt": "2026-11-09T09:30:00.000Z",
+     "edits": [
+      {
+       "at": "2026-11-09T09:30:00.000Z",
+       "by": "Admin",
+       "role": "admin",
+       "reason": "Discount corrected",
+       "kind": "bill",
+       "changes": [
+        {
+         "field": "discount",
+         "label": "Discount",
+         "before": "1000",
+         "after": "1500"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "reprinted": {
+   "count": 0,
+   "totalPrints": 0,
+   "amount": 0,
+   "invoices": []
+  },
+  "waivedOff": {
+   "count": 0,
+   "amount": 0,
+   "invoices": []
+  }
+ },
+ "vendorSupplier": {
+  "vendorCollections": {
+   "total": 3200,
+   "count": 3,
+   "byMode": {
+    "cash": -500,
+    "upi": 2500,
+    "online": 1200,
+    "card": 0
+   },
+   "recent": [
+    {
+     "_id": "000000000000000000000055",
+     "paymentId": "VP-PAY-1",
+     "vendorId": "00000000000000000000004f",
+     "vendorName": "Mobile Repair Hub",
+     "date": "2026-11-03",
+     "amount": 2500,
+     "mode": "UPI",
+     "type": "received",
+     "refNo": ""
+    },
+    {
+     "_id": "000000000000000000000056",
+     "paymentId": "VP-PAY-2",
+     "vendorId": "00000000000000000000004f",
+     "vendorName": "Mobile Repair Hub",
+     "date": "2026-11-13",
+     "amount": 500,
+     "mode": "Cash",
+     "type": "paid",
+     "refNo": ""
+    },
+    {
+     "_id": "000000000000000000000057",
+     "paymentId": "VP-PAY-3",
+     "vendorId": "000000000000000000000050",
+     "vendorName": "Scrap Buyer",
+     "date": "2026-10-25",
+     "amount": 1200,
+     "mode": "NEFT",
+     "type": "received",
+     "refNo": "N1"
+    }
+   ]
+  },
+  "vendorDue": {
+   "total": 5000,
+   "count": 1,
+   "overdue": 5000,
+   "parties": [
+    {
+     "_id": "00000000000000000000004f",
+     "name": "Mobile Repair Hub",
+     "code": "VEN-1",
+     "phone": "9700000001",
+     "pending": 5000,
+     "overdue": 5000,
+     "lastPaymentDate": "2026-11-13",
+     "lastPaymentAmount": -500
+    }
+   ]
+  },
+  "supplierOutstanding": {
+   "total": 39000.5,
+   "count": 2,
+   "overdue": 13000.5,
+   "parties": [
+    {
+     "_id": "00000000000000000000002a",
+     "name": "Gupta Electronics",
+     "code": "SUP-1",
+     "phone": "9811111111",
+     "pending": 38000.5,
+     "overdue": 12000.5,
+     "lastPaymentDate": "2026-11-09"
+    },
+    {
+     "_id": "00000000000000000000002b",
+     "name": "A.B. Traders (P) Ltd",
+     "code": "SUP-2",
+     "phone": "9822222222",
+     "pending": 1000,
+     "overdue": 1000,
+     "lastPaymentDate": "2026-11-08"
+    }
+   ]
+  }
+ },
+ "dailyRevenue": [
+  {
+   "date": "01 Oct",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "02 Oct",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "03 Oct",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "04 Oct",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "05 Oct",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "06 Oct",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "07 Oct",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "08 Oct",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "09 Oct",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "10 Oct",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "11 Oct",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "12 Oct",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "13 Oct",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "14 Oct",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "15 Oct",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "16 Oct",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "17 Oct",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "18 Oct",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "19 Oct",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "20 Oct",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "21 Oct",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "22 Oct",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "23 Oct",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "24 Oct",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "25 Oct",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "26 Oct",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "27 Oct",
+   "revenue": 4500,
+   "cash": 4500,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "28 Oct",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 300,
+   "profit": 0
+  },
+  {
+   "date": "29 Oct",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "30 Oct",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "31 Oct",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "01 Nov",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "02 Nov",
+   "revenue": 26999,
+   "cash": 0,
+   "upi": 26000,
+   "card": 0,
+   "online": 999,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 1
+  },
+  {
+   "date": "03 Nov",
+   "revenue": 7000,
+   "cash": 0,
+   "upi": 0,
+   "card": 7000,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 1
+  },
+  {
+   "date": "04 Nov",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "05 Nov",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 1500,
+   "profit": 0
+  },
+  {
+   "date": "06 Nov",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "07 Nov",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "08 Nov",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "09 Nov",
+   "revenue": 750,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 750,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "10 Nov",
+   "revenue": 5000,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 5000,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "11 Nov",
+   "revenue": 3000,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 3000,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "12 Nov",
+   "revenue": 11000,
+   "cash": 11000,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "13 Nov",
+   "revenue": 3250,
+   "cash": 2000,
+   "upi": 0,
+   "card": 0,
+   "online": 1250,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  }
+ ],
+ "topCustomers": [
+  {
+   "name": "Branch Buyer",
+   "amount": 26000,
+   "invoices": 1,
+   "city": "Gorakhpur"
+  },
+  {
+   "name": "Branch Name Buyer",
+   "amount": 7000,
+   "invoices": 1,
+   "city": "Gorakhpur"
+  }
+ ],
+ "topProducts": [
+  {
+   "name": "Generic Product",
+   "revenue": 32999.88,
+   "sales": 2,
+   "growth": 15
+  }
+ ],
+ "topMobiles": [],
+ "topElectronics": [
+  {
+   "name": "Generic Product",
+   "brand": "Brand",
+   "category": "Consumer Electronics",
+   "revenue": 32999.88,
+   "sales": 2,
+   "avgPrice": 16500,
+   "growth": 17
+  }
+ ],
+ "recentInvoices": [
+  {
+   "_id": "000000000000000000000018",
+   "invoiceNumber": "VP-021",
+   "type": "tax-invoice",
+   "customerId": "CUST-021",
+   "customerName": "Branch Name Buyer",
+   "customerPhone": "9800000000",
+   "customerAddress": "Golghar, Gorakhpur",
+   "customerCity": "Gorakhpur",
+   "customerState": "Uttar Pradesh",
+   "placeOfSupply": "Uttar Pradesh(09)",
+   "billingEntity": "valueplus",
+   "date": "2026-11-03",
+   "dueDate": "2026-11-03",
+   "status": "paid",
+   "items": [
+    {
+     "itemId": "ITM-15",
+     "itemName": "Generic Product",
+     "itemCode": "8471",
+     "description": "Generic Product with standard warranty",
+     "quantity": 1,
+     "unit": "Pcs",
+     "rate": 5932,
+     "discount": 0,
+     "discountType": "amount",
+     "taxableAmount": 5932,
+     "gstRate": 18,
+     "cgst": 533.88,
+     "sgst": 533.88,
+     "igst": 0,
+     "amount": 6999.759999999999,
+     "serialNumbers": [
+      "SN-GEN-1"
+     ]
+    }
+   ],
+   "subtotal": 7000,
+   "discount": 0,
+   "taxableAmount": 5932,
+   "cgst": 0,
+   "sgst": 0,
+   "igst": 0,
+   "totalGST": 1068,
+   "extendedWarrantyTotal": 0,
+   "roundOff": 0,
+   "total": 7000,
+   "paidAmount": 7000,
+   "balanceAmount": 0,
+   "paymentMode": "Card",
+   "payments": [],
+   "paymentTerms": "Net 30",
+   "dueAdvanceAmount": 0,
+   "dueAdvanceMode": "Cash",
+   "deliveryStatus": "delivered",
+   "salesExecutive": "Amit Singh",
+   "reprintCount": 0,
+   "printLogs": [],
+   "createdAt": "2026-11-03T07:15:00.000Z",
+   "updatedAt": "2026-11-03T07:15:00.000Z",
+   "__v": 0,
+   "branchName": "main branch"
+  },
+  {
+   "_id": "000000000000000000000016",
+   "invoiceNumber": "VP-019",
+   "type": "tax-invoice",
+   "customerId": "CUST-019",
+   "customerName": "Branch Buyer",
+   "customerPhone": "9800000000",
+   "customerAddress": "Golghar, Gorakhpur",
+   "customerCity": "Gorakhpur",
+   "customerState": "Uttar Pradesh",
+   "placeOfSupply": "Uttar Pradesh(09)",
+   "billingEntity": "valueplus",
+   "date": "2026-11-02",
+   "dueDate": "2026-11-02",
+   "status": "paid",
+   "items": [
+    {
+     "itemId": "ITM-15",
+     "itemName": "Generic Product",
+     "itemCode": "8471",
+     "description": "Generic Product with standard warranty",
+     "quantity": 1,
+     "unit": "Pcs",
+     "rate": 22034,
+     "discount": 0,
+     "discountType": "amount",
+     "taxableAmount": 22034,
+     "gstRate": 18,
+     "cgst": 1983.06,
+     "sgst": 1983.06,
+     "igst": 0,
+     "amount": 26000.12,
+     "serialNumbers": [
+      "SN-GEN-1"
+     ]
+    }
+   ],
+   "subtotal": 26000,
+   "discount": 0,
+   "taxableAmount": 22034,
+   "cgst": 0,
+   "sgst": 0,
+   "igst": 0,
+   "totalGST": 3966,
+   "extendedWarrantyTotal": 0,
+   "roundOff": 0,
+   "total": 26000,
+   "paidAmount": 26000,
+   "balanceAmount": 0,
+   "paymentMode": "UPI",
+   "payments": [],
+   "paymentTerms": "Net 30",
+   "dueAdvanceAmount": 0,
+   "dueAdvanceMode": "Cash",
+   "deliveryStatus": "delivered",
+   "salesExecutive": "Amit Singh",
+   "reprintCount": 0,
+   "printLogs": [],
+   "createdAt": "2026-11-02T06:30:00.000Z",
+   "updatedAt": "2026-11-02T06:30:00.000Z",
+   "__v": 0,
+   "warehouse": "Main Branch"
+  }
+ ],
+ "timestamp": "2026-11-13T10:00:00.000Z"
+}

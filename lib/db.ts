@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import type { MongoClient } from "mongodb";
 import dns from "dns";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { PER_REQUEST_CLIENT_OPTIONS } from "./db-options";
 
 // mongodb+srv:// needs a DNS SRV lookup to find the cluster's real hosts before it
 // can connect at all. Some local/ISP/router DNS servers are flaky or refuse SRV-type
@@ -105,13 +106,7 @@ async function connectForCurrentRequest(): Promise<typeof mongoose> {
 
   let entry = requestDbs.get(key);
   if (!entry) {
-    const client = new mongoose.mongo.MongoClient(MONGODB_URI, {
-      maxPoolSize: 5,
-      minPoolSize: 0,
-      serverSelectionTimeoutMS: 8000,
-      socketTimeoutMS: 30000,
-      connectTimeoutMS: 10000,
-    });
+    const client = new mongoose.mongo.MongoClient(MONGODB_URI, PER_REQUEST_CLIENT_OPTIONS);
     entry = { client, ready: client.connect() };
     requestDbs.set(key, entry);
   }

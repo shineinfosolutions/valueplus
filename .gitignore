@@ -56,5 +56,8 @@ next-env.d.ts
 .wrangler/
 .dev.vars*
 
-# Bundled unit tests (tests/*.test.ts, built with esbuild)
+# Test output (tests/*.test.ts bundled with esbuild, tests/run-tests.mjs)
 tests/.out/
+
+# Local agent worktrees
+.claude/worktrees/
