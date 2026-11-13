@@ -768,3 +768,24 @@
   - **Before switching sales to d1:** the next invoice number would come from D1, so it could be stale if the copy lags (the invoice POST still checks against Mongo).
   - **Tests:** `tests/d1-wiring-sales-crm.test.ts` and `tests/d1-wiring-stock-staff.test.ts` check that mongo, shadow and d1 modes give identical answers and that a D1 failure falls back to MongoDB.
   - **Next (Stage C):** after a few clean shop days in `shadow_daily`, set areas to `d1` one at a time, sales/money last and after 10 PM.
+- **2026-11-14 ~05:00 IST — D1 Stage C automation live (version `88168635`, migration 0009).**
+  - **Job:** `lib/d1/stage-c.ts` runs after every `/api/cron/d1-sync` (08:30–00:25 IST).
+  - **Promotion shadow → d1:**
+    - only 22:00–00:25 IST, one area per night;
+    - order masters → crm → staff → stock → sales;
+    - clean days / runs needed: masters 1 / 30, crm 2 / 30, staff 2 / 50, stock 2 / 50, sales 3 / 100;
+    - the previous area must have been d1 for a full shop day.
+  - **Demotion to shadow, at any time:** any mismatch in the last hour, more than 3 D1 errors, or writeThrough not 'on'.
+  - **Write-through guard:** a write-through failure turns writeThrough off and demotes every d1 area. It does NOT turn it back on; an Admin re-enables it with `UPDATE feature_flags SET value='on' WHERE key='writeThrough'`.
+  - **Freshness guard (`read-source.ts`):** a d1 area answers from Mongo unless writeThrough is on and there has been no write-through or sync failure in the last 15 min.
+  - **Reverse shadow:** in d1 mode, Mongo is compared after the response (kind 'reverse').
+  - **`mongoOnlyInD1` reads:** next numbers, cash register / admin cash / day-close, and AVAILABLE serials.
+  - **Controls:**
+    - `stageC` = auto | demote-only | off;
+    - `read:<area>` = 'mongo' is a manual override the job never touches;
+    - the log is in `SELECT * FROM stage_c_log`;
+    - status: `/api/admin/d1-shadow-status` (stageC section).
+  - **Still open:**
+    - not yet checked on Workers whether `AsyncLocalStorage.snapshot()` works (it falls back safely);
+    - writes still go to MongoDB first;
+    - Stage D (D1-native writes, then removing MongoDB) still has to be built after all five areas have been stable on d1.
