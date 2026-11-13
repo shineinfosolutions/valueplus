@@ -1,3 +1,4 @@
+import { istDayStart, istDayEnd } from "@/lib/ist";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import AuditLog from "@/models/AuditLog";
@@ -34,8 +35,9 @@ export async function GET(req: Request) {
     const limit = Math.min(Number(searchParams.get("limit")) || 200, 1000);
 
     const range: any = {};
-    if (from) range.$gte = new Date(`${from}T00:00:00`);
-    if (to) range.$lte = new Date(`${to}T23:59:59.999`);
+    // India days: with no zone these were read in the server's own zone (UTC) and missed 00:00–05:30 IST of the start day.
+    if (from) range.$gte = istDayStart(from);
+    if (to) range.$lte = istDayEnd(to);
 
     if (view === "deleted-invoices") {
       const filter: any = {};

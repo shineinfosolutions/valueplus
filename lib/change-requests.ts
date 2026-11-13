@@ -1,3 +1,4 @@
+import { istYear } from "@/lib/ist";
 import { NextResponse } from "next/server";
 import StoreActivityApproval from "@/models/StoreActivityApproval";
 import AuditLog from "@/models/AuditLog";
@@ -137,7 +138,7 @@ export async function createChangeRequest(input: {
     return { ok: false, error: "A change for this is already waiting for the Admin's approval. Wait for it to be decided first." };
   }
 
-  const activityId = `ACT-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}-${Math.floor(100 + Math.random() * 900)}`;
+  const activityId = `ACT-${istYear()}-${Date.now().toString().slice(-4)}-${Math.floor(100 + Math.random() * 900)}`;
   const request = await StoreActivityApproval.create({
     activityId,
     storeName: input.storeName || "Store",

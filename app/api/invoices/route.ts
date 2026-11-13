@@ -1,3 +1,4 @@
+import { istToday, istDateOf, istYear } from "@/lib/ist";
 import { missingApprovals } from "@/lib/discount-approval";
 import { NextResponse } from "next/server";
 import mongoose from "mongoose";
@@ -561,7 +562,7 @@ export async function POST(req: Request) {
         const StoreActivityApproval = (await import("@/models/StoreActivityApproval")).default;
         const { notifyAdmins } = await import("@/lib/notify");
         await StoreActivityApproval.create({
-          activityId: `ACT-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}-${Math.floor(100 + Math.random() * 900)}`,
+          activityId: `ACT-${istYear()}-${Date.now().toString().slice(-4)}-${Math.floor(100 + Math.random() * 900)}`,
           storeName: (invoice as any).warehouse || "Store",
           storeInchargeName: backdateNeedsApproval.by,
           storeInchargeEmail: (await getActor())?.email || "",
@@ -603,7 +604,7 @@ export async function POST(req: Request) {
           // For a Finance sale, the amount actually collected here is the customer's down
           // payment — tag it with however that down payment was really collected, not "Finance".
           paymentMode: body.financeProvider ? (body.financeDownPaymentMode || body.downPaymentMode || "Unclassified") : (body.paymentMode || "Unclassified"),
-          date: body.date || new Date().toISOString().split("T")[0],
+          date: body.date || istToday(),
           referenceId: invoice.invoiceNumber,
           notes: invoice.type === 'credit-note' ? `Refund for Credit Note ${invoice.invoiceNumber}` : `Initial payment for ${invoice.type === 'sales-order' ? 'order' : 'invoice'} ${invoice.invoiceNumber}`,
           type: invoice.type === 'credit-note' ? "paid" : "received"
@@ -1308,7 +1309,7 @@ export async function PUT(req: Request) {
           partyName: existingInvoice.customerName,
           amount: amountToApply,
           paymentMode: body.dueClearedMode || "Cash",
-          date: new Date().toISOString().split("T")[0],
+          date: istToday(),
           referenceId: existingInvoice.invoiceNumber,
           notes: `${isFullyCleared ? "Due balance cleared" : "Partial due payment collected"} for Invoice #${existingInvoice.invoiceNumber} via ${body.dueClearedMode || "Cash"}${clearedBankAccountRef ? ` into ${clearedBankAccountRef}` : ""}. Txn/Ref: ${body.dueClearedTxnId || "N/A"}`,
           type: "received",
@@ -1469,7 +1470,7 @@ export async function PUT(req: Request) {
       const advanceIn = body.advanceAmount;
       for (const k of ["paidAmount", "balanceAmount", "payments", "paymentMode", "status", "advanceAmount", "advanceMode"]) delete patch[k];
       const was: any = existingInvoice.toObject ? existingInvoice.toObject() : existingInvoice;
-      const dayOf = (v: any) => (v ? (typeof v === "string" ? v : new Date(v).toISOString()).slice(0, 10) : "");
+      const dayOf = (v: any) => (v ? (typeof v === "string" ? v : istDateOf(v)).slice(0, 10) : "");
       for (const [k, v] of Object.entries(patch)) {
         if (k === "items") {
           if (sameLines(was.items, v as any[])) delete patch.items;

@@ -1,3 +1,4 @@
+import { istToday } from "@/lib/ist";
 import { NextResponse } from "next/server";
 import fs from "fs/promises";
 import path from "path";
@@ -212,7 +213,7 @@ async function handleImport() {
             billNo,
             supplierId: "SUP-VALUEPLUS-CENTRAL",
             supplierName: "Value Plus Central Distribution & Ashoka Stock Inward",
-            billDate: new Date().toISOString().split("T")[0],
+            billDate: istToday(),
             paymentMode: "Bank Transfer",
             items: batch,
             totalAmount: billTotal,
@@ -228,7 +229,7 @@ async function handleImport() {
       const journalNo = `SJ-INW-${Date.now().toString().slice(-6)}`;
       await StockJournal.create({
         journalNumber: journalNo,
-        date: new Date().toISOString().split("T")[0],
+        date: istToday(),
         purpose: "Master Stock Import & Physical Audit Inward - Stock 4",
         items: stockJournalItems.slice(0, 200),
       });

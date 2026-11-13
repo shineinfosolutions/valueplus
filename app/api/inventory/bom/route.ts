@@ -1,3 +1,4 @@
+import { istYear } from "@/lib/ist";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import BillOfMaterial from "@/models/BillOfMaterial";
@@ -19,7 +20,7 @@ export async function POST(req: Request) {
     
     if (!body.bomNumber) {
       const count = await BillOfMaterial.countDocuments();
-      body.bomNumber = `BOM-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}`;
+      body.bomNumber = `BOM-${istYear()}-${String(count + 1).padStart(4, '0')}`;
     }
     
     const bom = await BillOfMaterial.create(body);

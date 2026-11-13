@@ -1,3 +1,4 @@
+import { istToday, istDayStart, istDayEnd, istMonthStart, addDaysIst } from "@/lib/ist";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import Invoice from "@/models/Invoice";
@@ -14,66 +15,34 @@ export async function GET(req: Request) {
     
     const invoices = await Invoice.find({ type: { $nin: ["sales-order", "proforma"] } }).lean();
     
+    // Every range is whole India days (00:00–23:59 IST). The server runs on UTC, so `setHours(0, 0, 0, 0)` started
+    // "Today" at 05:30 IST, and between midnight and 05:30 IST "Today" was still yesterday.
+    const inDays = (fromDay: string, toDay: string) => {
+      const start = istDayStart(fromDay);
+      const end = istDayEnd(toDay);
+      return invoices.filter((inv: any) => {
+        const d = new Date(inv.date || inv.createdAt);
+        return d >= start && d <= end;
+      });
+    };
+    const todayStr = istToday();
+
     let filteredInvoices = invoices;
     if (startDate && endDate) {
-      const start = new Date(startDate);
-      start.setHours(0, 0, 0, 0);
-      const end = new Date(endDate);
-      end.setHours(23, 59, 59, 999);
-      filteredInvoices = invoices.filter((inv: any) => {
-        const d = new Date(inv.date || inv.createdAt);
-        return d >= start && d <= end;
-      });
+      filteredInvoices = inDays(startDate, endDate);
     } else if (range === "today") {
-      const start = new Date();
-      start.setHours(0, 0, 0, 0);
-      const end = new Date();
-      end.setHours(23, 59, 59, 999);
-      filteredInvoices = invoices.filter((inv: any) => {
-        const d = new Date(inv.date || inv.createdAt);
-        return d >= start && d <= end;
-      });
+      filteredInvoices = inDays(todayStr, todayStr);
     } else if (range === "yesterday") {
-      const start = new Date();
-      start.setDate(start.getDate() - 1);
-      start.setHours(0, 0, 0, 0);
-      const end = new Date(start);
-      end.setHours(23, 59, 59, 999);
-      filteredInvoices = invoices.filter((inv: any) => {
-        const d = new Date(inv.date || inv.createdAt);
-        return d >= start && d <= end;
-      });
+      const yesterdayStr = addDaysIst(todayStr, -1);
+      filteredInvoices = inDays(yesterdayStr, yesterdayStr);
     } else if (range === "week" || range === "this week" || range === "last 7 days") {
-      const start = new Date();
-      start.setDate(start.getDate() - 7);
-      start.setHours(0, 0, 0, 0);
-      const end = new Date();
-      end.setHours(23, 59, 59, 999);
-      filteredInvoices = invoices.filter((inv: any) => {
-        const d = new Date(inv.date || inv.createdAt);
-        return d >= start && d <= end;
-      });
+      filteredInvoices = inDays(addDaysIst(todayStr, -7), todayStr);
     } else if (range === "month" || range === "this month" || range === "last 30 days") {
-      // `now` was never declared here, so this branch threw and the whole report
-      // failed whenever it was asked for the current month.
-      const now = new Date();
-      const start = new Date(now.getFullYear(), now.getMonth(), 1);
-      start.setHours(0, 0, 0, 0);
-      const end = new Date();
-      end.setHours(23, 59, 59, 999);
-      filteredInvoices = invoices.filter((inv: any) => {
-        const d = new Date(inv.date || inv.createdAt);
-        return d >= start && d <= end;
-      });
+      filteredInvoices = inDays(istMonthStart(), todayStr);
     } else if (range === "last month") {
-      const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      start.setHours(0, 0, 0, 0);
-      const end = new Date(now.getFullYear(), now.getMonth(), 0);
-      end.setHours(23, 59, 59, 999);
-      filteredInvoices = invoices.filter((inv: any) => {
-        const d = new Date(inv.date || inv.createdAt);
-        return d >= start && d <= end;
-      });
+      // `now` was never declared in this branch either, so "last month" threw; the bounds now come from today in India.
+      const lastDayOfLastMonth = addDaysIst(istMonthStart(), -1);
+      filteredInvoices = inDays(`${lastDayOfLastMonth.slice(0, 7)}-01`, lastDayOfLastMonth);
     }
     
     // Group metrics by staff

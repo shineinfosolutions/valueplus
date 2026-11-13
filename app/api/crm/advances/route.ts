@@ -1,3 +1,4 @@
+import { istToday, istYear } from "@/lib/ist";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import CustomerAdvance from "@/models/CustomerAdvance";
@@ -87,7 +88,7 @@ export async function POST(req: Request) {
     }
 
     // Auto-generate receipt number ADV-YYYY-XXXX
-    const currentYear = new Date().getFullYear();
+    const currentYear = istYear();
     const count = await CustomerAdvance.countDocuments({});
     const receiptNumber = `ADV-${currentYear}-${String(count + 1).padStart(4, "0")}`;
 
@@ -190,7 +191,7 @@ export async function PUT(req: Request) {
       } else {
         advance.status = "Partially Used";
       }
-      advance.notes = `${advance.notes ? advance.notes + " | " : ""}Refunded ₹${refundVal} on ${new Date().toISOString().split("T")[0]}: ${notes || ""}`;
+      advance.notes = `${advance.notes ? advance.notes + " | " : ""}Refunded ₹${refundVal} on ${istToday()}: ${notes || ""}`;
       await advance.save();
 
       // Deduct from customer's advance balance
@@ -230,7 +231,7 @@ export async function PUT(req: Request) {
       const taken = Number(advance.remainingBalance) || 0;
       advance.status = "Cancelled";
       advance.remainingBalance = 0;
-      advance.notes = `${advance.notes ? advance.notes + " | " : ""}CANCELLED by ${actor.name} on ${new Date().toISOString().split("T")[0]}: ${why}`;
+      advance.notes = `${advance.notes ? advance.notes + " | " : ""}CANCELLED by ${actor.name} on ${istToday()}: ${why}`;
       await advance.save();
 
       const customer = await Customer.findOne({ phone: advance.customerPhone });

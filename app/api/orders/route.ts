@@ -1,3 +1,4 @@
+import { istToday } from "@/lib/ist";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import Invoice from "@/models/Invoice";
@@ -43,7 +44,7 @@ export async function POST(request: Request) {
       customerName: body.customerName,
       salesExecutive: body.salesExecutive || body.staffName || "Admin",
       createdBy: body.createdBy || body.salesExecutive || "Admin",
-      date: body.date || new Date().toISOString().split("T")[0],
+      date: body.date || istToday(),
       dueDate: body.deliveryDate || body.date,
       status: body.orderStatus || "sent",
       items: [

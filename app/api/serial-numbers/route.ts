@@ -1,3 +1,4 @@
+import { istToday } from "@/lib/ist";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import SerialNumber from "@/models/SerialNumber";
@@ -174,7 +175,7 @@ export async function PUT(req: Request) {
     if (customerPhone) updateData.customerPhone = customerPhone;
     // The location the unit sits at (moved with a stock transfer, or a closed godown's stock).
     if (typeof warehouse === "string" && warehouse.trim()) updateData.warehouse = warehouse.trim();
-    if (status === "SOLD") updateData.soldDate = new Date().toISOString().split("T")[0];
+    if (status === "SOLD") updateData.soldDate = istToday();
     
     updateData.$push = {
       history: {

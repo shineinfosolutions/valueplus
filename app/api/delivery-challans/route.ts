@@ -1,3 +1,4 @@
+import { istYear } from "@/lib/ist";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import mongoose from "mongoose";
@@ -41,7 +42,7 @@ export async function GET(req: Request) {
 
 /** The next free challan number: DC-<year>-0001, DC-<year>-0002 … (never a random number that can clash). */
 async function nextChallanNo(): Promise<string> {
-  const year = new Date().getFullYear();
+  const year = istYear();
   let n = (await DeliveryChallan.countDocuments()) + 1;
   for (;;) {
     const challanNo = `DC-${year}-${String(n).padStart(4, "0")}`;

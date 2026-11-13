@@ -1,3 +1,4 @@
+import { istYear } from "@/lib/ist";
 import mongoose from "mongoose";
 import Invoice from "@/models/Invoice";
 import Customer from "@/models/Customer";
@@ -644,7 +645,7 @@ export async function fullEditInvoice(
       const StoreActivityApproval = (await import("@/models/StoreActivityApproval")).default;
       const { notifyAdmins } = await import("@/lib/notify");
       await StoreActivityApproval.create({
-        activityId: `ACT-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}-${Math.floor(100 + Math.random() * 900)}`,
+        activityId: `ACT-${istYear()}-${Date.now().toString().slice(-4)}-${Math.floor(100 + Math.random() * 900)}`,
         storeName: existing.warehouse || "Store",
         storeInchargeName: actor.name,
         storeInchargeEmail: actor.email || actor.name,

@@ -1,3 +1,4 @@
+import { istToday } from "@/lib/ist";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import DayClose from "@/models/DayClose";
@@ -19,7 +20,9 @@ function addDays(dateStr: string, days: number): string {
  *  night naturally pushes this back further rather than just nagging about
  *  the latest day — nothing gets forgotten. */
 async function getPendingDate(): Promise<string | null> {
-  const todayStr = toDateStr(new Date());
+  // Today in India: on the UTC server, between midnight and 05:30 IST the UTC date is still yesterday, so the day
+  // that just ended could not be closed (and the Sales / Cash lock waited until 05:30).
+  const todayStr = istToday();
   const yesterdayStr = addDays(todayStr, -1);
 
   const latest = await DayClose.findOne({}).sort({ date: -1 });

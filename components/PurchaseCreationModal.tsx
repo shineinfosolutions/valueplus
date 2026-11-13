@@ -1,5 +1,6 @@
 "use client";
 
+import { addDaysIst, istToday } from "@/lib/ist";
 import React, { useState, useMemo, useEffect } from "react";
 import { appConfirm, appPrompt } from "@/components/shared/AppDialogs";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -635,7 +636,7 @@ export function PurchaseCreationModal({ isOpen, onClose, mode = "entry", preload
       if (currentMode === "order") {
         payload.poNo = payload.billNo;
         payload.date = payload.billDate;
-        payload.expectedDate = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+        payload.expectedDate = addDaysIst(istToday(), 10); // 10 India days ahead (toISOString is UTC: a day early before 05:30 IST)
         payload.totalAmount = payload.total;
       }
 

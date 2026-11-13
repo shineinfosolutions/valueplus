@@ -1,3 +1,4 @@
+import { istToday } from "@/lib/ist";
 import mongoose, { Schema, Document, Model } from "mongoose";
 
 export interface IUser extends Document {
@@ -81,7 +82,7 @@ const UserSchema = new Schema<IUser>(
       default: "Fixed",
     },
     salaryPaymentDay: { type: Number, default: 7 },
-    joiningDate: { type: String, default: () => new Date().toISOString().split("T")[0] },
+    joiningDate: { type: String, default: () => istToday() },
     advanceBalance: { type: Number, default: 0 },
     monthlyAdvanceDeduction: { type: Number, default: 0 },
     vehicleNumber: { type: String, default: "" },

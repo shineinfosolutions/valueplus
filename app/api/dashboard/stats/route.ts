@@ -1,3 +1,4 @@
+import { istToday, istHour, istDayStart, istDayEnd, istMonthStart, addDaysIst } from "@/lib/ist";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import Invoice from "@/models/Invoice";
@@ -92,28 +93,25 @@ export async function GET(request: Request) {
     const endDateParam = searchParams.get("endDate");
     const warehouseParam = searchParams.get("warehouse") || searchParams.get("location") || "";
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
+    // Day and month bounds are India days (00:00–23:59 IST). The server runs on UTC, so `setHours(0, 0, 0, 0)`
+    // made "today" start at 05:30 IST, and between midnight and 05:30 IST on the 1st still showed last month.
+    const todayStr = istToday();
+    const today = istDayStart(todayStr);
+    const yesterday = istDayStart(addDaysIst(todayStr, -1));
 
-    const startOfWeek = new Date(today);
-    startOfWeek.setDate(today.getDate() - today.getDay());
+    const startOfWeek = istDayStart(addDaysIst(todayStr, -new Date(`${todayStr}T00:00:00Z`).getUTCDay()));
 
-    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    const startOfMonth = istDayStart(istMonthStart());
 
     // Resolve the active date range once so it can be reused for invoices, reprints & payments
     let rangeStart: Date;
     let rangeEnd: Date;
     if (startDateParam && endDateParam) {
-      rangeStart = new Date(startDateParam);
-      rangeStart.setHours(0, 0, 0, 0);
-      rangeEnd = new Date(endDateParam);
-      rangeEnd.setHours(23, 59, 59, 999);
+      rangeStart = istDayStart(startDateParam);
+      rangeEnd = istDayEnd(endDateParam);
     } else {
       rangeStart = startOfMonth;
-      rangeEnd = new Date();
-      rangeEnd.setHours(23, 59, 59, 999);
+      rangeEnd = istDayEnd(todayStr);
     }
     const editWindowStart = startDateParam && endDateParam ? new Date(`${startDateParam}T00:00:00+05:30`) : rangeStart;
     const editWindowEnd = startDateParam && endDateParam ? new Date(`${endDateParam}T23:59:59.999+05:30`) : rangeEnd;
@@ -343,10 +341,8 @@ export async function GET(request: Request) {
     // Expenses of the active window (picked from the summary rows; their full rows are read just below).
     let filteredExpenses = allExpenses;
     if (startDateParam && endDateParam) {
-      const start = new Date(startDateParam);
-      start.setHours(0, 0, 0, 0);
-      const end = new Date(endDateParam);
-      end.setHours(23, 59, 59, 999);
+      const start = istDayStart(startDateParam);
+      const end = istDayEnd(endDateParam);
       filteredExpenses = allExpenses.filter((exp: any) => {
         const d = new Date(exp.date || exp.createdAt);
         return d >= start && d <= end;
@@ -720,12 +716,12 @@ export async function GET(request: Request) {
         if (inv.createdAt) {
           const invDateObj = new Date(inv.createdAt);
           if (!isNaN(invDateObj.getTime())) {
-            h = invDateObj.getHours();
+            h = istHour(invDateObj);
           }
         } else if (inv.date && inv.date.includes("T")) {
           const invDateObj = new Date(inv.date);
           if (!isNaN(invDateObj.getTime())) {
-            h = invDateObj.getHours();
+            h = istHour(invDateObj);
           }
         }
         if (h === 0) h = 14;
@@ -905,7 +901,7 @@ export async function GET(request: Request) {
           let h = 14;
           if (p.createdAt) {
             const dObj = new Date(p.createdAt);
-            if (!isNaN(dObj.getTime())) h = dObj.getHours();
+            if (!isNaN(dObj.getTime())) h = istHour(dObj);
           }
           if (h < 9) bucketKey = "08:00 AM";
           else if (h < 11) bucketKey = "10:00 AM";
@@ -1154,7 +1150,7 @@ export async function GET(request: Request) {
         let h = 14;
         if (exp.createdAt) {
           const expDateObj = new Date(exp.createdAt);
-          if (!isNaN(expDateObj.getTime())) h = expDateObj.getHours();
+          if (!isNaN(expDateObj.getTime())) h = istHour(expDateObj);
         }
         if (h < 9) bucketKey = "08:00 AM";
         else if (h < 11) bucketKey = "10:00 AM";
@@ -1735,7 +1731,7 @@ export async function POST(request: Request) {
         customerId: body.partyId || "CUST-001",
         customerName: body.partyName || body.customerName,
         customerGST: body.gstNumber || "27AAACR0365R1Z2",
-        date: body.date || new Date().toISOString().split("T")[0],
+        date: body.date || istToday(),
         dueDate: body.dueDate || "2026-09-30",
         status: body.status || "paid",
         items: lineItems,
@@ -1808,8 +1804,8 @@ export async function POST(request: Request) {
         type: "tax-invoice",
         customerId: "CUST-001",
         customerName: body.partyName,
-        date: body.date || new Date().toISOString().split("T")[0],
-        dueDate: body.date || new Date().toISOString().split("T")[0],
+        date: body.date || istToday(),
+        dueDate: body.date || istToday(),
         status: "paid",
         items: [
           {

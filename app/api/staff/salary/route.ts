@@ -1,3 +1,4 @@
+import { istToday } from "@/lib/ist";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import Salary from "@/models/Salary";
@@ -53,14 +54,14 @@ export async function PUT(req: Request) {
     
     if (paymentAmount) {
       salary.history.push({
-        date: new Date().toISOString().split("T")[0],
+        date: istToday(),
         amount: Number(paymentAmount),
         paymentMode: paymentMode || "Bank Transfer",
         txnRef: txnRef || "",
         notes: body.notes || "Salary payment released",
       });
       salary.paymentStatus = paymentStatus || "Paid";
-      salary.paymentDate = new Date().toISOString().split("T")[0];
+      salary.paymentDate = istToday();
       salary.paymentMode = paymentMode || "Bank Transfer";
     }
     

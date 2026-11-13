@@ -1,3 +1,4 @@
+import { istToday } from "@/lib/ist";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import Vendor from "@/models/Vendor";
@@ -63,7 +64,7 @@ export async function POST(req: Request) {
       paymentId: `VP-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       vendorId: String(vendor._id),
       vendorName: vendor.name,
-      date: body.date || new Date().toISOString().split("T")[0],
+      date: body.date || istToday(),
       amount,
       mode: body.mode || "Cash",
       refNo: body.refNo || "",

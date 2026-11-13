@@ -1,3 +1,4 @@
+import { istToday } from "@/lib/ist";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import FinanceTransaction from "@/models/FinanceTransaction";
@@ -7,21 +8,22 @@ function generateEmiSchedule(totalLoan: number, tenure: number, startDateStr: st
   const installments = [];
   const tenureCount = Math.max(1, tenure || 8);
   const monthlyAmt = Math.round(totalLoan / tenureCount);
-  const baseDate = new Date(startDateStr || Date.now());
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  // Calendar dates only: the month arithmetic uses the UTC fields and "overdue" compares with today in India,
+  // so the server's own zone (UTC) never moves a due date or the overdue cut-off.
+  const baseDate = new Date(startDateStr || istToday());
+  const todayStr = istToday();
 
   for (let i = 1; i <= tenureCount; i++) {
     const d = new Date(baseDate);
-    d.setMonth(d.getMonth() + i);
-    d.setDate(5); // 5th of every month standard EMI cycle
+    d.setUTCMonth(d.getUTCMonth() + i);
+    d.setUTCDate(5); // 5th of every month standard EMI cycle
     const dueDateStr = d.toISOString().split("T")[0];
-    
+
     installments.push({
       installmentNumber: i,
       dueDate: dueDateStr,
       amount: i === tenureCount ? Math.max(0, totalLoan - (monthlyAmt * (tenureCount - 1))) : monthlyAmt,
-      status: d < today ? "Overdue" : "Pending",
+      status: dueDateStr < todayStr ? "Overdue" : "Pending",
       penaltyAmount: 0,
       notes: `Monthly EMI ${i} of ${tenureCount}`,
     });
@@ -83,7 +85,7 @@ export async function POST(req: Request) {
     body.monthlyEmiAmount = Math.round(loanAmt / tenure);
     
     if (!body.emiSchedule || body.emiSchedule.length === 0) {
-      body.emiSchedule = generateEmiSchedule(loanAmt, tenure, body.date || new Date().toISOString().split("T")[0]);
+      body.emiSchedule = generateEmiSchedule(loanAmt, tenure, body.date || istToday());
     }
     
     body.totalPaidEmiAmount = body.emiSchedule.filter((i: any) => i.status === "Paid").reduce((s: number, i: any) => s + (i.amount || 0), 0);
@@ -158,7 +160,7 @@ export async function PUT(req: Request) {
           return {
             ...inst,
             status: isPaid ? "Paid" : "Bounced",
-            paidDate: isPaid ? (body.paidDate || new Date().toISOString().split("T")[0]) : undefined,
+            paidDate: isPaid ? (body.paidDate || istToday()) : undefined,
             paymentChannel: isPaid ? (paymentChannel || "Shop Counter") : undefined,
             paymentMode: isPaid ? (paymentMode || "Cash") : undefined,
             collectedBy: isPaid ? (collectedBy || "Amit Singh (Cashier)") : undefined,

@@ -1,3 +1,4 @@
+import { istToday } from "@/lib/ist";
 import mongoose, { Schema, Document, Model } from "mongoose";
 
 export interface IStaffTask extends Document {
@@ -45,7 +46,7 @@ const StaffTaskSchema = new Schema<IStaffTask>(
         try {
           return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date());
         } catch (e) {
-          return new Date().toISOString().split("T")[0];
+          return istToday();
         }
       },
       index: true,

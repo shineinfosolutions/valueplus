@@ -1,3 +1,4 @@
+import { istYear } from "@/lib/ist";
 import { deferIfManager } from "@/lib/deferred-actions";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
@@ -31,7 +32,7 @@ export async function POST(req: Request) {
 
     await connectToDatabase();
 
-    const adjustmentNo = body.adjustmentNo || `ADJ-${new Date().getFullYear()}-${Math.floor(Math.random() * 10000).toString().padStart(4, "0")}`;
+    const adjustmentNo = body.adjustmentNo || `ADJ-${istYear()}-${Math.floor(Math.random() * 10000).toString().padStart(4, "0")}`;
     const payload = { ...body, adjustmentNo };
 
     const adjustment = await StockAdjustment.create(payload);

@@ -52,7 +52,7 @@ const CashTransactionSchema = new Schema<ICashTransaction>(
     },
     amount: { type: Number, required: true },
     date: { type: String, required: true },
-    time: { type: String, default: () => new Date().toLocaleTimeString("en-IN") },
+    time: { type: String, default: () => new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" }) },
     referenceNo: { type: String, required: true },
     description: { type: String, default: "" },
     partyName: { type: String, default: "" },

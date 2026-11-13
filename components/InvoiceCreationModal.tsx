@@ -1,3 +1,4 @@
+import { addDaysIst } from "@/lib/ist";
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import { appConfirm, appPrompt } from "@/components/shared/AppDialogs";
 import { allowedGstRate } from "@/lib/gst-rate";
@@ -4169,10 +4170,10 @@ export function InvoiceCreationModal({
                         type="date"
                         value={billingForm.dueDate || ""}
                         min={todayInIndia()}
-                        max={new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0]}
+                        max={addDaysIst(todayInIndia(), 7)}
                         onChange={(e) => {
                           const todayStr = todayInIndia();
-                          const maxStr = new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0];
+                          const maxStr = addDaysIst(todayInIndia(), 7);
                           let picked = e.target.value;
                           if (picked && picked < todayStr) picked = todayStr;
                           if (picked && picked > maxStr) picked = maxStr;
