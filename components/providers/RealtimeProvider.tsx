@@ -2,7 +2,8 @@
 
 import { createContext, useCallback, useContext, useEffect, useRef } from "react";
 import { useSession } from "next-auth/react";
-import { useQueryClient, type Query } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
+import { anyPathMatch, liveOf, normPath } from "@/lib/live-paths";
 
 /**
  * Live updates: one WebSocket per open app (served by realtime-hub.ts through worker.ts at /realtime).
@@ -30,13 +31,9 @@ const RETRY_MAX_MS = 30_000;
 const MAX_FAILED_TRIES = 6; // then wait for the app to come back to the front / online before trying again
 const COALESCE_MS = 300; // one save often writes several paths; refetch once
 
-const norm = (p: string) => p.toLowerCase().replace(/\/+$/, "");
-const matches = (changed: string, watched: string) => changed === watched || changed.startsWith(`${watched}/`);
-const anyMatch = (changed: string[], watched: string[]) => watched.some((w) => changed.some((c) => matches(c, norm(w))));
-const liveOf = (q: Query): string[] | null => {
-  const live = (q.meta as any)?.live;
-  return Array.isArray(live) && live.length ? live : null;
-};
+// The path-matching rule is shared with QueryProvider (refresh after this tab's own save).
+const norm = normPath;
+const anyMatch = anyPathMatch;
 
 export default function RealtimeProvider({ children }: { children: React.ReactNode }) {
   const { status } = useSession();

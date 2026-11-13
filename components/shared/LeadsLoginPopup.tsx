@@ -22,10 +22,19 @@ export function LeadsLoginPopup() {
   const role = String((session?.user as any)?.role || "").toLowerCase();
   const isSales = role === "salesman" || role === "sales";
   const [open, setOpen] = useState(false);
+  // Closed already in this sign-in: the list would never be shown, so it is not downloaded either
+  // (it is the salesman's whole lead list — too big to ride along in /api/me/summary).
+  const [closedThisSession, setClosedThisSession] = useState(() => {
+    try {
+      return typeof window !== "undefined" && sessionStorage.getItem(SESSION_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
 
   const { data: leads = [] } = useQuery({
     queryKey: ["login-popup-leads"],
-    enabled: isSales,
+    enabled: isSales && !closedThisSession,
     queryFn: async () => {
       const json = await (await fetch("/api/crm/leads", { cache: "no-store" })).json();
       return json.success ? (json.data as any[]) : [];
@@ -63,6 +72,8 @@ export function LeadsLoginPopup() {
       /* fine */
     }
     setOpen(false);
+    // Stop keeping the list fresh after every save: it is not shown again in this sign-in.
+    setClosedThisSession(true);
   };
 
   const showPopup = useExclusivePopup("leads-login", open);

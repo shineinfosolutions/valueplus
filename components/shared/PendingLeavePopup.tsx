@@ -2,7 +2,7 @@
 
 import { useExclusivePopup } from "@/lib/popup-queue";
 import { appConfirm, appPrompt } from "@/components/shared/AppDialogs";
-import { useLive } from "@/components/providers/RealtimeProvider";
+import { useMeSummary } from "@/components/shared/useMeSummary";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -27,11 +27,14 @@ export function PendingLeavePopup() {
   const [fresh, setFresh] = useState<any[]>([]);
   const seen = useRef<Set<string>>(new Set());
 
-  const check = async () => {
+  // Requests this person may decide come with the shared "my status" query (GET /api/me/summary),
+  // refreshed when requests change (live-update socket) — no call of its own.
+  const { data: summary } = useMeSummary();
+  const pendingList = isReviewer ? summary?.leaves : undefined;
+
+  const check = (rows: any[]) => {
     try {
-      const json = await (await fetch("/api/staff/leave-requests?status=pending&decidable=1")).json();
-      if (!json.success) return;
-      const news = (json.data as any[]).filter((r) => !seen.current.has(String(r._id)));
+      const news = rows.filter((r) => !seen.current.has(String(r._id)));
       news.forEach((r) => seen.current.add(String(r._id)));
       if (news.length > 0) {
         setFresh((prev) => [...prev, ...news]);
@@ -43,11 +46,10 @@ export function PendingLeavePopup() {
   };
 
   useEffect(() => {
-    if (isReviewer) check();
+    // Not loaded yet, or the check failed: checked again on the next answer.
+    if (Array.isArray(pendingList)) check(pendingList);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isReviewer]);
-  // Checked again only when the server announces a change (live-update socket), not on a timer.
-  useLive(["/api/staff/leave-requests"], () => check(), isReviewer);
+  }, [pendingList]);
 
   const showPopup = useExclusivePopup("pending-leave", fresh.length > 0);
   if (!isReviewer) return null;

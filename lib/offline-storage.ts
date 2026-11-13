@@ -46,6 +46,7 @@ const STORAGE_KEYS = {
   OFFLINE_INVOICES: "valueplus_offline_invoices_v1",
   CACHED_ITEMS: "valueplus_cached_items_v1",
   CACHED_CUSTOMERS: "valueplus_cached_customers_v1",
+  CATALOG_FETCHED_AT: "valueplus_cached_catalog_fetched_at_v1",
   DASHBOARD_STATS_PREFIX: "valueplus_dashboard_stats_",
   DASHBOARD_EXTENDED: "valueplus_dashboard_extended_v1",
 };
@@ -167,6 +168,55 @@ export function removeOfflineInvoice(offlineId: string): void {
   localStorage.setItem(STORAGE_KEYS.OFFLINE_INVOICES, JSON.stringify(updated));
 
   window.dispatchEvent(new CustomEvent("valueplus-offline-queue-changed", { detail: { count: updated.length } }));
+}
+
+/**
+ * When to download the full product and customer lists for offline billing.
+ *
+ * They used to be downloaded on every app open, on every phone, for every role — even
+ * on the login screen — which made them two of the heaviest calls the app makes. Only
+ * the roles that make bills need them offline, and the lists change slowly enough that
+ * a copy up to 12 hours old is fine for a bill made while the internet is down (the
+ * billing form itself always loads the live lists while online).
+ */
+export const OFFLINE_CATALOG_ROLES = ["admin", "superadmin", "manager", "cashier"];
+export const OFFLINE_CATALOG_MAX_AGE_MS = 12 * 60 * 60 * 1000;
+
+export function shouldPreloadOfflineCatalog(opts: {
+  signedIn: boolean;
+  role: string;
+  online: boolean;
+  lastFetchedAt: number | null;
+  now: number;
+}): boolean {
+  if (!opts.signedIn || !opts.online) return false;
+  if (!OFFLINE_CATALOG_ROLES.includes(String(opts.role || "").toLowerCase())) return false;
+  const last = opts.lastFetchedAt;
+  if (last === null || !Number.isFinite(last)) return true;
+  // A time in the future means the phone's clock was changed: do not trust it.
+  if (last > opts.now) return true;
+  return opts.now - last >= OFFLINE_CATALOG_MAX_AGE_MS;
+}
+
+/** When this device last downloaded the offline product/customer lists (ms), or null. */
+export function getOfflineCatalogFetchedAt(): number | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.CATALOG_FETCHED_AT);
+    const n = raw === null ? NaN : Number(raw);
+    return Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+export function markOfflineCatalogFetched(at: number = Date.now()): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(STORAGE_KEYS.CATALOG_FETCHED_AT, String(at));
+  } catch {
+    // Storage full or blocked: the lists are simply downloaded again next time.
+  }
 }
 
 /**

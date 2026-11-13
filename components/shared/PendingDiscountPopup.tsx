@@ -2,7 +2,7 @@
 
 import { useExclusivePopup } from "@/lib/popup-queue";
 import { appConfirm, appPrompt } from "@/components/shared/AppDialogs";
-import { useLive } from "@/components/providers/RealtimeProvider";
+import { useMeSummary } from "@/components/shared/useMeSummary";
 import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
@@ -24,11 +24,13 @@ export function PendingDiscountPopup() {
   const seen = useRef<Set<string>>(new Set());
   const [dismissed, setDismissed] = useState(false);
 
-  const check = async () => {
+  // Requests this person may decide come with the shared "my status" query (GET /api/me/summary),
+  // refreshed the moment one is sent or decided (live-update socket) — no call of its own.
+  const { data: summary } = useMeSummary();
+  const pendingList = isReviewer ? summary?.discounts : undefined;
+
+  const check = (rows: any[]) => {
     try {
-      const json = await (await fetch("/api/discount-approvals?status=pending")).json();
-      if (!json.success) return;
-      const rows: any[] = json.data;
       const fresh = rows.filter((r) => !seen.current.has(String(r._id)));
       fresh.forEach((r) => seen.current.add(String(r._id)));
       setOpen(rows);
@@ -42,11 +44,10 @@ export function PendingDiscountPopup() {
   };
 
   useEffect(() => {
-    if (isReviewer) check();
+    // Not loaded yet, or the check failed: checked again on the next answer.
+    if (Array.isArray(pendingList)) check(pendingList);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isReviewer]);
-  // Checked again only when the server announces a change (live-update socket), not on a timer.
-  useLive(["/api/discount-approvals"], () => check(), isReviewer);
+  }, [pendingList]);
 
   const showPopup = useExclusivePopup("pending-discount", open.length > 0 && !dismissed);
   if (!isReviewer) return null;
