@@ -113,7 +113,8 @@ export default {
   // Cron (wrangler.jsonc "triggers"), every 5 minutes:
   //  - 10:00-10:04 India time (the 10:00 run) -> "office time has started" for all staff, and GIDA order
   //    housekeeping (7-day clear-out + pending reminder), each once a day;
-  //  - always -> attendance alerts (not checked in from 10:00, break over and not at the store).
+  //  - always -> attendance alerts (not checked in from 10:00, break over and not at the store);
+  //  - always -> copy of the master data into D1 (/api/cron/d1-sync).
   async scheduled(_event: unknown, env: any, ctx: ExecutionContext) {
     const hit = async (path: string) => {
       try {
@@ -131,6 +132,10 @@ export default {
       ctx.waitUntil(hit("/api/cron/stock-orders"));
     }
     ctx.waitUntil(hit("/api/cron/attendance"));
+    // Copy of the master data into D1 (Phase 1 of docs/D1_MIGRATION_PLAN.md; MongoDB stays the only source of
+    // truth). Its own request and its own waitUntil, and `hit` catches everything, so a failure here can never
+    // affect the attendance run above.
+    ctx.waitUntil(hit("/api/cron/d1-sync"));
   },
 
   async fetch(request: Request, env: unknown, ctx: ExecutionContext): Promise<Response> {

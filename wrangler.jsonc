@@ -19,6 +19,17 @@
   },
   // Photos the delivery boy takes at handover (viewed by Admin / Manager).
   "r2_buckets": [{ "binding": "DELIVERY_PROOFS", "bucket_name": "valueplus-delivery-proofs" }],
+  // D1 (SQLite) database. Phase 1 of docs/D1_MIGRATION_PLAN.md: it only holds a COPY of the master data, filled by
+  // the cron (/api/cron/d1-sync); MongoDB is still the only thing the app reads and writes.
+  // Schema: d1/migrations (npx wrangler d1 migrations apply valueplus-db --remote).
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "valueplus-db",
+      "database_id": "519a8be8-7520-4a8b-861a-11a28791648f",
+      "migrations_dir": "d1/migrations"
+    }
+  ],
   "vars": {
     "NEXTAUTH_URL": "https://valuplus.shineinfosolutions.in"
   },
