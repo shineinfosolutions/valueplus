@@ -1,3 +1,5 @@
+> **Status (13 Nov 2026):** Phase 1 (masters: schema, full copy, 5-minute incremental copy, nightly comparison) is **live**. First copy: 484 items, 458 stock rows, 9 categories, 30 brands, 24 units, 5 warehouses, 158 customers, 6 suppliers, 0 errors. MongoDB is still the source of truth. Next: shadow reads for masters.
+
 # ValuePlus ERP: MongoDB Atlas to Cloudflare D1, a zero-downtime migration plan
 
 > Written 13 Nov 2026 against `main` (commit `aa735c7`). Nothing has been changed, deployed or connected to; this file is the plan only.
