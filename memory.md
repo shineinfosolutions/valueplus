@@ -756,3 +756,15 @@
   - **Switch** (cached 60 s): `npx wrangler d1 execute valueplus-db --remote --command "UPDATE feature_flags SET value='off' WHERE key='writeThrough'"` (or `'on'`). The env var `D1_WRITE_THROUGH=off` also disables it.
   - **Freshness:** `SELECT * FROM write_through_state`.
   - **Status:** switched ON after deploy. No live writes had happened yet by 00:15 IST, so it is not yet confirmed on live. A guard checks until 10:30 IST on 14 Nov and switches it off by itself if any failure is recorded.
+- **2026-11-14 ~02:30 IST — D1 stage B2 live (version `f72938ad`).** Every registered read in all five areas now goes through `readWithShadow`. The area switches are the `feature_flags` rows `read:masters`, `read:sales`, `read:crm`, `read:stock` and `read:staff`, all set to `shadow`. In shadow mode the app still answers from MongoDB, also runs the same read on D1, and records the comparison in `shadow_results` / `shadow_daily` (see `/api/admin/d1-shadow-status`).
+  - **Wiring:**
+    - **Sales:** 50 of 51 reads.
+    - **CRM:** 18 of 18.
+    - **Stock:** about 58 of 61 (some sit in shared files).
+    - **Staff:** about 37 of 46.
+  - **Helpers:** `salesRead`, `crmRead`, `readStock` and `readStaff`, plus `lib/d1/area-reads.ts` for reads in shared files.
+  - **Left on Mongo on purpose:** reads that decide or save a write, for example the `/api/finance` EMI schedule save, day-close POST, task and user PUT, attendance writes, and the push subscribe clean-up. Each area's `INVENTORY.md` lists them.
+  - **Login in d1 mode:** D1 finds the candidate, then MongoDB checks it by id and password hash. If D1 finds nobody, the original MongoDB query answers, so D1 alone never decides a miss (sign-in creates a seed account when nobody is found).
+  - **Before switching sales to d1:** the next invoice number would come from D1, so it could be stale if the copy lags (the invoice POST still checks against Mongo).
+  - **Tests:** `tests/d1-wiring-sales-crm.test.ts` and `tests/d1-wiring-stock-staff.test.ts` check that mongo, shadow and d1 modes give identical answers and that a D1 failure falls back to MongoDB.
+  - **Next (Stage C):** after a few clean shop days in `shadow_daily`, set areas to `d1` one at a time, sales/money last and after 10 PM.
