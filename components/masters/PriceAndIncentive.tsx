@@ -10,7 +10,16 @@ import { lineIncentive, liveRulesOf, todayIST } from "@/lib/incentive-rules";
 import { formatCurrency } from "@/lib/utils";
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
-const CHIPS = [3, 5, 7, 10, 12];
+/** Every whole % from 2 to 15, in order; coloured by who must approve it (see chipTone). */
+const CHIPS = Array.from({ length: 14 }, (_, i) => i + 2);
+
+/** The salesman's own range stays plain; the Cashier's range is orange; the Store Manager's and the Admin's are red. */
+const chipTone = (percent: number) => {
+  const t = tierFor(percent);
+  if (!t) return "border-slate-300 text-slate-700 hover:bg-slate-50";
+  if (t === "cashier") return "border-orange-400 bg-orange-50 text-orange-700 hover:bg-orange-100";
+  return "border-red-400 bg-red-50 text-red-700 hover:bg-red-100";
+};
 
 /**
  * The salesman sets the price he will offer, as a discount % or a price, from the product's selling price. It says who
@@ -125,7 +134,13 @@ export function PriceAndIncentive({ item, role }: { item: any; role: string }) {
       </div>
       <div className="flex flex-wrap gap-1.5">
         {CHIPS.map((c) => (
-          <button key={c} type="button" onClick={() => setByPercent(String(c))} className="rounded-full border border-slate-300 px-2.5 py-0.5 text-[11px] font-bold text-slate-700 hover:bg-slate-50">
+          <button
+            key={c}
+            type="button"
+            onClick={() => setByPercent(String(c))}
+            title={tierFor(c) ? `Needs approval from ${TIER_LABEL[tierFor(c)!]}` : "You can give this yourself"}
+            className={`rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${chipTone(c)} ${Number(percentText) === c ? "ring-2 ring-offset-1 ring-[#30539C]" : ""}`}
+          >
             {c}%
           </button>
         ))}
@@ -133,6 +148,11 @@ export function PriceAndIncentive({ item, role }: { item: any; role: string }) {
           Reset
         </button>
       </div>
+      <p className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] font-semibold text-slate-500">
+        <span>Up to {SELF_MAX_PERCENT}%: you</span>
+        <span className="text-orange-700">Orange: Cashier</span>
+        <span className="text-red-700">Red: Manager / Admin</span>
+      </p>
 
       {overList ? (
         <p className="text-xs font-bold text-amber-700">This price is above the selling price ({formatCurrency(selling)}).</p>

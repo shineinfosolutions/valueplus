@@ -19,6 +19,8 @@ export interface StoreExitBill {
   customerName: string;
   customerPhone: string;
   bajaj?: boolean;
+  /** "pending_handover" for an Immediate Handover bill: finishing it marks it Delivered at the counter. */
+  deliveryStatus?: string;
   products: { lineIndex: number; itemName: string; quantity: number; serialNumber: string }[];
   storeExit: null | { lines: { lineIndex: number; serial: string; serialMatched: boolean }[] };
 }
@@ -28,7 +30,18 @@ export interface StoreExitBill {
  * take the front, back and side photos. When all products are done: the customer takes them himself, or they go for
  * delivery (driver + vehicle; the customer gets the same OTP message as from the Order Dispatch screen).
  */
-export function StoreExitDialog({ bill, onClose, onChanged }: { bill: StoreExitBill | null; onClose: () => void; onChanged: () => void }) {
+export function StoreExitDialog({
+  bill,
+  onClose,
+  onChanged,
+  initialScan,
+}: {
+  bill: StoreExitBill | null;
+  onClose: () => void;
+  onChanged: () => void;
+  /** A serial already scanned (the Scan quick action): that product opens with its scan done, ready for the photos. */
+  initialScan?: { lineIndex: number; code: string; photo: File } | null;
+}) {
   const [doneLines, setDoneLines] = useState<Record<number, string>>({});
   const [activeLine, setActiveLine] = useState<number | null>(null);
   const [scan, setScan] = useState<{ code: string; photo: File } | null>(null);
@@ -36,7 +49,7 @@ export function StoreExitDialog({ bill, onClose, onChanged }: { bill: StoreExitB
   const [scannerOpen, setScannerOpen] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [mode, setMode] = useState<"self" | "delivery" | "">("");
+  const [mode, setMode] = useState<"self" | "delivery" | "handover" | "">("");
   const [takenByName, setTakenByName] = useState("");
   const [takenByPhone, setTakenByPhone] = useState("");
   const [driverName, setDriverName] = useState("");
@@ -50,15 +63,16 @@ export function StoreExitDialog({ bill, onClose, onChanged }: { bill: StoreExitB
   }, []);
 
   const billNo = bill?.invoiceNumber || "";
+  const isHandover = bill?.deliveryStatus === "pending_handover";
   useEffect(() => {
     if (!bill) return;
     const done: Record<number, string> = {};
     for (const l of bill.storeExit?.lines || []) done[l.lineIndex] = l.serial;
     setDoneLines(done);
-    setActiveLine(null);
-    setScan(null);
+    setActiveLine(initialScan ? initialScan.lineIndex : null);
+    setScan(initialScan ? { code: initialScan.code, photo: initialScan.photo } : null);
     setShots([]);
-    setMode("");
+    setMode(bill.deliveryStatus === "pending_handover" ? "handover" : "");
     setTakenByName(bill.customerName || "");
     setTakenByPhone(String(bill.customerPhone || "").replace(/\D/g, "").slice(-10));
     setDriverName("");
@@ -141,7 +155,9 @@ export function StoreExitDialog({ bill, onClose, onChanged }: { bill: StoreExitB
         toast.error(res.error || "Could not finish.");
         return;
       }
-      if (mode === "self") {
+      if (mode === "handover") {
+        toast.success(`✅ ${bill.invoiceNumber} handed over and marked Delivered.`);
+      } else if (mode === "self") {
         toast.success("✅ Marked as taken by the customer in person.");
       } else {
         toast.success("🚚 Out for delivery.");
@@ -166,7 +182,7 @@ export function StoreExitDialog({ bill, onClose, onChanged }: { bill: StoreExitB
     <Dialog open={!!bill} onOpenChange={(o) => { if (!o && !saving && !finishing) onClose(); }}>
       <DialogContent className="max-w-xl max-h-[92vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Take out of store - {billNo}</DialogTitle>
+          <DialogTitle>{isHandover ? "Immediate handover" : "Take out of store"} - {billNo}</DialogTitle>
           <DialogDescription>
             {bill?.customerName}. For every product: scan its serial barcode, then take the front, back and side photos.
           </DialogDescription>
@@ -225,7 +241,21 @@ export function StoreExitDialog({ bill, onClose, onChanged }: { bill: StoreExitB
               {bill.products.length === 0 && <p className="text-sm text-slate-500">This bill has no product to take out.</p>}
             </div>
 
+            {/* Step 3 for an Immediate Handover bill: the customer is at the counter, so it is Delivered now. */}
+            {isHandover && (
+              <div className="space-y-2 border-t pt-3">
+                <p className="text-xs font-black text-slate-800">
+                  3. Hand the goods to {bill.customerName || "the customer"} {!allDone && <span className="font-normal text-slate-500">(check every product first)</span>}
+                </p>
+                <p className="text-[11px] text-slate-500">Billed as Immediate Handover. Once every product is scanned and photographed, the bill is marked Delivered.</p>
+                <Button className="w-full bg-emerald-600 hover:bg-emerald-700" disabled={!allDone || finishing} onClick={finish}>
+                  {finishing ? "Saving..." : "✅ Handed over - mark Delivered"}
+                </Button>
+              </div>
+            )}
+
             {/* Step 3: how the goods leave */}
+            {!isHandover && (
             <div className="space-y-2 border-t pt-3">
               <p className="text-xs font-black text-slate-800">3. How are the goods leaving? {!allDone && <span className="font-normal text-slate-500">(check every product first)</span>}</p>
               <div className="grid grid-cols-2 gap-2">
@@ -292,6 +322,7 @@ export function StoreExitDialog({ bill, onClose, onChanged }: { bill: StoreExitB
                 {finishing ? "Saving..." : mode === "delivery" ? "Out for delivery & send OTP" : mode === "self" ? "Customer took the goods" : "Finish"}
               </Button>
             </div>
+            )}
           </div>
         )}
 

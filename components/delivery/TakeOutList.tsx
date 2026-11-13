@@ -9,6 +9,15 @@ import { StoreExitDialog, type StoreExitBill } from "@/components/delivery/Store
 import { StoreExitPhotos } from "@/components/delivery/StoreExitPhotos";
 import { cn, formatDate } from "@/lib/utils";
 
+/** "handover": bills billed as Immediate Handover, waiting for their scan + photos at the counter. */
+type Tab = "todo" | "handover" | "done";
+const TAB_LABEL: Record<Tab, string> = { todo: "To take out", handover: "Immediate handover", done: "Taken out" };
+const EMPTY: Record<Tab, string> = {
+  todo: "No bill is waiting to be taken out.",
+  handover: "No Immediate Handover bill is waiting for its scan.",
+  done: "Nothing taken out yet.",
+};
+
 /**
  * The goods that are leaving the store: bills still to take out (scan + photos, then delivery or the customer taking
  * them) and the ones already taken out. A salesman sees only his own bills (the server decides).
@@ -20,12 +29,12 @@ export function TakeOutList({
   onSkipScan,
   initialTab,
 }: {
-  tabs?: ("todo" | "done")[];
+  tabs?: Tab[];
   onChanged?: () => void;
   onSkipScan?: (bill: any) => void;
-  initialTab?: "todo" | "done";
+  initialTab?: Tab;
 }) {
-  const [tab, setTab] = useState<"todo" | "done">(initialTab || tabs[0]);
+  const [tab, setTab] = useState<Tab>(initialTab || tabs[0]);
   const [search, setSearch] = useState("");
   const [bill, setBill] = useState<StoreExitBill | null>(null);
   const [viewing, setViewing] = useState<any | null>(null);
@@ -55,18 +64,19 @@ export function TakeOutList({
               onClick={() => setTab(t)}
               className={cn("px-3 h-8 rounded-full border text-xs font-bold", tab === t ? "bg-[#30539C] border-[#30539C] text-white" : "bg-white border-slate-300 text-slate-700 hover:bg-slate-50")}
             >
-              {t === "todo" ? "To take out" : "Taken out"}
+              {TAB_LABEL[t]}
             </button>
           ))}
         <Input className="max-w-xs h-8" placeholder="Search bill no, customer or phone" value={search} onChange={(e) => setSearch(e.target.value)} />
         <Button size="sm" variant="outline" onClick={() => refetch()}>Refresh</Button>
       </div>
       {!q && tab === "todo" && <p className="text-xs text-slate-500 mb-2">Bills of the last 14 days. Search a bill number to find an older one.</p>}
+      {tab === "handover" && <p className="text-xs text-slate-500 mb-2">Billed as Immediate Handover. Scan each product's serial barcode and take its photos; the bill is then marked Delivered.</p>}
 
       {isLoading ? (
         <p className="text-sm text-slate-500">Loading...</p>
       ) : rows.length === 0 ? (
-        <p className="text-sm text-slate-500">{tab === "todo" ? "No bill is waiting to be taken out." : "Nothing taken out yet."}</p>
+        <p className="text-sm text-slate-500">{EMPTY[tab]}</p>
       ) : (
         <div className="space-y-2">
           {rows.map((r: any) => (
@@ -79,18 +89,22 @@ export function TakeOutList({
                 <p className="text-[11px] text-slate-500 truncate">{r.products.map((p: any) => `${p.itemName} x${p.quantity}`).join(", ")}</p>
                 {tab === "done" && r.storeExit && (
                   <p className="text-[11px] font-bold text-emerald-700">
-                    {r.storeExit.mode === "self" ? `Taken by ${r.storeExit.takenByName} (${r.storeExit.takenByPhone}) in person` : "Sent for delivery"}
+                    {r.storeExit.mode === "handover"
+                      ? "Immediate handover at the counter"
+                      : r.storeExit.mode === "self"
+                        ? `Taken by ${r.storeExit.takenByName} (${r.storeExit.takenByPhone}) in person`
+                        : "Sent for delivery"}
                     {" · "}by {r.storeExit.completedBy}
                     {r.storeExit.lines.some((l: any) => !l.serialMatched) && <span className="text-amber-700"> · serial not matched on some product</span>}
                   </p>
                 )}
               </div>
               <div className="flex items-center gap-2">
-                {tab === "todo" ? (
+                {tab !== "done" ? (
                   <>
                     {r.storeExit?.lines?.length > 0 && <Badge variant="outline" className="text-[10px]">{r.storeExit.lines.length} of {r.products.length} checked</Badge>}
-                    <Button size="sm" onClick={() => setBill(r)}>Take out</Button>
-                    {onSkipScan && (
+                    <Button size="sm" onClick={() => setBill(r)}>{tab === "handover" ? "Scan & hand over" : "Take out"}</Button>
+                    {onSkipScan && tab === "todo" && (
                       <Button size="sm" variant="ghost" className="text-xs text-slate-500" onClick={() => onSkipScan(r)} title="Send for delivery without the scan (needs a reason)">
                         Skip scan
                       </Button>

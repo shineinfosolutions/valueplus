@@ -17,10 +17,14 @@ export const dynamic = "force-dynamic";
  * Then the bill is finished one of two ways: the customer takes it himself (name + phone, the bill becomes Delivered),
  * or it goes for delivery (driver + vehicle: same OTP and message as the Order Dispatch screen, status Out For Delivery).
  *
- *   GET  ?list=todo|done[&q=][&days=]   bills to take out / already taken out (a salesman sees only his own bills)
+ * A third way is the immediate handover: a bill billed as "Immediate Handover" waits as `pending_handover` until every
+ * product is scanned and photographed here, then becomes Delivered (mode "handover", no name / phone / OTP needed).
+ *
+ *   GET  ?list=todo|handover|done[&q=][&days=]   bills to take out / to hand over / already done (a salesman sees only his own)
+ *   GET  ?serial=                       the open bills that carry this scanned serial (the Scan quick action)
  *   GET  ?invoiceNumber=&line=&n=       one photo (Admin / Manager)
  *   POST multipart (invoiceNumber, lineIndex, serial, file x4)   saves one product's check
- *   POST json { action: "finish", invoiceNumber, mode: "self" | "delivery", ... }
+ *   POST json { action: "finish", invoiceNumber, mode: "self" | "delivery" | "handover", ... }
  */
 const ROLES = ["salesman", "sales", "cashier", "manager", "admin", "superadmin", "warehouse"];
 const VIEW_ROLES = ["admin", "superadmin", "manager"];
@@ -74,6 +78,88 @@ function metaOf(invoice: any) {
   };
 }
 
+const LIST_FIELDS =
+  "invoiceNumber date customerName customerPhone salesExecutive deliveryStatus dispatchType financeProvider items.itemName items.quantity items.serialNumber items.salesExecutive storeExit";
+
+/** One bill as the take-out / handover screens show it. */
+function rowOf(r: any) {
+  return {
+    invoiceNumber: r.invoiceNumber,
+    date: String(r.date || "").slice(0, 10),
+    customerName: r.customerName,
+    customerPhone: r.customerPhone,
+    salesExecutive: r.salesExecutive,
+    deliveryStatus: r.deliveryStatus,
+    dispatchType: r.dispatchType,
+    bajaj: /bajaj/i.test(String(r.financeProvider || "")),
+    products: productLines(r).map(({ lineIndex, line }) => ({
+      lineIndex,
+      itemName: line.itemName,
+      quantity: Number(line.quantity) || 1,
+      serialNumber: line.serialNumber || "",
+    })),
+    storeExit: metaOf(r),
+  };
+}
+
+/**
+ * The Scan quick action. The open bills (not yet taken out, not out for delivery, not delivered) of the last 90 days
+ * whose product lines carry the scanned serial, each with the matching line. When no open bill has it, the latest
+ * already-finished bill that has it is returned as `alreadyDone`, so the screen can say who handed it over and when.
+ */
+async function findBySerial(scanned: string, actor: { name: string; role: string }) {
+  const base: any = {
+    type: { $nin: ["proforma", "sales-order", "credit-note"] },
+    status: { $ne: "cancelled" },
+    date: { $gte: daysAgoIST(90) },
+    // At least one line records a serial (a regex on an array field matches when any element matches).
+    "items.serialNumber": { $regex: /\S/ },
+  };
+  const lineOf = (r: any) => productLines(r).find(({ line }) => checkSerialOnBill(scanned, [line]).matched)?.lineIndex;
+
+  const open: any[] = await Invoice.find({
+    ...base,
+    "storeExit.completedAt": { $exists: false },
+    deliveryStatus: { $in: ["pending_handover", "pending_dispatch", "packed"] },
+  })
+    .select(LIST_FIELDS)
+    .sort({ date: -1, createdAt: -1 })
+    .limit(1000)
+    .lean();
+  const hits = open.filter((r) => lineOf(r) !== undefined);
+  const notMine = OWN_BILLS_ONLY.includes(actor.role) ? hits.filter((r) => !isMine(r, actor.name)) : [];
+  const usable = OWN_BILLS_ONLY.includes(actor.role) ? hits.filter((r) => isMine(r, actor.name)) : hits;
+  if (usable.length > 0) {
+    return NextResponse.json({ success: true, data: usable.map((r) => ({ ...rowOf(r), matchedLine: lineOf(r) })) });
+  }
+  if (notMine.length > 0) {
+    return NextResponse.json({
+      success: false,
+      error: `This product is on bill ${notMine[0].invoiceNumber}, made under ${notMine[0].salesExecutive || "another salesman"}. Only that salesman, a Manager or the Admin can hand it over.`,
+    }, { status: 403 });
+  }
+
+  const finished: any[] = await Invoice.find({ ...base, $or: [{ "storeExit.completedAt": { $exists: true } }, { deliveryStatus: { $in: ["out_for_delivery", "in-transit", "delivered"] } }] })
+    .select("invoiceNumber deliveryStatus deliveredAt storeExit.completedBy storeExit.completedAt storeExit.mode items.itemName items.quantity items.serialNumber")
+    .sort({ date: -1, createdAt: -1 })
+    .limit(1000)
+    .lean();
+  const done = finished.find((r) => lineOf(r) !== undefined);
+  if (done) {
+    return NextResponse.json({
+      success: true,
+      data: [],
+      alreadyDone: {
+        invoiceNumber: done.invoiceNumber,
+        deliveryStatus: done.deliveryStatus,
+        by: done.storeExit?.completedBy || "",
+        at: done.storeExit?.completedAt || done.deliveredAt || null,
+      },
+    });
+  }
+  return NextResponse.json({ success: true, data: [] });
+}
+
 export async function GET(req: Request) {
   try {
     const actor = await getActor();
@@ -99,17 +185,27 @@ export async function GET(req: Request) {
       });
     }
 
+    // The Scan quick action: which open bill carries the scanned serial (and on which product line).
+    const scanned = String(url.searchParams.get("serial") || "").trim();
+    if (scanned) return await findBySerial(scanned, actor);
+
     // The list
-    const which = url.searchParams.get("list") === "done" ? "done" : "todo";
+    const listParam = url.searchParams.get("list");
+    const which = listParam === "done" ? "done" : listParam === "handover" ? "handover" : "todo";
     const q = String(url.searchParams.get("q") || "").trim();
-    const days = Math.min(90, Math.max(1, Number(url.searchParams.get("days")) || 14));
+    // A bill waiting for its handover stays on the list however old it is (up to 90 days).
+    const days = Math.min(90, Math.max(1, Number(url.searchParams.get("days")) || (which === "handover" ? 90 : 14)));
     const query: any = { type: { $nin: ["proforma", "sales-order", "credit-note"] }, status: { $ne: "cancelled" } };
     if (which === "done") query["storeExit.completedAt"] = { $exists: true };
-    else {
+    else if (which === "handover") {
+      query["storeExit.completedAt"] = { $exists: false };
+      query.deliveryStatus = "pending_handover";
+    } else {
       query["storeExit.completedAt"] = { $exists: false };
       // Bills already out for delivery are not waiting to go out. Bills already handed over at the counter (marked
-      // Delivered when they were billed) are left out of the plain list too; searching a bill number still finds them.
-      query.deliveryStatus = { $nin: q ? ["out_for_delivery", "in-transit"] : ["out_for_delivery", "in-transit", "delivered"] };
+      // Delivered when they were billed) and bills waiting for their immediate handover (their own list) are left out
+      // of the plain list too; searching a bill number still finds them.
+      query.deliveryStatus = { $nin: q ? ["out_for_delivery", "in-transit"] : ["out_for_delivery", "in-transit", "delivered", "pending_handover"] };
     }
     if (q) {
       const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
@@ -118,28 +214,12 @@ export async function GET(req: Request) {
       query.date = { $gte: daysAgoIST(days) };
     }
     const rows: any[] = await Invoice.find(query)
-      .select("invoiceNumber date customerName customerPhone salesExecutive deliveryStatus dispatchType financeProvider items.itemName items.quantity items.serialNumber items.salesExecutive storeExit")
+      .select(LIST_FIELDS)
       .sort({ date: -1, createdAt: -1 })
       .limit(150)
       .lean();
     const mine = OWN_BILLS_ONLY.includes(actor.role) ? rows.filter((r) => isMine(r, actor.name)) : rows;
-    const data = mine.map((r) => ({
-      invoiceNumber: r.invoiceNumber,
-      date: String(r.date || "").slice(0, 10),
-      customerName: r.customerName,
-      customerPhone: r.customerPhone,
-      salesExecutive: r.salesExecutive,
-      deliveryStatus: r.deliveryStatus,
-      dispatchType: r.dispatchType,
-      bajaj: /bajaj/i.test(String(r.financeProvider || "")),
-      products: productLines(r).map(({ lineIndex, line }) => ({
-        lineIndex,
-        itemName: line.itemName,
-        quantity: Number(line.quantity) || 1,
-        serialNumber: line.serialNumber || "",
-      })),
-      storeExit: metaOf(r),
-    }));
+    const data = mine.map(rowOf);
     return NextResponse.json({ success: true, data, canViewPhotos: VIEW_ROLES.includes(actor.role), today: todayIST() });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
@@ -223,7 +303,7 @@ export async function POST(req: Request) {
 async function finish(req: Request, actor: { id: string; name: string; role: string }) {
   const body = await req.json().catch(() => ({}));
   const invoiceNumber = String(body.invoiceNumber || "").trim();
-  const mode = body.mode === "delivery" ? "delivery" : body.mode === "self" ? "self" : "";
+  const mode = body.mode === "delivery" ? "delivery" : body.mode === "self" ? "self" : body.mode === "handover" ? "handover" : "";
   if (body.action !== "finish" || !invoiceNumber || !mode) return NextResponse.json({ success: false, error: "Choose how the goods leave the store." }, { status: 400 });
 
   const invoice: any = await Invoice.findOne({ invoiceNumber });
@@ -245,7 +325,27 @@ async function finish(req: Request, actor: { id: string; name: string; role: str
   const record: Record<string, any> = { "storeExit.mode": mode, "storeExit.completedBy": actor.name, "storeExit.completedAt": now };
   let data: any = {};
 
-  if (mode === "self") {
+  if (mode === "handover") {
+    // The immediate handover at the counter: the customer on the bill takes the goods now, so no name / phone form.
+    if (invoice.deliveryStatus !== "pending_handover") {
+      return NextResponse.json({ success: false, error: "This bill was not billed as an Immediate Handover. Choose how the goods leave the store." }, { status: 400 });
+    }
+    Object.assign(record, {
+      "storeExit.takenByName": invoice.customerName || "",
+      "storeExit.takenByPhone": String(invoice.customerPhone || "").replace(/\D/g, "").slice(-10),
+      deliveryStatus: "delivered",
+      receivedBySelf: true,
+      receivedBySelfBy: actor.name,
+    });
+    if (!invoice.deliveredAt) record.deliveredAt = now;
+    await Invoice.updateOne({ _id: invoice._id }, { $set: record });
+    if (challan) {
+      challan.status = "delivered";
+      if (!challan.deliveredAt) challan.deliveredAt = now;
+      await challan.save();
+    }
+    data = { invoiceNumber, deliveryStatus: "delivered", receivedBySelf: true, handover: true };
+  } else if (mode === "self") {
     const takenByName = String(body.takenByName || "").trim();
     const takenByPhone = String(body.takenByPhone || "").replace(/\D/g, "").slice(-10);
     if (!takenByName) return NextResponse.json({ success: false, error: "Write the name of the person taking the goods." }, { status: 400 });
@@ -278,13 +378,18 @@ async function finish(req: Request, actor: { id: string; name: string; role: str
   }
 
   await AuditLog.create({
-    action: "store.exit",
+    action: mode === "handover" ? "store.handover" : "store.exit",
     entityType: "Invoice",
     entityRef: invoiceNumber,
     entityId: String(invoice._id),
     partyName: invoice.customerName || "",
     amount: Number(invoice.total) || 0,
-    reason: mode === "self" ? "Taken out of the store by the customer in person" : "Taken out of the store for delivery",
+    reason:
+      mode === "handover"
+        ? "Immediate handover at the counter (scanned and photographed)"
+        : mode === "self"
+          ? "Taken out of the store by the customer in person"
+          : "Taken out of the store for delivery",
     performedBy: actor.name,
     performedByUserId: actor.id,
     performedByRole: actor.role,

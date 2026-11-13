@@ -39,6 +39,7 @@ import { panelForRole } from "@/lib/role-routes";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { QuickScan, QUICK_SCAN_ROLES } from "@/components/delivery/QuickScan";
 
 export function MobileBottomNav() {
   const rawPathname = usePathname();
@@ -48,6 +49,7 @@ export function MobileBottomNav() {
   
   const [isQuickActionsOpen, setIsQuickActionsOpen] = useState(false);
   const [isMenuDrawerOpen, setIsMenuDrawerOpen] = useState(false);
+  const [isScanOpen, setIsScanOpen] = useState(false);
 
   const isSessionLoading = status === "loading";
   const rawRole = ((session?.user as any)?.role || "").toLowerCase();
@@ -214,6 +216,8 @@ export function MobileBottomNav() {
         </div>
       </div>
 
+      <QuickScan open={isScanOpen} onClose={() => setIsScanOpen(false)} />
+
       {/* ─── QUICK ACTIONS BOTTOM SHEET MODAL ─────────────────────────────── */}
       <Dialog open={isQuickActionsOpen} onOpenChange={setIsQuickActionsOpen}>
         <DialogContent className="max-w-md rounded-3xl p-5 bg-[#1B2537] text-white border-white/15">
@@ -287,6 +291,25 @@ export function MobileBottomNav() {
               </>
             ) : (
               <>
+                {/* Scan a product's serial barcode: finds its bill, then the photos and the handover / take out */}
+                {QUICK_SCAN_ROLES.includes(rawRole) && (
+                  <button
+                    onClick={() => {
+                      setIsQuickActionsOpen(false);
+                      setIsScanOpen(true);
+                    }}
+                    className="p-3 rounded-2xl bg-[#76C043]/15 hover:bg-[#76C043]/25 border border-[#76C043]/40 text-left transition-all group flex flex-col justify-between h-24"
+                  >
+                    <div className="w-8 h-8 rounded-xl bg-[#76C043]/25 text-[#76C043] flex items-center justify-center font-bold group-hover:scale-110 transition-transform">
+                      <ScanBarcode className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-white">Scan</p>
+                      <p className="text-[10px] text-slate-400">Handover / take out</p>
+                    </div>
+                  </button>
+                )}
+
                 {/* Quick 1: Attendance */}
                 <button
                   onClick={() => {

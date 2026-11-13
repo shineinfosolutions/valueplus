@@ -52,6 +52,35 @@ export async function applyStockMovement(
 }
 
 /**
+ * Where a sale line takes its stock from. The bill's own warehouse when it holds enough (or when the bill has no
+ * warehouse); otherwise the active Godown holding the most of this product, if it has the whole quantity. When neither
+ * has enough, the bill's own warehouse (the old behaviour; the bill form refuses that case before it gets here).
+ */
+export async function pickSaleWarehouse(
+  itemId: string,
+  saleWarehouseId: string | null | undefined,
+  qty: number
+): Promise<string | null> {
+  if (!saleWarehouseId || !(qty > 0)) return saleWarehouseId || null;
+  const item: any = await Item.findById(itemId, { stockByWarehouse: 1 }).lean();
+  const entries: Array<{ warehouseId: any; qty: number }> = item?.stockByWarehouse || [];
+  const here = entries.find((e) => String(e.warehouseId) === String(saleWarehouseId));
+  if ((Number(here?.qty) || 0) >= qty) return saleWarehouseId;
+
+  const others = entries.filter((e) => e.warehouseId && String(e.warehouseId) !== String(saleWarehouseId) && (Number(e.qty) || 0) >= qty);
+  if (others.length === 0) return saleWarehouseId;
+  const godowns = await Warehouse.find(
+    { _id: { $in: others.map((e) => e.warehouseId) }, type: "godown", status: { $ne: "inactive" } },
+    { _id: 1 }
+  ).lean();
+  const godownIds = new Set(godowns.map((w: any) => String(w._id)));
+  const best = others
+    .filter((e) => godownIds.has(String(e.warehouseId)))
+    .sort((a, b) => (Number(b.qty) || 0) - (Number(a.qty) || 0))[0];
+  return best ? String(best.warehouseId) : saleWarehouseId;
+}
+
+/**
  * Re-sums showroomStock/godownStock/currentStock from stockByWarehouse. Safe
  * to call any time the array might have changed by a path other than
  * applyStockMovement (e.g. a migration script writing stockByWarehouse

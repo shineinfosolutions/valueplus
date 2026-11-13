@@ -3,7 +3,7 @@ import Invoice from "@/models/Invoice";
 import Customer from "@/models/Customer";
 import Item from "@/models/Item";
 import AuditLog from "@/models/AuditLog";
-import { applyStockMovement } from "@/lib/stock";
+import { applyStockMovement, pickSaleWarehouse } from "@/lib/stock";
 import { stampLineCosts } from "@/lib/sale-cost";
 import { derivePaymentModeLabel, isCollectedMode, classifyPaymentMode } from "@/lib/payment-modes";
 import { derivePanFromGstin } from "@/lib/gst";
@@ -362,16 +362,40 @@ export async function fullEditInvoice(
   const before = existing.toObject ? existing.toObject() : { ...existing };
   const warehouseId = existing.warehouseId ? String(existing.warehouseId) : null;
 
-  // 4a. Stock: put back what the bill used to take, take what it takes now.
-  const netByItem = new Map<string, number>();
+  // 4a. Stock: put back what the bill used to take, take what it takes now, each from the warehouse the line uses
+  // (a line may take its stock from a Godown when the Showroom was short: `stockWarehouseId`). A product already on
+  // the bill keeps its source; a product new to the bill picks one the way a new bill does.
+  const sourceOf = new Map<string, string>();
   for (const it of existing.items || []) {
-    if (isRealItemId(it.itemId)) netByItem.set(String(it.itemId), (netByItem.get(String(it.itemId)) || 0) + (Number(it.quantity) || 0));
+    if (isRealItemId(it.itemId) && !sourceOf.has(String(it.itemId))) sourceOf.set(String(it.itemId), String((it as any).stockWarehouseId || ""));
+  }
+  const newQty = new Map<string, number>();
+  for (const it of items) {
+    if (isRealItemId(it.itemId)) newQty.set(String(it.itemId), (newQty.get(String(it.itemId)) || 0) + (Number(it.quantity) || 0));
+  }
+  for (const [itemId, qty] of newQty) {
+    if (sourceOf.has(itemId)) continue;
+    const from = await pickSaleWarehouse(itemId, warehouseId, qty);
+    sourceOf.set(itemId, from && warehouseId && from !== warehouseId ? from : "");
   }
   for (const it of items) {
-    if (isRealItemId(it.itemId)) netByItem.set(String(it.itemId), (netByItem.get(String(it.itemId)) || 0) - (Number(it.quantity) || 0));
+    it.stockWarehouseId = isRealItemId(it.itemId) ? sourceOf.get(String(it.itemId)) || "" : "";
   }
-  for (const [itemId, delta] of netByItem) {
-    if (delta) await applyStockMovement(itemId, warehouseId, delta);
+  const netByPlace = new Map<string, { itemId: string; where: string | null; delta: number }>();
+  const move = (itemId: string, where: string | null, delta: number) => {
+    const key = `${itemId}|${where || ""}`;
+    const row = netByPlace.get(key) || { itemId, where, delta: 0 };
+    row.delta += delta;
+    netByPlace.set(key, row);
+  };
+  for (const it of existing.items || []) {
+    if (isRealItemId(it.itemId)) move(String(it.itemId), (it as any).stockWarehouseId || warehouseId, Number(it.quantity) || 0);
+  }
+  for (const it of items) {
+    if (isRealItemId(it.itemId)) move(String(it.itemId), it.stockWarehouseId || warehouseId, -(Number(it.quantity) || 0));
+  }
+  for (const { itemId, where, delta } of netByPlace.values()) {
+    if (delta) await applyStockMovement(itemId, where, delta);
   }
 
   // 4b. Serial numbers.

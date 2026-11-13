@@ -25,7 +25,8 @@ import {
   Send,
   User,
   UserCheck,
-  AlertCircle
+  AlertCircle,
+  Store
 } from "lucide-react";
 import { useState, useMemo, useEffect } from "react";
 import { formatDate, cn, formatCurrency } from "@/lib/utils";
@@ -327,7 +328,7 @@ export default function OrderDispatchHubPage() {
   if (["salesman", "sales"].includes(viewerRole)) {
     return (
       <PageShell title="Out for Delivery" subtitle="Before goods leave the store: scan each product's serial barcode and take its front, back and side photos, then send it for delivery or hand it to the customer.">
-        <TakeOutList />
+        <TakeOutList tabs={["handover", "todo", "done"]} />
       </PageShell>
     );
   }
@@ -379,9 +380,10 @@ export default function OrderDispatchHubPage() {
           </div>
         </div>
 
-        {/* ─── TABS: to take out / out for delivery / delivered ───────── */}
-        <div className="grid grid-cols-3 gap-3">
+        {/* ─── TABS: immediate handover / to take out / out for delivery / delivered ───────── */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
+            { key: "handover", label: "Immediate Handover", icon: Store, color: "violet", count: null as number | null },
             { key: "todo", label: "To take out", icon: Clock, color: "amber", count: null as number | null },
             { key: "out_for_delivery", label: "Out For Delivery", icon: Truck, color: "blue", count: metrics.out },
             { key: "delivered", label: "Delivered", icon: CheckCircle2, color: "emerald", count: metrics.delivered },
@@ -392,11 +394,11 @@ export default function OrderDispatchHubPage() {
               className={cn(
                 "p-3.5 rounded-2xl border bg-white shadow-xs cursor-pointer transition-all hover:shadow-md",
                 statusFilter === t.key
-                  ? t.color === "amber" ? "ring-2 ring-amber-500 border-amber-500" : t.color === "blue" ? "ring-2 ring-blue-600 border-blue-600" : "ring-2 ring-emerald-600 border-emerald-600"
+                  ? t.color === "violet" ? "ring-2 ring-violet-600 border-violet-600" : t.color === "amber" ? "ring-2 ring-amber-500 border-amber-500" : t.color === "blue" ? "ring-2 ring-blue-600 border-blue-600" : "ring-2 ring-emerald-600 border-emerald-600"
                   : "border-slate-200"
               )}
             >
-              <span className={cn("text-[11px] font-bold uppercase tracking-wider flex items-center gap-1", t.color === "amber" ? "text-amber-700" : t.color === "blue" ? "text-blue-700" : "text-emerald-700")}>
+              <span className={cn("text-[11px] font-bold uppercase tracking-wider flex items-center gap-1", t.color === "violet" ? "text-violet-700" : t.color === "amber" ? "text-amber-700" : t.color === "blue" ? "text-blue-700" : "text-emerald-700")}>
                 <t.icon className="w-3.5 h-3.5" /> {t.label}
               </span>
               {t.count !== null && (
@@ -405,6 +407,13 @@ export default function OrderDispatchHubPage() {
             </div>
           ))}
         </div>
+
+        {/* ─── IMMEDIATE HANDOVER: scan + photos at the counter, then Delivered ─── */}
+        {statusFilter === "handover" && (
+          <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-xs">
+            <TakeOutList tabs={["handover"]} onChanged={fetchOrders} />
+          </div>
+        )}
 
         {/* ─── TO TAKE OUT: scan + photos, then delivery or the customer takes it ─── */}
         {statusFilter === "todo" && (
@@ -418,7 +427,7 @@ export default function OrderDispatchHubPage() {
         )}
 
         {/* ─── SEARCH & FILTER BAR ──────────────────────────────────── */}
-        {statusFilter !== "todo" && (
+        {statusFilter !== "todo" && statusFilter !== "handover" && (
         <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row items-center gap-3 justify-between">
           <div className="relative flex-1 w-full">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -447,7 +456,7 @@ export default function OrderDispatchHubPage() {
         )}
 
         {/* ─── ORDERS DISPATCH TABLE ────────────────────────────────── */}
-        {statusFilter !== "todo" && (
+        {statusFilter !== "todo" && statusFilter !== "handover" && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">

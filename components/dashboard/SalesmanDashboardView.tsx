@@ -14,8 +14,9 @@ import {
   Trophy, TrendingUp, Users, Sparkles, CheckSquare, 
   Phone, MessageSquare, ArrowRight, Package, DollarSign,
   Calendar, Clock, CheckCircle2, AlertCircle, Plus, Search, 
-  ShieldCheck, Filter, Receipt, FileText, Check, Target
+  ShieldCheck, Filter, Receipt, FileText, Check, Target, ScanBarcode
 } from "lucide-react";
+import { QuickScan } from "@/components/delivery/QuickScan";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -41,6 +42,7 @@ export function SalesmanDashboardView({ session }: { session: any }) {
   const { activeLocation } = useBranch();
   const userName = session?.user?.name || "Amit Kumar Singh";
   const userRole = ((session?.user as any)?.role || "salesman").toLowerCase();
+  const [scanOpen, setScanOpen] = useState(false);
 
   // Period / Date Filtering State
   // Same date filter as the admin dashboard.
@@ -341,6 +343,15 @@ export function SalesmanDashboardView({ session }: { session: any }) {
       <div>
         <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Quick actions</p>
         <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+          {/* Scan a product's serial barcode: finds its bill, then the photos and the handover / take out */}
+          <button
+            type="button"
+            onClick={() => setScanOpen(true)}
+            className="flex flex-col items-center justify-center gap-1.5 min-h-[76px] px-1.5 py-2 rounded-2xl border shadow-sm text-xs font-semibold text-center cursor-pointer transition-all hover:shadow-md active:scale-[0.97] bg-slate-900 text-white border-slate-900"
+          >
+            <ScanBarcode className="w-5 h-5 text-[#76C043]" aria-hidden="true" />
+            <span className="leading-tight">Scan</span>
+          </button>
           {[
             { href: "/sales/estimates?new=bill", label: "New Bill", Icon: Receipt, tone: "bg-[#30539C] text-white border-[#30539C]" },
             { href: "/sales/estimates?new=true", label: "New Estimate", Icon: Plus, tone: "bg-[#76C043] text-slate-950 border-[#76C043]" },
@@ -360,6 +371,7 @@ export function SalesmanDashboardView({ session }: { session: any }) {
             </Link>
           ))}
         </div>
+        <QuickScan open={scanOpen} onClose={() => setScanOpen(false)} />
       </div>
 
       {/* ACTIVE SALES TARGET NOTIFICATION CARD */}
@@ -543,6 +555,14 @@ export function SalesmanDashboardView({ session }: { session: any }) {
                       <td className="p-3 font-mono font-bold text-[#30539C]">
                         {inv.invoiceNumber}
                         <span className="block text-[10px] font-sans font-normal text-slate-400">{formatDate(inv.date)}</span>
+                        {inv.deliveryStatus === "pending_handover" && inv.status !== "cancelled" && (
+                          <span
+                            className="mt-0.5 inline-block font-sans text-[9px] font-bold px-1.5 py-0.5 rounded bg-violet-50 text-violet-800 border border-violet-300"
+                            title="Scan the serial barcode and take the photos to mark it Delivered"
+                          >
+                            🏪 Handover pending
+                          </span>
+                        )}
                         {inv.deliveryStatus === "delivered" && inv.status !== "cancelled" && (
                           <span
                             className="mt-0.5 inline-block font-sans text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-300"

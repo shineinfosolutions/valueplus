@@ -10,8 +10,9 @@ import {
   Users, AlertTriangle, ArrowRight, Eye, MoreHorizontal,
   IndianRupee, Receipt, Wallet, CreditCard, Activity,
   Star, Sparkles, Calendar, Clock, CheckCircle2, Search,
-  X, Filter, ExternalLink, Printer, Send, ShieldAlert, Plus, FileText, Download, Trash2, Building, Building2, UserCheck, Tv, Smartphone, Laptop, Fan, HardDrive, Headphones, BarChart3, PieChart as PieChartIcon, ArrowUpRight, MessageCircle, Wifi, WifiOff, Zap, MapPin, Phone, CheckSquare, ListTodo, UserPlus, Target, Crown, MessageSquare, Check
+  X, Filter, ExternalLink, Printer, Send, ShieldAlert, Plus, FileText, Download, Trash2, Building, Building2, UserCheck, Tv, Smartphone, Laptop, Fan, HardDrive, Headphones, BarChart3, PieChart as PieChartIcon, ArrowUpRight, MessageCircle, Wifi, WifiOff, Zap, MapPin, Phone, CheckSquare, ListTodo, UserPlus, Target, Crown, MessageSquare, Check, ScanBarcode
 } from "lucide-react";
+import { QuickScan, QUICK_SCAN_ROLES } from "@/components/delivery/QuickScan";
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
@@ -289,6 +290,7 @@ export default function DashboardPage() {
 
   const userRole = ((session?.user as any)?.role || "").toLowerCase();
   const canSeeProfit = ["admin", "superadmin", "accounts", "manager"].includes(userRole);
+  const [isScanOpen, setIsScanOpen] = useState(false);
 
   // Instant role-based navigation guards
   useEffect(() => {
@@ -1605,6 +1607,17 @@ export default function DashboardPage() {
           >
             <Receipt className="w-3.5 h-3.5 mr-1.5 text-slate-500" /> Invoices
           </Button>
+          {QUICK_SCAN_ROLES.includes(userRole) && (
+            <Button
+              onClick={() => setIsScanOpen(true)}
+              variant="outline"
+              className="h-8 px-3 text-xs font-bold text-slate-700 border-slate-200 hover:bg-slate-50"
+              title="Scan a product's serial barcode: hand over an Immediate Handover bill or take goods out"
+            >
+              <ScanBarcode className="w-3.5 h-3.5 mr-1.5 text-[#30539C]" /> Scan
+            </Button>
+          )}
+          <QuickScan open={isScanOpen} onClose={() => setIsScanOpen(false)} />
           <Button 
             onClick={handleOpenInvoiceModal} 
             className="h-8 px-4 rounded-lg font-bold bg-[#76C043] hover:bg-[#60a82c] text-white shadow-sm transition-all border-none text-xs"

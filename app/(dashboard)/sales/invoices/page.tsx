@@ -552,6 +552,14 @@ function SalesInvoicesContent() {
                                 🚚 Delivery {formatDate(inv.expectedDeliveryDate)}
                               </span>
                             )}
+                            {inv.deliveryStatus === "pending_handover" && inv.status !== "cancelled" && (
+                              <span
+                                className="ml-1 font-mono text-[9px] font-bold px-1.5 py-0.5 rounded bg-violet-50 text-violet-800 border border-violet-300"
+                                title="Immediate Handover: scan the serial barcode and take the photos (Out for Delivery > Immediate Handover, or Scan) to mark it Delivered"
+                              >
+                                🏪 Handover pending
+                              </span>
+                            )}
                             {inv.dispatchType === "delayed_delivery" && inv.deliveryStatus === "delivered" && inv.status !== "cancelled" && (
                               <span
                                 className="ml-1 font-mono text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-300"

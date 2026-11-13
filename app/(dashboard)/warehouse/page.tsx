@@ -50,6 +50,7 @@ import {
   MapPin,
   Phone,
 } from "lucide-react";
+import { QuickScan } from "@/components/delivery/QuickScan";
 import { toast } from "sonner";
 import { formatCurrency } from "@/lib/utils";
 import { useBranch } from "@/context/BranchContext";
@@ -67,6 +68,7 @@ export default function WarehouseHubPage() {
   // Modals
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
   const [isInwardModalOpen, setIsInwardModalOpen] = useState(false);
+  const [isScanOpen, setIsScanOpen] = useState(false);
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
 
   // Transfer Form State
@@ -366,6 +368,15 @@ export default function WarehouseHubPage() {
               >
                 <ArrowRightLeft className="w-4 h-4 mr-1.5" /> Transfer to Showroom
               </Button>
+
+              <Button
+                onClick={() => setIsScanOpen(true)}
+                className="bg-white/10 hover:bg-white/20 text-white border border-white/20 font-bold text-xs shadow-md h-9 rounded-xl"
+                title="Scan a product's serial barcode: hand over an Immediate Handover bill or take goods out"
+              >
+                <ScanBarcode className="w-4 h-4 mr-1.5" /> Scan
+              </Button>
+              <QuickScan open={isScanOpen} onClose={() => setIsScanOpen(false)} />
             </div>
           </div>
 

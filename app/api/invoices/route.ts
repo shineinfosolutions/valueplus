@@ -15,7 +15,7 @@ import { derivePaymentModeLabel, isCollectedMode, isFinanceInvoice, classifyPaym
 import { derivePanFromGstin } from "@/lib/gst";
 import { getActor } from "@/lib/requirePermission";
 import { authoriseDestructiveAction } from "@/lib/destructiveAction";
-import { applyStockMovement } from "@/lib/stock";
+import { applyStockMovement, pickSaleWarehouse } from "@/lib/stock";
 import authOptions from "@/lib/authOptions";
 import Item from "@/models/Item";
 import { BILLING_ENTITIES, entityOf, entityLabel, invoiceSeriesOf } from "@/lib/billing-entity";
@@ -397,6 +397,12 @@ export async function POST(req: Request) {
       body.deliveryOtp = Math.floor(1000 + Math.random() * 9000).toString();
       body.deliveryStatus = "pending_dispatch";
     }
+    // An immediate-handover tax invoice is not Delivered until the goods are scanned and photographed at the counter
+    // (Out for Delivery > Immediate Handover, or the Scan quick action). See app/api/delivery/store-exit.
+    if ((body.type || "tax-invoice") === "tax-invoice" && body.dispatchType !== "delayed_delivery") {
+      body.dispatchType = "immediate";
+      body.deliveryStatus = "pending_handover";
+    }
 
     // ─── SPLIT PAYMENT NORMALISATION ────────────────────────────────────────
     // A bill can be settled across several modes (₹10,000 cash + ₹40,000 online).
@@ -477,6 +483,21 @@ export async function POST(req: Request) {
 
     // Each line keeps the product's purchase price as of today, for the P&L.
     if (Array.isArray(body.items)) body.items = await stampLineCosts(body.items);
+
+    // A sale line whose product is short in this bill's warehouse (the Showroom) but in stock in a Godown takes it
+    // from that Godown; the line remembers where, so a cancel / delete / edit puts it back there.
+    if (Array.isArray(body.items) && body.type !== "proforma" && body.type !== "credit-note") {
+      const wanted = new Map<string, number>();
+      for (const it of body.items) {
+        if (it?.itemId && mongoose.isValidObjectId(it.itemId)) wanted.set(String(it.itemId), (wanted.get(String(it.itemId)) || 0) + (Number(it.quantity) || 0));
+      }
+      const fromById = new Map<string, string | null>();
+      for (const [itemId, qty] of wanted) fromById.set(itemId, await pickSaleWarehouse(itemId, resolvedWarehouseId, qty));
+      body.items = body.items.map((it: any) => {
+        const from = it?.itemId ? fromById.get(String(it.itemId)) : null;
+        return { ...it, stockWarehouseId: from && resolvedWarehouseId && from !== resolvedWarehouseId ? from : "" };
+      });
+    }
 
     // Set from the customer's real balance after the invoice is saved (step 7.9),
     // never taken from the request as-is.
@@ -615,7 +636,7 @@ export async function POST(req: Request) {
             // Deduct / add stock
             if (item.itemId && (item.itemId.length === 24 || item.itemId.length > 10)) {
               const delta = body.type === "credit-note" ? item.quantity : -item.quantity;
-              await applyStockMovement(item.itemId, resolvedWarehouseId, delta);
+              await applyStockMovement(item.itemId, item.stockWarehouseId || resolvedWarehouseId, delta);
             }
 
             // Lock Serial Number if serialized item was sold
@@ -1155,7 +1176,7 @@ export async function PUT(req: Request) {
       if (due < String(existingInvoice.date || "").slice(0, 10)) {
         return NextResponse.json({ success: false, error: "The delivery date cannot be before the bill date." }, { status: 400 });
       }
-      const wasDelivered = existingInvoice.deliveryStatus === "delivered" || !existingInvoice.deliveryStatus;
+      const wasDelivered = ["delivered", "pending_handover"].includes(String(existingInvoice.deliveryStatus || "")) || !existingInvoice.deliveryStatus;
       (existingInvoice as any).dispatchType = "delayed_delivery";
       if (wasDelivered) (existingInvoice as any).deliveryStatus = "pending_dispatch";
       if (!existingInvoice.deliveryOtp) {
@@ -1382,7 +1403,7 @@ export async function PUT(req: Request) {
         for (const item of existingInvoice.items) {
           if (item.itemId) {
             const delta = existingInvoice.type === "credit-note" ? -item.quantity : item.quantity;
-            await applyStockMovement(item.itemId, reversalWarehouseId, delta);
+            await applyStockMovement(item.itemId, (item as any).stockWarehouseId || reversalWarehouseId, delta);
           }
         }
       }
@@ -1621,7 +1642,7 @@ export async function DELETE(req: Request) {
         for (const item of invoice.items) {
           if (item.itemId) {
             const delta = invoice.type === "credit-note" ? -item.quantity : item.quantity;
-            await applyStockMovement(item.itemId, reversalWarehouseId, delta);
+            await applyStockMovement(item.itemId, (item as any).stockWarehouseId || reversalWarehouseId, delta);
           }
         }
       }

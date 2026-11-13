@@ -896,9 +896,10 @@ export function InvoiceCreationModal({
         // Keep who each line went to when the bill was made (a later lead share does not move it).
         lineSalesman: it.salesExecutive || "__bill__",
         adminApprovedRate: Boolean(it.adminOverrideRate),
-        availableStock: showroomNow + qtyOnBill,
-        showroomStock: showroomNow + qtyOnBill,
-        godownStock: cat?.godownStock,
+        // What this bill already took is counted back where it came from (the Godown when the line says so).
+        availableStock: it.stockWarehouseId ? showroomNow : showroomNow + qtyOnBill,
+        showroomStock: it.stockWarehouseId ? showroomNow : showroomNow + qtyOnBill,
+        godownStock: it.stockWarehouseId ? (Number(cat?.godownStock) || 0) + qtyOnBill : cat?.godownStock,
         isSerialized: Boolean(cat?.isSerialized || it.serialNumber),
         extendedWarrantyProvider: it.extendedWarrantyProvider || "",
         extendedWarrantyPlan: it.extendedWarrantyPlan || "none",
@@ -1158,7 +1159,10 @@ export function InvoiceCreationModal({
     const updated = [...billingForm.lineItems];
     if (field === "qty" && mode === "invoice") {
       const maxStock = updated[idx].availableStock !== undefined ? updated[idx].availableStock : Infinity;
-      if (value > maxStock) {
+      const godown = Number(updated[idx].godownStock) || 0;
+      if (value > maxStock && value <= godown) {
+        toast.info(`Showroom has ${maxStock}; these ${value} units will be taken from the Godown.`);
+      } else if (value > maxStock) {
         toast.warning(`Warning: Requested ${value} units exceeds available stock of ${maxStock}!`);
       }
     }
@@ -1286,6 +1290,8 @@ export function InvoiceCreationModal({
     
     if (totalItemStock <= 0) {
       toast.warning(`Notice: ${prod.name} is OUT OF STOCK across Showroom & Godown.`);
+    } else if (itemShowroomStock <= 0 && mode === "invoice") {
+      toast.info(`${prod.name}: none in the Showroom, so it will be billed from the Godown (${itemGodownStock} PCS). Choose Delayed Delivery / Godown Dispatch if it goes from there.`);
     } else {
       toast.info(`Selected: ${prod.name} — 🏪 Showroom: ${itemShowroomStock} PCS | 🏭 Godown: ${itemGodownStock} PCS`);
     }
@@ -1792,14 +1798,17 @@ export function InvoiceCreationModal({
 
     if (mode === "invoice") {
       for (const it of billingForm.lineItems) {
-        if (it.availableStock !== undefined && it.availableStock <= 0) {
+        if (it.availableStock === undefined) continue;
+        // The Showroom's stock first; when it is short, the whole quantity may come from the Godown (the server then
+        // takes it from there, see pickSaleWarehouse in lib/stock.ts).
+        const godown = Number(it.godownStock) || 0;
+        if (it.qty <= it.availableStock || it.qty <= godown) continue;
+        if (it.availableStock <= 0 && godown <= 0) {
           toast.error(`"${it.name}" is OUT OF STOCK. Cannot generate a Tax Invoice.`);
-          return;
+        } else {
+          toast.error(`Quantity for "${it.name}" (${it.qty}) is more than the Showroom (${it.availableStock}) or the Godown (${godown}) holds. Transfer stock first or lower the quantity.`);
         }
-        if (it.availableStock !== undefined && it.qty > it.availableStock) {
-          toast.error(`Quantity for "${it.name}" (${it.qty}) exceeds available on-hand stock (${it.availableStock}).`);
-          return;
-        }
+        return;
       }
     }
 
@@ -2026,7 +2035,8 @@ export function InvoiceCreationModal({
         ? (billingForm.customerAddress ? `${billingForm.customerAddress}, ${billingForm.customerCity}, ${billingForm.customerState} - ${billingForm.customerPin}` : "")
         : (billingForm.shippingAddress ? `${billingForm.shippingAddress}, ${billingForm.shippingCity}, ${billingForm.shippingState} - ${billingForm.shippingPin}` : ""),
       dispatchType: mode === "estimate" ? "immediate" : billingForm.dispatchType || "immediate",
-      deliveryStatus: mode !== "estimate" && billingForm.dispatchType === "delayed_delivery" ? "pending_dispatch" : "delivered",
+      deliveryStatus:
+        mode === "estimate" ? "delivered" : billingForm.dispatchType === "delayed_delivery" ? "pending_dispatch" : "pending_handover",
       expectedDeliveryDate:
         mode !== "estimate" && billingForm.dispatchType === "delayed_delivery" ? billingForm.expectedDeliveryDate || "" : "",
       driverName: billingForm.driverName || "",

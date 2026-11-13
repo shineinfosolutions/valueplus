@@ -44,6 +44,9 @@ export interface ILineItem {
   extendedWarrantyAmount?: number;
   extendedWarrantyDuration?: number;
   extendedWarrantyPolicyNo?: string;
+  /** Where this line's stock was taken from when that is not the bill's own warehouse (the Showroom had too few, so
+   *  it came from a Godown). Empty = the bill's warehouseId. Cancel / delete / edit put the stock back here. */
+  stockWarehouseId?: string;
 }
 
 /**
@@ -188,7 +191,7 @@ export interface IInvoice extends Document {
   shippingState?: string;
   shippingPin?: string;
   dispatchType?: "immediate" | "delayed_delivery";
-  deliveryStatus?: "pending_dispatch" | "packed" | "out_for_delivery" | "delivered";
+  deliveryStatus?: "pending_handover" | "pending_dispatch" | "packed" | "out_for_delivery" | "delivered";
   deliveryOtp?: string;
   /** When the goods are to be handed over, for a bill delivered later
    *  ("YYYY-MM-DD"). Sold and off stock already, kept aside till then. */
@@ -223,7 +226,8 @@ export interface IInvoice extends Document {
    *  front / back / side photos, then how they left (customer in person, or sent for delivery). */
   storeExit?: {
     lines: { lineIndex: number; itemName: string; serial: string; serialMatched: boolean; photoKeys: string[]; by: string; at: Date | string }[];
-    mode?: "self" | "delivery";
+    /** "handover": an Immediate Handover bill, handed over at the counter after the scan + photos. */
+    mode?: "self" | "delivery" | "handover";
     takenByName?: string;
     takenByPhone?: string;
     completedBy?: string;
@@ -288,6 +292,7 @@ const LineItemSchema = new Schema({
   extendedWarrantyAmount: { type: Number, default: 0 },
   extendedWarrantyDuration: { type: Number, default: 0 },
   extendedWarrantyPolicyNo: { type: String, default: "" },
+  stockWarehouseId: { type: String, default: "" },
 });
 
 const PaymentSplitSchema = new Schema<IInvoicePayment>(
@@ -428,7 +433,8 @@ const InvoiceSchema = new Schema<IInvoice>(
     shippingState: { type: String, default: "" },
     shippingPin: { type: String, default: "" },
     dispatchType: { type: String, enum: ["immediate", "delayed_delivery"], default: "immediate" },
-    deliveryStatus: { type: String, enum: ["pending_dispatch", "packed", "out_for_delivery", "delivered"], default: "delivered" },
+    // "pending_handover": an immediate-handover bill whose goods are not yet scanned + photographed at the counter.
+    deliveryStatus: { type: String, enum: ["pending_handover", "pending_dispatch", "packed", "out_for_delivery", "delivered"], default: "delivered" },
     deliveryOtp: { type: String, default: "" },
     expectedDeliveryDate: { type: String, default: "", index: true },
     backdateStatus: { type: String, enum: ["approved", "pending", "rejected", ""], default: "" },
