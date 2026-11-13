@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { ME_SUMMARY_KEY, useMeSummary } from "@/components/shared/useMeSummary";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,19 +42,14 @@ export function DayCloseGate() {
   const userRole = ((session?.user as any)?.role || "").toLowerCase();
   const isAuditRole = AUDIT_ROLES.includes(userRole);
 
-  const { data } = useQuery({
-    queryKey: ["day-close-status"],
-    queryFn: async () => {
-      const res = await fetch("/api/day-close");
-      const json = await res.json();
-      if (!json.success) throw new Error(json.error);
-      return json.data as { pendingDate: string | null };
-    },
-    meta: { live: ["/api/day-close"] },
-    enabled: !!session && isAuditRole,
-  });
+  // Whether a count is pending comes with the shared "my status" query (GET /api/me/summary), which
+  // refreshes when a day is closed (/api/day-close) — no call of its own on every page.
+  // A failed check (null) keeps the last known answer, so a network blip never lifts the lock.
+  const { data: summary } = useMeSummary();
+  const lastKnownPending = useRef<string | null>(null);
+  if (summary?.dayClose) lastKnownPending.current = summary.dayClose.pendingDate || null;
 
-  const pendingDate = isAuditRole ? data?.pendingDate || null : null;
+  const pendingDate = isAuditRole ? lastKnownPending.current : null;
   // Matched as a whole path segment: a bare startsWith("/sales") also caught the
   // /salesman panel URL and locked the salesman's home screen.
   const isBlockedRoute = BLOCKED_PREFIXES.some((p) => pathname === p || pathname?.startsWith(`${p}/`));
@@ -110,6 +106,7 @@ export function DayCloseGate() {
       setCoinsAmount("");
       setNotes("");
       queryClient.invalidateQueries({ queryKey: ["day-close-status"] });
+      queryClient.invalidateQueries({ queryKey: [ME_SUMMARY_KEY] });
     },
     onError: (err: any) => toast.error(err.message || "Day-close failed"),
   });

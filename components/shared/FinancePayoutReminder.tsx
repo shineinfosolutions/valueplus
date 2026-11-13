@@ -3,11 +3,12 @@
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { useMeSummary } from "@/components/shared/useMeSummary";
 
 // Roles that can open Bank NACH & Payouts and so can actually fill the details in.
 const REMINDED_ROLES = ["admin", "manager", "accounts"];
+const EMPTY: any[] = [];
 const NAG_INTERVAL_MS = 10 * 60 * 1000;
 
 /**
@@ -22,25 +23,21 @@ export function FinancePayoutReminder() {
   const isReminded = REMINDED_ROLES.includes(userRole);
   const lastToastedKey = useRef<string | null>(null);
 
-  const { data: pending = [] } = useQuery({
-    queryKey: ["finance-payout-reminders"],
-    queryFn: async () => {
-      const res = await fetch("/api/finance/reminders");
-      const json = await res.json();
-      if (!json.success) throw new Error(json.error);
-      return json.data as Array<{
-        doId: string;
-        invoiceNumber: string;
-        customerName: string;
-        payoutDate: string;
-        amount: number;
-        missingBankAccount: boolean;
-        missingUtr: boolean;
-      }>;
-    },
-    meta: { live: ["/api/finance", "/api/invoices"] },
-    enabled: !!session && isReminded,
-  });
+  // The payouts missing details come with the shared "my status" query (GET /api/me/summary), which
+  // refreshes when finance records or bills change — no call of its own on every page.
+  // A failed check (null) keeps the last known list, as the query of its own did.
+  const { data: summary } = useMeSummary();
+  const lastKnown = useRef<any[]>(EMPTY);
+  if (Array.isArray(summary?.financeReminders)) lastKnown.current = summary.financeReminders;
+  const pending: Array<{
+    doId: string;
+    invoiceNumber: string;
+    customerName: string;
+    payoutDate: string;
+    amount: number;
+    missingBankAccount: boolean;
+    missingUtr: boolean;
+  }> = isReminded ? lastKnown.current : EMPTY;
 
   const key = pending.map((p) => p.doId).join("|");
 

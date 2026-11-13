@@ -1,7 +1,7 @@
 "use client";
 
 import { useExclusivePopup } from "@/lib/popup-queue";
-import { useLive } from "@/components/providers/RealtimeProvider";
+import { useMeSummary } from "@/components/shared/useMeSummary";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -40,13 +40,14 @@ export function UnreadNotificationPopup() {
   // Read by this person in this session: never put back by a check that was already on its way.
   const readIds = useRef<Set<string>>(new Set());
 
-  const check = useCallback(async (reshowAll: boolean) => {
+  // The same cached answer the bell reads (GET /api/me/summary): no call of its own. It is refreshed
+  // when a new notification for this user is announced over the live-update socket.
+  const { data: summary } = useMeSummary();
+  const notif = summary?.notifications;
+
+  const check = useCallback((list: any[]) => {
     try {
-      const res = await fetch("/api/notifications", { cache: "no-store" });
-      if (!res.ok) return;
-      const json = await res.json();
-      if (!json.success) return;
-      const unread: any[] = (json.data || []).filter((n: any) => !n.readAt && !readIds.current.has(String(n._id)));
+      const unread: any[] = list.filter((n: any) => !n.readAt && !readIds.current.has(String(n._id)));
       const popped = readPopped();
       // Only the ones not shown on this device before come up in the pop-up.
       const fresh = unread.filter((n) => !popped.has(String(n._id)));
@@ -64,11 +65,10 @@ export function UnreadNotificationPopup() {
   }, []);
 
   useEffect(() => {
-    if (!userId) return;
-    check(true);
-  }, [userId, check]);
-  // A new notification for this user is announced over the live-update socket.
-  useLive(["/api/notifications"], () => check(false), !!userId);
+    // Not loaded yet, or the check failed: keep what is shown.
+    if (!userId || !notif) return;
+    check(notif.data || []);
+  }, [userId, notif, check]);
 
   const markRead = async (body: { id?: string; all?: boolean }) => {
     if (body.all) items.forEach((n) => readIds.current.add(String(n._id)));

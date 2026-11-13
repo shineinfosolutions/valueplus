@@ -1,12 +1,15 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
-import { 
-  getOfflineInvoices, 
-  syncOfflineInvoices, 
-  cacheCatalogItems, 
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
+import { useSession } from "next-auth/react";
+import {
+  getOfflineInvoices,
+  syncOfflineInvoices,
+  cacheCatalogItems,
   cacheCustomers,
-  OfflineInvoice 
+  getOfflineCatalogFetchedAt,
+  markOfflineCatalogFetched,
+  shouldPreloadOfflineCatalog,
 } from "@/lib/offline-storage";
 import { toast } from "sonner";
 import { Wifi, WifiOff, RefreshCw, CheckCircle2, CloudUpload, ArrowUpRight } from "lucide-react";
@@ -39,12 +42,17 @@ export function OfflineSyncProvider({ children }: { children: React.ReactNode })
     setPendingCount(invoices.length);
   }, []);
 
+  // Read through a ref, so syncNow keeps one identity: the listeners below are set up once
+  // and are not torn down and re-added (with another catalog download) each time a sync starts or ends.
+  const syncingRef = useRef(false);
+
   // Sync execution
   const syncNow = useCallback(async () => {
-    if (!navigator.onLine || isSyncing) return;
+    if (!navigator.onLine || syncingRef.current) return;
     const currentQueue = getOfflineInvoices();
     if (currentQueue.length === 0) return;
 
+    syncingRef.current = true;
     setIsSyncing(true);
     toast.loading(`Syncing ${currentQueue.length} offline invoice(s) with cloud database...`, { id: "offline-sync" });
 
@@ -61,10 +69,13 @@ export function OfflineSyncProvider({ children }: { children: React.ReactNode })
       console.error("Auto sync error:", err);
       toast.error("Auto-sync error. Please check your internet connection.", { id: "offline-sync" });
     } finally {
+      syncingRef.current = false;
       setIsSyncing(false);
       refreshPendingCount();
     }
-  }, [isSyncing, refreshPendingCount]);
+  }, [refreshPendingCount]);
+  const syncNowRef = useRef(syncNow);
+  syncNowRef.current = syncNow;
 
   // Initial load and network listeners
   useEffect(() => {
@@ -76,7 +87,7 @@ export function OfflineSyncProvider({ children }: { children: React.ReactNode })
       toast.success("🌐 Internet connection restored! Auto-syncing pending offline records...", { duration: 4000 });
       // Trigger automatic sync after 1s debounce
       setTimeout(() => {
-        syncNow();
+        syncNowRef.current();
       }, 1000);
     };
 
@@ -97,25 +108,50 @@ export function OfflineSyncProvider({ children }: { children: React.ReactNode })
     window.addEventListener("offline", handleOffline);
     window.addEventListener("valueplus-offline-queue-changed", handleQueueChange);
 
-    // Initial cache preload for items and customers when online
-    if (navigator.onLine) {
-      fetch("/api/items")
-        .then(r => r.json())
-        .then(res => res.success && cacheCatalogItems(res.data))
-        .catch(() => {});
-
-      fetch("/api/customers")
-        .then(r => r.json())
-        .then(res => res.success && cacheCustomers(res.data))
-        .catch(() => {});
-    }
-
     return () => {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
       window.removeEventListener("valueplus-offline-queue-changed", handleQueueChange);
     };
-  }, [refreshPendingCount, syncNow]);
+  }, [refreshPendingCount]);
+
+  // Offline copy of the product and customer lists, for bills made while the internet is down.
+  // Only for the roles that bill, never before sign-in, and at most once every 12 hours on this
+  // device (see shouldPreloadOfflineCatalog). A bill saved online does not refresh it: the next
+  // download within 12 hours is soon enough for an offline fallback.
+  const { status: sessionStatus, data: session } = useSession();
+  const role = String((session?.user as any)?.role || "").toLowerCase();
+  const signedIn = sessionStatus === "authenticated";
+  useEffect(() => {
+    if (
+      !shouldPreloadOfflineCatalog({
+        signedIn,
+        role,
+        online: typeof navigator === "undefined" ? false : navigator.onLine,
+        lastFetchedAt: getOfflineCatalogFetchedAt(),
+        now: Date.now(),
+      })
+    ) {
+      return;
+    }
+    let cancelled = false;
+    const load = async (url: string) => {
+      const res = await fetch(url);
+      const json = await res.json();
+      return json?.success && Array.isArray(json.data) ? (json.data as any[]) : null;
+    };
+    Promise.all([load("/api/items"), load("/api/customers")])
+      .then(([items, customers]) => {
+        if (items) cacheCatalogItems(items);
+        if (customers) cacheCustomers(customers);
+        // Counted as done only when both lists came back, so a failed download is tried again next open.
+        if (items && customers && !cancelled) markOfflineCatalogFetched();
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [signedIn, role]);
 
   return (
     <OfflineSyncContext.Provider value={{ isOnline, pendingCount, isSyncing, syncNow }}>

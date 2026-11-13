@@ -1,7 +1,7 @@
 "use client";
 
 import { useExclusivePopup } from "@/lib/popup-queue";
-import { useLive } from "@/components/providers/RealtimeProvider";
+import { useMeSummary } from "@/components/shared/useMeSummary";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -22,12 +22,13 @@ export function PendingEstimatePopup() {
   const [fresh, setFresh] = useState<any[]>([]);
   const seen = useRef<Set<string> | null>(null);
 
-  const check = async () => {
+  // Pending estimates come with the shared "my status" query (GET /api/me/summary), refreshed when
+  // estimates change (live-update socket) — no call of its own.
+  const { data: summary } = useMeSummary();
+  const pendingList = isReviewer ? summary?.estimates : undefined;
+
+  const check = (pending: any[]) => {
     try {
-      const res = await fetch("/api/estimates?approval=pending");
-      const json = await res.json();
-      if (!json.success) return;
-      const pending: any[] = json.data;
       if (seen.current === null) {
         // First look after the page opens: show what is already waiting.
         seen.current = new Set();
@@ -44,11 +45,10 @@ export function PendingEstimatePopup() {
   };
 
   useEffect(() => {
-    if (isReviewer) check();
+    // Not loaded yet, or the check failed: checked again on the next answer.
+    if (Array.isArray(pendingList)) check(pendingList);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isReviewer]);
-  // Checked again only when the server announces a change (live-update socket), not on a timer.
-  useLive(["/api/estimates"], () => check(), isReviewer);
+  }, [pendingList]);
 
   const showPopup = useExclusivePopup("pending-estimates", fresh.length > 0);
   if (!isReviewer) return null;

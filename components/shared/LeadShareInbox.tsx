@@ -5,7 +5,7 @@ import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { useLive } from "@/components/providers/RealtimeProvider";
+import { useMeSummary } from "@/components/shared/useMeSummary";
 import { useExclusivePopup } from "@/lib/popup-queue";
 import { playNotificationSound } from "@/lib/notification-sound";
 
@@ -22,11 +22,13 @@ export function LeadShareInbox() {
   const [dismissed, setDismissed] = useState(false);
   const [busy, setBusy] = useState("");
 
-  const check = async () => {
+  // The shares waiting for him come with the shared "my status" query (GET /api/me/summary), refreshed
+  // whenever leads or his notifications change (live-update socket) — no call of its own.
+  const { data: summary } = useMeSummary();
+  const inbox = enabled ? summary?.leadShareInbox : undefined;
+
+  const check = (next: any[]) => {
     try {
-      const json = await (await fetch("/api/crm/leads?shareInbox=1")).json();
-      if (!json.success) return;
-      const next: any[] = json.data || [];
       setRows((prev) => {
         if (next.some((l) => !prev.some((p) => p._id === l._id))) {
           setDismissed(false);
@@ -40,10 +42,10 @@ export function LeadShareInbox() {
   };
 
   useEffect(() => {
-    if (enabled) check();
+    // Not loaded yet, or the check failed: checked again on the next answer.
+    if (Array.isArray(inbox)) check(inbox);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled]);
-  useLive(["/api/crm/leads", "/api/notifications"], () => check(), enabled);
+  }, [inbox]);
 
   const show = useExclusivePopup("lead-share-inbox", enabled && rows.length > 0 && !dismissed);
   if (!enabled) return null;

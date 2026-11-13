@@ -10,16 +10,17 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { pushSupported, registerThisDevice, sendTestPush } from "@/lib/push-client";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { useLive } from "@/components/providers/RealtimeProvider";
+import { useMeSummary, useRefreshMeSummary } from "@/components/shared/useMeSummary";
 
 /**
  * The bell at the top of every page: the signed-in user's own notifications —
  * a task or sales target given to them, an approval answered, and for admins a
  * new approval request — plus, for admins, the count of approvals waiting.
  *
- * Loaded when the page opens, again the moment the server announces a new
- * notification for this user (live-update socket, see RealtimeProvider), and when
- * the tab comes back into view or the connection returns - never on a timer.
+ * Loaded when the page opens (as part of GET /api/me/summary, shared with the
+ * pop-ups), again the moment the server announces a new notification for this
+ * user (live-update socket, see RealtimeProvider), and when the tab comes back
+ * into view or the connection returns - never on a timer.
  * Anything new since the last check pops up on screen, and as a phone/desktop
  * notification once the user has turned those on from the bell.
  */
@@ -70,18 +71,19 @@ export function NotificationBell() {
     };
   }, [userId]);
 
-  const load = useCallback(async (signal?: AbortSignal) => {
-    if (typeof navigator !== "undefined" && !navigator.onLine) return;
-    if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
-    try {
-      const res = await fetch("/api/notifications", { signal, cache: "no-store" });
-      if (!res.ok) return;
-      const json = await res.json();
-      if (!json.success) return;
-      const list: any[] = json.data || [];
-      setItems(list);
-      setUnread(json.unreadCount || 0);
+  // The notifications and the approvals count come from the shared "my status" query
+  // (GET /api/me/summary), the same cached answer the unread pop-up reads — one call, not three.
+  const { data: summary } = useMeSummary();
+  const refresh = useRefreshMeSummary();
+  const notif = summary?.notifications;
+  const approvalsCount = summary?.approvals?.pendingCount;
+  // The latest answer that has not been checked for new notifications yet (the app was in the background).
+  const unannounced = useRef<{ data: any[]; unreadCount: number } | null>(null);
 
+  // Pops up what is new since the last look. Skipped while the app is in the background (the phone shows
+  // the push itself then); done the moment it comes back, as the old check-on-return did.
+  const announce = useCallback((list: any[]) => {
+    try {
       const newest = list[0]?.createdAt || null;
       if (lastSeenRef.current !== null) {
         const fresh = list.filter((n) => !n.readAt && n.createdAt > (lastSeenRef.current as string)).reverse();
@@ -108,36 +110,51 @@ export function NotificationBell() {
       }
       if (newest && (lastSeenRef.current === null || newest > lastSeenRef.current)) lastSeenRef.current = newest;
       if (lastSeenRef.current === null) lastSeenRef.current = "";
-
-      if (isAdmin) {
-        const a = await fetch("/api/approvals?status=pending", { signal, cache: "no-store" });
-        if (a.ok) {
-          const aj = await a.json();
-          if (aj.success) setPendingApprovals(aj.pendingCount || 0);
-        }
-      }
-    } catch (e: any) {
-      if (e?.name !== "AbortError") console.warn("Notifications check skipped (network unavailable)");
+    } catch (e) {
+      console.warn("Notification pop-up skipped:", e);
     }
-  }, [isAdmin, router]);
+  }, [router]);
 
   useEffect(() => {
+    if (!notif) return; // not loaded yet, or the check failed: keep what is shown
+    setItems(notif.data || []);
+    setUnread(notif.unreadCount || 0);
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+      unannounced.current = notif;
+      return;
+    }
+    unannounced.current = null;
+    announce(notif.data || []);
+  }, [notif, announce]);
+
+  useEffect(() => {
+    if (isAdmin && typeof approvalsCount === "number") setPendingApprovals(approvalsCount);
+  }, [isAdmin, approvalsCount]);
+
+  // Check again when the connection returns or the app comes back to the front. Coming back within
+  // 15 s of the last answer reuses it (the live-update socket would have said if anything changed).
+  useEffect(() => {
     if (!session?.user) return;
-    const controller = new AbortController();
-    load(controller.signal);
-    const onBack = () => load(controller.signal);
-    const onVisible = () => document.visibilityState === "visible" && load(controller.signal);
+    const onBack = () => refresh();
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      if (unannounced.current) {
+        const pending = unannounced.current;
+        unannounced.current = null;
+        announce(pending.data || []);
+      }
+      refresh(15_000);
+    };
     window.addEventListener("online", onBack);
     document.addEventListener("visibilitychange", onVisible);
     return () => {
-      controller.abort();
       window.removeEventListener("online", onBack);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [session?.user, load]);
+  }, [session?.user, refresh, announce]);
 
-  // New notifications for this user; for an Admin also the approvals count.
-  useLive(isAdmin ? ["/api/notifications", "/api/approvals"] : ["/api/notifications"], () => load(), !!session?.user);
+  // New notifications for this user, and for an Admin the approvals count, refresh the shared query
+  // through its `meta.live` paths (see useMeSummary) — no separate listener needed here.
 
   const markRead = async (body: { id?: string; all?: boolean }) => {
     setItems((list) => list.map((n) => (body.all || n._id === body.id ? { ...n, readAt: n.readAt || new Date().toISOString() } : n)));
@@ -160,13 +177,13 @@ export function NotificationBell() {
   useEffect(() => {
     if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
     const onMessage = (e: MessageEvent) => {
-      if (e.data?.type === "push") load();
+      if (e.data?.type === "push") refresh();
       // A push arrived while the app is alive but in the background: play the chime too.
       if (e.data?.type === "push-sound") playNotificationSound();
     };
     navigator.serviceWorker.addEventListener("message", onMessage);
     return () => navigator.serviceWorker.removeEventListener("message", onMessage);
-  }, [load]);
+  }, [refresh]);
 
   const open = (n: any) => {
     if (!n.readAt) markRead({ id: n._id });
