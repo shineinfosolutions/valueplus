@@ -31,7 +31,7 @@ async function main() {
   await db.collection("invoices").createIndex({ customerPhone: -1 }, { name: "customerPhone_1" });
 
   const first = await ensureIndexes();
-  const expectedCreated = INDEXES.length - 1 /* push_subscriptions */ - 2 /* already there */ - 1 /* conflict */;
+  const expectedCreated = INDEXES.length - INDEXES.filter((i) => i.collection === "push_subscriptions").length /* missing collection */ - 2 /* already there */ - 1 /* conflict */;
   check(first.failed.length === 0, `first run: nothing failed ${first.failed.join("; ")}`);
   check(first.created.length === expectedCreated, `first run: ${first.created.length} created (expected ${expectedCreated})`);
   check(first.exists === 2, `first run: the 2 equivalent existing indexes are left alone (${first.exists})`);
