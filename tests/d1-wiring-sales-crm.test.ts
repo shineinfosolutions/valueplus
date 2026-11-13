@@ -31,6 +31,7 @@ import { ensureIndexes, INDEXES } from "@/lib/ensure-indexes";
 import { setStaffD1 } from "@/lib/repo/staff";
 import { SALES_READS } from "@/lib/repo/sales/registry";
 import { CRM_READS } from "@/lib/repo/crm";
+import { STOCK_READS } from "@/lib/repo/stock";
 import { deferredContext } from "@/lib/deferred-context";
 import { ONSITEGO_FOLDER } from "@/lib/onsitego";
 // Every model of the dashboard data set, so asSaved() finds them by collection name.
@@ -536,9 +537,9 @@ async function main() {
     check(!/Bank \(from D1\)/.test((await call({ label: "accounts", handler: H(accountsGET), url: U("/api/accounting/accounts") })).text), "mongo mode does not");
     await db.prepare("UPDATE accounts SET name = 'Bank' WHERE code = '1002'").run();
 
-    // Every D1 SELECT fails (the flag read and the recording still work): each route answers from MongoDB, the
+    // Every D1 SELECT fails (the flag read with its freshness facts, and the recording still work): each route answers from MongoDB, the
     // same as in mongo mode, and each fallback is recorded.
-    const broken = faulty(db, { fail: (sql) => /^\s*SELECT/i.test(sql) && !/feature_flags|shadow_results/.test(sql) });
+    const broken = faulty(db, { fail: (sql) => /^\s*SELECT/i.test(sql) && !/feature_flags|shadow_results|write_through_state|sync_errors/.test(sql) });
     for (const c of cases) {
       await setMode(db, "mongo");
       const m = await call(c);
@@ -553,8 +554,13 @@ async function main() {
       const rows = await rowsAfter(db, before);
       const wired = !/kept on MongoDB/.test(c.label);
       check(d.status === m.status && d.text === m.text, `${c.label}: D1 failing, d1 mode answers from MongoDB (byte-identical to mongo mode)`);
+      // A read marked mongoOnlyInD1 (next number, cash register) is answered by MongoDB even in d1 mode, so its D1
+      // failure shows up as a failed shadow comparison instead of a fallback.
+      const mongoOnly = (r: any) => (r.area === "sales" ? !!SALES_READS[r.name]?.mongoOnlyInD1 : !!(STOCK_READS as any)[r.name]?.mongoOnlyInD1);
       check(
-        !wired || (rows.length > 0 && rows.every((r) => r.kind === "fallback" && /simulated failure/.test(r.error || ""))),
+        !wired ||
+          (rows.length > 0 &&
+            rows.every((r) => (r.kind === "fallback" || (r.kind === "shadow" && mongoOnly(r))) && /simulated failure/.test(r.error || ""))),
         `${c.label}: ${rows.length} fallback(s) recorded`
       );
     }

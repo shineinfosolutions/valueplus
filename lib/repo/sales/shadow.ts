@@ -25,6 +25,7 @@ export function salesRead<T = any>(name: string, ...args: any[]): Promise<T> {
       return entry.mongo(...args);
     },
     (db) => entry.d1At(db, ...args),
-    { compare: SALES_COMPARE[name] }
+    // mongoOnlyInD1: a read that decides a write keeps answering from MongoDB in d1 mode (registry.ts).
+    { compare: SALES_COMPARE[name], mongoOnlyInD1: !!entry.mongoOnlyInD1 }
   );
 }

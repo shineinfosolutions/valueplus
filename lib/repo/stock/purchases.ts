@@ -296,6 +296,8 @@ export const PURCHASE_READS = {
       return Expense.find({ $or: [{ paymentMode: "Cash" }, { paymentMode: "cash" }] }).sort({ createdAt: -1 });
     },
     d1: async (_a, db) => findDocs(useDb(db), "expenses", { where: "paymentMode IN ('Cash', 'cash')", orderBy: "createdAt DESC, id" }),
+    // Part of the cash register balance that validates payouts (lib/repo/stock/cash.ts cashTransactions.all).
+    mongoOnlyInD1: true,
   }),
 
   /** GET /api/product-reference — the whole catalogue reference by VP code. */

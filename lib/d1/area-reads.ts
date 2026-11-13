@@ -18,7 +18,8 @@
  */
 import { readWithShadow } from "@/lib/d1/shadow";
 import type { CompareOptions } from "@/lib/d1/compare";
-import { STOCK_READS } from "@/lib/repo/stock";
+import { STOCK_READS, type StockRead } from "@/lib/repo/stock";
+import { isMongoOnlyInD1 } from "@/lib/repo/stock/types";
 import { STAFF_READS } from "@/lib/repo/staff";
 
 type Key = (d: any) => unknown;
@@ -65,7 +66,11 @@ export const STAFF_SHARED_COMPARE: Record<string, CompareOptions> = {
 export function stockRead<T = any>(name: string, args: any = {}): Promise<T> {
   const entry = STOCK_READS[name];
   if (!entry) throw new Error(`unknown stock read ${name}`);
-  return readWithShadow<T>("stock", name, () => entry.mongo(args), (db) => entry.d1(args, db), { compare: STOCK_SHARED_COMPARE[name] });
+  return readWithShadow<T>("stock", name, () => entry.mongo(args), (db) => entry.d1(args, db), {
+    compare: STOCK_SHARED_COMPARE[name],
+    // The cash register reads answer from MongoDB even in d1 mode (they validate payouts; lib/repo/stock/types.ts).
+    mongoOnlyInD1: isMongoOnlyInD1(entry as StockRead, args),
+  });
 }
 
 /**

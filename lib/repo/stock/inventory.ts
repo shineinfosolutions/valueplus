@@ -168,6 +168,9 @@ export const INVENTORY_READS = {
       }
       return findDocs(useDb(db), "serial_numbers", { where: where.join(" AND ") || undefined, params, orderBy: "createdAt DESC, id", post });
     },
+    // The AVAILABLE list (the default) is what the bill and purchase forms offer to sell: a serial sold a moment ago
+    // must never be offered again, so that list keeps answering from MongoDB in d1 mode. Other lists may use D1.
+    mongoOnlyInD1: ({ status }) => (status || "AVAILABLE") === "AVAILABLE",
   }),
 
   /** GET /api/reports/product-ledger — the product's serial numbers (by VP code, code, id or exact name), stored order. */

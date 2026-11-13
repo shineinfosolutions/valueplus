@@ -30,6 +30,8 @@ export const CASH_READS = {
       return CashTransaction.find({}).sort({ createdAt: -1 });
     },
     d1: async (_a, db) => findDocs(useDb(db), "cash_transactions", { orderBy: "createdAt DESC, id" }),
+    // The register balance checks payouts (admin-cash POST / PATCH), the day close and calibration: never from D1.
+    mongoOnlyInD1: true,
   }),
 
   /** lib/cashRegister.ts getCashRegisterSummary — the Admin's drawer count (opening cash). */
@@ -39,6 +41,8 @@ export const CASH_READS = {
       return CashRegisterSetting.findOne({ key: "cash-register" }).lean();
     },
     d1: async (_a, db) => findOneDoc(useDb(db), "cash_register_settings", { where: "key = ?", params: ["cash-register"], orderBy: "id" }),
+    // Part of the register balance (see cashTransactions.all).
+    mongoOnlyInD1: true,
   }),
 
   /** GET /api/day-close (getPendingDate) — the latest day close (a mongoose document). */
@@ -75,6 +79,8 @@ export const CASH_READS = {
       return DayClose.find({}).sort({ date: 1 });
     },
     d1: async (_a, db) => findDocs(useDb(db), "day_closes", { orderBy: "date, id" }),
+    // Read by a POST that rewrites the day closes.
+    mongoOnlyInD1: true,
   }),
 
   /** GET /api/admin-cash (buildBook) — every Admin cash entry, oldest first. */
@@ -84,6 +90,8 @@ export const CASH_READS = {
       return AdminCashEntry.find({}).sort({ date: 1, createdAt: 1 }).lean();
     },
     d1: async (_a, db) => findDocs(useDb(db), "admin_cash_entries", { orderBy: "date, createdAt, id" }),
+    // The Admin's available cash: admin-cash POST refuses a payout above it, PATCH refuses a cancel that makes it negative.
+    mongoOnlyInD1: true,
   }),
 
   /** GET /api/bank-accounts — every account except the legacy cash-register rows (mongoose documents), newest first. */

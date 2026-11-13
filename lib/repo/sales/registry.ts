@@ -25,7 +25,18 @@ export interface SalesRead {
   d1At: (db: D1DatabaseLike, ...args: any[]) => Promise<any>;
   /** The Mongo query has no sort: compare as a set (by _id). */
   unordered?: boolean;
+  /**
+   * Stage C: even with `read:sales` = 'd1' this read answers from MongoDB (D1 is still compared after the response),
+   * because its answer decides a write and a few seconds of D1 lag could make that write wrong:
+   *  - nextNumber.*: the next bill / estimate number; a lagging list would hand out a number already used;
+   *  - cashRegister.*: the cash register balance, which validates the Admin cash payouts / cancellations
+   *    (app/api/admin-cash), the day close (app/api/day-close) and the calibration (app/api/cash-register/calibrate).
+   */
+  mongoOnlyInD1?: boolean;
 }
+
+/** Marks a read as answered from MongoDB even in d1 mode (see SalesRead.mongoOnlyInD1). */
+const mongoOnly = (r: SalesRead): SalesRead => ({ ...r, mongoOnlyInD1: true });
 
 /** Binds a d1 implementation (db first) to the area's D1 database, keeping the Mongo call's signature. */
 const d1 =
@@ -39,8 +50,8 @@ export const SALES_READS: Record<string, SalesRead> = {
   "invoices.list": { mongo: inv.mongoInvoiceList, d1: d1(inv.d1InvoiceList), d1At: inv.d1InvoiceList },
   "orders.list": { mongo: inv.mongoOrderList, d1: d1(inv.d1OrderList), d1At: inv.d1OrderList },
   "payments.paidInvoices": { mongo: inv.mongoPaidInvoices, d1: d1(inv.d1PaidInvoices), d1At: inv.d1PaidInvoices, unordered: true },
-  "nextNumber.invoiceNumbers": { mongo: inv.mongoAllInvoiceNumbers, d1: d1(inv.d1AllInvoiceNumbers), d1At: inv.d1AllInvoiceNumbers, unordered: true },
-  "nextNumber.proformaNumbers": { mongo: inv.mongoProformaNumbers, d1: d1(inv.d1ProformaNumbers), d1At: inv.d1ProformaNumbers, unordered: true },
+  "nextNumber.invoiceNumbers": mongoOnly({ mongo: inv.mongoAllInvoiceNumbers, d1: d1(inv.d1AllInvoiceNumbers), d1At: inv.d1AllInvoiceNumbers, unordered: true }),
+  "nextNumber.proformaNumbers": mongoOnly({ mongo: inv.mongoProformaNumbers, d1: d1(inv.d1ProformaNumbers), d1At: inv.d1ProformaNumbers, unordered: true }),
   "warranty.invoices": { mongo: inv.mongoNonProformaInvoices, d1: d1(inv.d1NonProformaInvoices), d1At: inv.d1NonProformaInvoices, unordered: true },
   "vendorsLedger.customerInvoices": { mongo: inv.mongoCustomerLedgerInvoices, d1: d1(inv.d1CustomerLedgerInvoices), d1At: inv.d1CustomerLedgerInvoices, unordered: true },
   "track.invoice": { mongo: inv.mongoTrackInvoice, d1: d1(inv.d1TrackInvoice), d1At: inv.d1TrackInvoice },
@@ -51,9 +62,9 @@ export const SALES_READS: Record<string, SalesRead> = {
   "profitLoss.invoices": { mongo: inv.mongoProfitLossInvoices, d1: d1(inv.d1ProfitLossInvoices), d1At: inv.d1ProfitLossInvoices, unordered: true },
   "dashboard.invoiceSummary": { mongo: inv.mongoDashboardInvoiceSummary, d1: d1(inv.d1DashboardInvoiceSummary), d1At: inv.d1DashboardInvoiceSummary },
   "dashboard.invoicesByIds": { mongo: inv.mongoInvoicesByIds, d1: d1(inv.d1InvoicesByIds), d1At: inv.d1InvoicesByIds, unordered: true },
-  "cashRegister.cashInvoices": { mongo: inv.mongoCashInvoices, d1: d1(inv.d1CashInvoices), d1At: inv.d1CashInvoices },
-  "cashRegister.financeLinkedInvoices": { mongo: inv.mongoFinanceLinkedInvoices, d1: d1(inv.d1FinanceLinkedInvoices), d1At: inv.d1FinanceLinkedInvoices, unordered: true },
-  "cashRegister.dueCashBills": { mongo: inv.mongoDueCashBills, d1: d1(inv.d1DueCashBills), d1At: inv.d1DueCashBills, unordered: true },
+  "cashRegister.cashInvoices": mongoOnly({ mongo: inv.mongoCashInvoices, d1: d1(inv.d1CashInvoices), d1At: inv.d1CashInvoices }),
+  "cashRegister.financeLinkedInvoices": mongoOnly({ mongo: inv.mongoFinanceLinkedInvoices, d1: d1(inv.d1FinanceLinkedInvoices), d1At: inv.d1FinanceLinkedInvoices, unordered: true }),
+  "cashRegister.dueCashBills": mongoOnly({ mongo: inv.mongoDueCashBills, d1: d1(inv.d1DueCashBills), d1At: inv.d1DueCashBills, unordered: true }),
   "staffIncentive.bills": { mongo: inv.mongoIncentiveBills, d1: d1(inv.d1IncentiveBills), d1At: inv.d1IncentiveBills },
   "staffBrandSales.bills": { mongo: inv.mongoBrandSalesBills, d1: d1(inv.d1BrandSalesBills), d1At: inv.d1BrandSalesBills, unordered: true },
   "deliveryReminders.dueInvoices": { mongo: inv.mongoDueDeliveryInvoices, d1: d1(inv.d1DueDeliveryInvoices), d1At: inv.d1DueDeliveryInvoices, unordered: true },
@@ -63,7 +74,7 @@ export const SALES_READS: Record<string, SalesRead> = {
   "dashboard.supplierPayments": { mongo: money.mongoDashboardSupplierPayments, d1: d1(money.d1DashboardSupplierPayments), d1At: money.d1DashboardSupplierPayments, unordered: true },
   "dashboard.paymentSummary": { mongo: money.mongoDashboardPaymentSummary, d1: d1(money.d1DashboardPaymentSummary), d1At: money.d1DashboardPaymentSummary },
   "dashboard.paymentsByIds": { mongo: money.mongoPaymentsByIds, d1: d1(money.d1PaymentsByIds), d1At: money.d1PaymentsByIds, unordered: true },
-  "cashRegister.cashReceipts": { mongo: money.mongoCashReceipts, d1: d1(money.d1CashReceipts), d1At: money.d1CashReceipts, unordered: true },
+  "cashRegister.cashReceipts": mongoOnly({ mongo: money.mongoCashReceipts, d1: d1(money.d1CashReceipts), d1At: money.d1CashReceipts, unordered: true }),
   "vendorsLedger.payments": { mongo: money.mongoPaymentsOfPartyType, d1: d1(money.d1PaymentsOfPartyType), d1At: money.d1PaymentsOfPartyType, unordered: true },
 
   // customer_advances
@@ -73,18 +84,18 @@ export const SALES_READS: Record<string, SalesRead> = {
   "finance.list": { mongo: money.mongoFinanceList, d1: d1(money.d1FinanceList), d1At: money.d1FinanceList },
   "finance.reminders": { mongo: money.mongoFinanceReminders, d1: d1(money.d1FinanceReminders), d1At: money.d1FinanceReminders },
   "dashboard.financeSummary": { mongo: money.mongoDashboardFinanceSummary, d1: d1(money.d1DashboardFinanceSummary), d1At: money.d1DashboardFinanceSummary, unordered: true },
-  "cashRegister.financeRecords": { mongo: money.mongoCashRegisterFinanceRecords, d1: d1(money.d1CashRegisterFinanceRecords), d1At: money.d1CashRegisterFinanceRecords },
+  "cashRegister.financeRecords": mongoOnly({ mongo: money.mongoCashRegisterFinanceRecords, d1: d1(money.d1CashRegisterFinanceRecords), d1At: money.d1CashRegisterFinanceRecords }),
 
   // deleted_invoices
   "dashboard.deletedInRange": { mongo: money.mongoDeletedInRange, d1: d1(money.d1DeletedInRange), d1At: money.d1DeletedInRange },
-  "nextNumber.deletedNumbers": { mongo: money.mongoDeletedInvoiceNumbers, d1: d1(money.d1DeletedInvoiceNumbers), d1At: money.d1DeletedInvoiceNumbers, unordered: true },
+  "nextNumber.deletedNumbers": mongoOnly({ mongo: money.mongoDeletedInvoiceNumbers, d1: d1(money.d1DeletedInvoiceNumbers), d1At: money.d1DeletedInvoiceNumbers, unordered: true }),
 
   // billing_companies
   "billingCompanies.list": { mongo: money.mongoBillingCompanies, d1: d1(money.d1BillingCompanies), d1At: money.d1BillingCompanies },
 
   // estimates
   "estimates.list": { mongo: docs.mongoEstimateList, d1: d1(docs.d1EstimateList), d1At: docs.d1EstimateList },
-  "nextNumber.estimateNumbers": { mongo: docs.mongoEstimateNumbers, d1: d1(docs.d1EstimateNumbers), d1At: docs.d1EstimateNumbers, unordered: true },
+  "nextNumber.estimateNumbers": mongoOnly({ mongo: docs.mongoEstimateNumbers, d1: d1(docs.d1EstimateNumbers), d1At: docs.d1EstimateNumbers, unordered: true }),
 
   // delivery_challans
   "challans.list": { mongo: docs.mongoChallanList, d1: d1(docs.d1ChallanList), d1At: docs.d1ChallanList },

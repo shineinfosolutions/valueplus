@@ -137,13 +137,16 @@ async function modeTests(db: D1DatabaseLike) {
 
   await setFlag(db, "test", "d1");
   r = await readWithShadow("test", "t.d1", mongoFn, d1Fn);
-  check(r === d1Value && mongoCalls === 1 && d1Calls === 1, "d1: only D1 is read, its answer is served");
+  check(r === d1Value && mongoCalls === 1 && d1Calls === 1, "d1: only D1 is read before the answer, D1's answer is served");
+  await flushShadowWork();
+  const rev = await one(db, "SELECT * FROM shadow_results WHERE name = 't.d1'");
+  check(mongoCalls === 2 && rev?.kind === "reverse" && rev.match === 1, "d1: MongoDB is read after the answer and compared (Stage C reverse shadow)");
 
   r = await readWithShadow("test", "t.fallback", mongoFn, async () => {
     throw new Error("D1_ERROR: no such table: items");
   });
   await flushShadowWork();
-  check(r === mongoValue && mongoCalls === 2, "d1: a D1 error serves MongoDB's answer");
+  check(r === mongoValue && mongoCalls === 3, "d1: a D1 error serves MongoDB's answer");
   const fb = await one(db, "SELECT * FROM shadow_results WHERE name = 't.fallback'");
   check(fb?.kind === "fallback" && fb.match === 0 && /no such table/.test(fb.error || ""), "the fallback is recorded with its error");
   const fbDay = await one(db, "SELECT * FROM shadow_daily WHERE name = 't.fallback'");

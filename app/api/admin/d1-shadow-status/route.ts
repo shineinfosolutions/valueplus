@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getActor } from "@/lib/requirePermission";
 import { getReadSourceConfig } from "@/lib/d1/read-source";
 import { getShadowStatus } from "@/lib/d1/shadow-status";
+import { getStageCStatus } from "@/lib/d1/stage-c";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +11,11 @@ export const dynamic = "force-dynamic";
  * `?days=N` India days (1-60, default 7): runs, match %, D1 errors, fallbacks, average MongoDB vs D1 time, how many
  * days in a row it has been clean, the latest mismatch sample (paths and masked short values only), and the area's
  * current read mode. Admin / Super Admin only.
+ *
+ * `stageC` (lib/d1/stage-c.ts): per area the switch, the EFFECTIVE mode (a 'd1' area whose D1 is not known fresh
+ * reads MongoDB), the freshness and why not, clean shop days against the area's rule, the next promotion with what
+ * still blocks it and its earliest time, and the last 20 automatic changes (stage_c_log). Shown as
+ * `{ error }` when migration 0009 is not applied yet, without failing the rest of the report.
  */
 export async function GET(req: Request) {
   const actor = await getActor();
@@ -26,7 +32,13 @@ export async function GET(req: Request) {
   const days = Number.isFinite(raw) && raw >= 1 ? Math.min(60, Math.floor(raw)) : 7;
   try {
     const status = await getShadowStatus(db, { days });
-    return NextResponse.json({ success: true, ...status });
+    let stageC: unknown;
+    try {
+      stageC = await getStageCStatus(db, Date.now());
+    } catch (e: any) {
+      stageC = { error: e?.message || String(e) };
+    }
+    return NextResponse.json({ success: true, ...status, stageC });
   } catch (e: any) {
     return NextResponse.json({ success: false, error: e?.message || String(e) }, { status: 500 });
   }

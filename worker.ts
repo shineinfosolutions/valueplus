@@ -30,11 +30,18 @@ function takeAfterResponse(ctx: ExecutionContext): Array<() => Promise<void>> {
   return list;
 }
 
-function runAfterResponse(ctx: ExecutionContext) {
+/**
+ * Starts the queued work and returns a promise for its end (already resolved when there is none). The request's
+ * MongoDB client is closed only after it: in d1 mode the queued work reads MongoDB (the reverse comparison of
+ * lib/d1/shadow.ts), and it may even be what opens that client.
+ */
+function runAfterResponse(ctx: ExecutionContext): Promise<void> {
   const tasks = takeAfterResponse(ctx);
-  if (tasks.length === 0) return;
+  if (tasks.length === 0) return Promise.resolve();
   // Each task catches its own errors; the extra catch only makes sure nothing here can reach the response.
-  ctx.waitUntil(Promise.allSettled(tasks.map((t) => Promise.resolve().then(t))).then(() => {}, () => {}));
+  const done = Promise.allSettled(tasks.map((t) => Promise.resolve().then(t))).then(() => {}, () => {});
+  ctx.waitUntil(done);
+  return done;
 }
 
 function dropAfterResponse(ctx: ExecutionContext) {
@@ -180,7 +187,7 @@ export default {
     }
 
     // D1 shadow reads (lib/d1/shadow.ts) queued during the request: the response is ready, run them now.
-    runAfterResponse(ctx);
+    const afterResponse = runAfterResponse(ctx);
 
     // A write went through: tell the open apps what changed.
     // A route can say nothing changed (header x-realtime-skip: 1), e.g. a phone's position that moved no one in or out.
@@ -189,15 +196,20 @@ export default {
       if (changed) publish(env, ctx, { paths: [changed] });
     }
 
+    // Close the request's MongoDB client only once the queued work is done too (it may read MongoDB, and may even
+    // be what opened the client, after the check below). closeRequestDb does nothing when there is no client.
+    const closeAfterWork = () => afterResponse.then(() => closeRequestDb(ctx));
+
     const requestDbs = (globalThis as any)[REQUEST_DBS] as WeakMap<object, unknown> | undefined;
     if (!requestDbs?.has(ctx)) {
+      ctx.waitUntil(closeAfterWork());
       return response;
     }
 
     // A streamed body may still be reading from the database, so wait for it
     // to finish before closing the client.
     if (!response.body || (response as any).webSocket) {
-      ctx.waitUntil(closeRequestDb(ctx));
+      ctx.waitUntil(closeAfterWork());
       return response;
     }
     const { readable, writable } = new TransformStream();
@@ -205,7 +217,7 @@ export default {
       response.body
         .pipeTo(writable)
         .catch(() => {})
-        .finally(() => closeRequestDb(ctx))
+        .finally(() => closeAfterWork())
     );
     return new Response(readable, response);
   },

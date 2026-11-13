@@ -20,6 +20,7 @@
 import { readWithShadow } from "@/lib/d1/shadow";
 import type { CompareOptions } from "@/lib/d1/compare";
 import { STOCK_READS } from "./index";
+import { isMongoOnlyInD1 } from "./types";
 
 const DOC_DEFAULTS: Record<string, unknown> = { __v: 0, "[].__v": 0 };
 
@@ -108,6 +109,7 @@ export function readStock<T = any>(name: keyof typeof STOCK_READS & string, args
     name,
     () => entry.mongo(args),
     (db) => entry.d1(args, db),
-    { compare: STOCK_COMPARE[name] ?? plain }
+    // mongoOnlyInD1: a read that decides a write keeps answering from MongoDB in d1 mode (lib/repo/stock/types.ts).
+    { compare: STOCK_COMPARE[name] ?? plain, mongoOnlyInD1: isMongoOnlyInD1(entry, args) }
   );
 }

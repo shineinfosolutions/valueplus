@@ -534,7 +534,7 @@ async function main() {
     // ── every D1 query failing: d1 mode answers as MongoDB, fallbacks recorded ──
     console.log("\nD1 failing in d1 mode: MongoDB answers");
     await setModes(db, "d1");
-    configureReadSource({ resolveD1: () => faulty(db, { fail: (sql) => !/feature_flags|shadow_/i.test(sql) }) });
+    configureReadSource({ resolveD1: () => faulty(db, { fail: (sql) => !/feature_flags|shadow_|write_through_state|sync_errors/i.test(sql) }) });
     await db.prepare("DELETE FROM shadow_results").run();
     for (const c of cases) {
       invalidatePermissionCache();
@@ -543,7 +543,11 @@ async function main() {
     }
     await flushShadowWork();
     configureReadSource({ resolveD1: () => db });
-    const fb = ((await db.prepare("SELECT DISTINCT area || '/' || name AS r FROM shadow_results WHERE kind = 'fallback'").all()).results || []).map((x: any) => x.r);
+    // A read marked mongoOnlyInD1 (the Admin cash book, the cash register) is answered by MongoDB even in d1 mode,
+    // so its D1 failure is recorded as a failed shadow comparison instead of a fallback.
+    const fb = (
+      (await db.prepare("SELECT DISTINCT area || '/' || name AS r FROM shadow_results WHERE kind = 'fallback' OR (kind = 'shadow' AND error IS NOT NULL)").all()).results || []
+    ).map((x: any) => x.r);
     const expected = Array.from(new Set(cases.flatMap((c) => c.reads)));
     const missingFb = expected.filter((r) => !fb.includes(r));
     check(missingFb.length === 0, `every read path recorded its fallback (${fb.length})${missingFb.length ? " MISSING " + missingFb.join(", ") : ""}`);
