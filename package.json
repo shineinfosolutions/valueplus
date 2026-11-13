@@ -10,6 +10,7 @@
     "build:verify": "node scripts/next-isolated.js build",
     "start": "next start",
     "lint": "next lint",
+    "test": "node tests/run-tests.mjs",
     "cf:build": "opennextjs-cloudflare build",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy"

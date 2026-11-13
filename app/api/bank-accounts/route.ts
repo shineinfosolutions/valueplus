@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import BankAccount from "@/models/BankAccount";
+import { NOT_LEGACY_CASH_REGISTER } from "@/lib/legacy-rows";
 
 const DEFAULT_ACCOUNTS = [
   {
@@ -48,17 +49,10 @@ const DEFAULT_ACCOUNTS = [
 export async function GET() {
   try {
     await connectToDatabase();
-    
-    // Purge any legacy cash register entries from bank accounts table
-    await BankAccount.deleteMany({
-      $or: [
-        { type: "cash" },
-        { name: { $regex: /cash register/i } },
-        { number: { $regex: /cash-register/i } },
-      ],
-    });
 
-    let accounts = await BankAccount.find({ type: { $ne: "cash" } }).sort({ createdAt: -1 });
+    // Old cash-register rows are left out of the list. This used to delete them on every open (a database write
+    // each time someone opened Bank Accounts); scripts/cleanup-legacy-bank-warehouse.ts now removes them once.
+    let accounts = await BankAccount.find(NOT_LEGACY_CASH_REGISTER).sort({ createdAt: -1 });
 
     if (!accounts || accounts.length === 0) {
       accounts = await BankAccount.insertMany(DEFAULT_ACCOUNTS);
@@ -75,7 +69,7 @@ export async function GET() {
         }
       }
       if (updatedAny) {
-        accounts = await BankAccount.find({ type: { $ne: "cash" } }).sort({ createdAt: -1 });
+        accounts = await BankAccount.find(NOT_LEGACY_CASH_REGISTER).sort({ createdAt: -1 });
       }
     }
 

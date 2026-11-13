@@ -12,6 +12,7 @@ import PurchaseOrder from "@/models/PurchaseOrder";
 import PaymentTransaction from "@/models/PaymentTransaction";
 import FinanceTransaction from "@/models/FinanceTransaction";
 import { resolveInvoicePayments, classifyPaymentMode, isFinanceInvoice, isFinanceSettlementReceipt } from "@/lib/payment-modes";
+import { loadComplete, newestFirst, notEqual, groupRows } from "@/lib/mongo-read-helpers";
 
 const BUCKET_LABELS: Record<string, string> = {
   cash: "Cash",
@@ -54,6 +55,34 @@ function groupTxnsByInvoice(rows: any[]): any[] {
   }));
 }
 
+// ─── WHAT IS READ, AND WHY ────────────────────────────────────────────────────
+// This route used to read nine whole collections, every field of every document, and later read vendors, vendor
+// bills, supplier payments and every purchase bill again. On Workers the CPU spent decoding all that is the main
+// cost of opening the dashboard. Now each collection is read once, with only the fields the sums below look at.
+// The few documents that are sent back whole (recent bills, the leakage lists, recent receipts, the period's
+// expenses) are read in full afterwards, by _id. Every figure and list is unchanged: the golden test
+// (tests/dashboard-stats.test.ts) compares the whole response with what the old code returned.
+// When changing this route: a field read from an all-time list (allInvoices / allInvoicesRaw, allPayments,
+// purchaseBills, allItems, allSuppliers …) must be in that read's field list below, or it will be undefined.
+// The period's bills (filteredInvoices) and expenses are complete documents, so anything can be read from them.
+
+/** Every invoice: what the all-time checks need (finance bills, warehouse tags, reprints, back-dates, pending). */
+const INVOICE_SUMMARY_FIELDS = {
+  invoiceNumber: 1, type: 1, status: 1, date: 1, createdAt: 1, total: 1, customerName: 1,
+  warehouse: 1, branchName: 1, paymentMode: 1, payments: 1, financeProvider: 1, financeDoId: 1,
+  printLogs: 1, lastPrintedAt: 1, reprintCount: 1,
+};
+/** Every receipt / payment: what the revenue buckets, the khata and finance figures and the breakdown read. */
+const PAYMENT_SUMMARY_FIELDS = {
+  type: 1, partyType: 1, partyName: 1, referenceId: 1, transactionId: 1, paymentMode: 1, amount: 1,
+  date: 1, createdAt: 1, notes: 1, bankTxnRef: 1, bankAccountRef: 1,
+};
+/** Purchase bills: the Average Purchase KPI and the supplier ledgers. */
+const PURCHASE_FIELDS = {
+  billNo: 1, supplierName: 1, supplierId: 1, billDate: 1, date: 1, dueDate: 1, total: 1, paid: 1,
+  paymentMode: 1, type: 1, status: 1, createdAt: 1,
+};
+
 export async function GET(request: Request) {
   try {
     await connectToDatabase();
@@ -63,23 +92,98 @@ export async function GET(request: Request) {
     const endDateParam = searchParams.get("endDate");
     const warehouseParam = searchParams.get("warehouse") || searchParams.get("location") || "";
 
-    const [allInvoicesRaw, allCustomersRaw, allItemsRaw, allSuppliersRaw, allExpensesRaw, allPaymentsRaw, allFinanceTxnsRaw, allPurchaseEntriesRaw, allPurchaseOrdersRaw] = await Promise.all([
-      Invoice.find({}).sort({ createdAt: -1 }).lean(),
-      Customer.find({}).sort({ createdAt: -1 }).lean(),
-      Item.find({}).sort({ createdAt: -1 }).lean(),
-      Supplier.find({}).sort({ createdAt: -1 }).lean(),
-      Expense.find({}).sort({ createdAt: -1 }).lean(),
-      PaymentTransaction.find({}).sort({ createdAt: -1 }).lean(),
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    const startOfWeek = new Date(today);
+    startOfWeek.setDate(today.getDate() - today.getDay());
+
+    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+
+    // Resolve the active date range once so it can be reused for invoices, reprints & payments
+    let rangeStart: Date;
+    let rangeEnd: Date;
+    if (startDateParam && endDateParam) {
+      rangeStart = new Date(startDateParam);
+      rangeStart.setHours(0, 0, 0, 0);
+      rangeEnd = new Date(endDateParam);
+      rangeEnd.setHours(23, 59, 59, 999);
+    } else {
+      rangeStart = startOfMonth;
+      rangeEnd = new Date();
+      rangeEnd.setHours(23, 59, 59, 999);
+    }
+    const editWindowStart = startDateParam && endDateParam ? new Date(`${startDateParam}T00:00:00+05:30`) : rangeStart;
+    const editWindowEnd = startDateParam && endDateParam ? new Date(`${endDateParam}T23:59:59.999+05:30`) : rangeEnd;
+
+    // These reads depend only on the query string, so they start now, alongside the main ones, instead of one after
+    // another further down. Each is still awaited inside its own try/catch below, so a failure there blanks only its
+    // own card, as before. (The no-op catch only stops an early failure being reported as unhandled.)
+    const editLogsRead = (async () =>
+      AuditLog.find(
+        {
+          action: { $in: ["invoice.edit", "invoice.details.edit"] },
+          createdAt: { $gte: editWindowStart, $lte: editWindowEnd },
+        },
+        { action: 1, entityRef: 1, reason: 1, performedBy: 1, performedByRole: 1, usedLegacyPin: 1, metadata: 1, createdAt: 1 }
+      )
+        .sort({ createdAt: -1 })
+        .lean())();
+    editLogsRead.catch(() => {});
+    const deletedRowsRead = (async () => {
+      const DeletedInvoice = (await import("@/models/DeletedInvoice")).default;
+      return DeletedInvoice.find({ deletedAt: { $gte: rangeStart, $lte: rangeEnd } })
+        .sort({ deletedAt: -1 })
+        .lean();
+    })();
+    deletedRowsRead.catch(() => {});
+    const ledgerReads = (async () => {
+      const Vendor = (await import("@/models/Vendor")).default;
+      const VendorBill = (await import("@/models/VendorBill")).default;
+      const VendorPayment = (await import("@/models/VendorPayment")).default;
+      return Promise.all([
+        Vendor.find({}, { name: 1, code: 1, phone: 1, openingBalance: 1, openingBalanceDate: 1 }).lean(),
+        // A cancelled vendor bill is never part of a vendor's balance.
+        VendorBill.find({ status: { $ne: "cancelled" } }, { vendorId: 1, date: 1, billNo: 1, total: 1, dueDate: 1 }).lean(),
+        // Whole documents: the recent collections are sent back as they are.
+        VendorPayment.find({}).lean(),
+        // Supplier payments in stored order, as the supplier ledgers have always read them.
+        PaymentTransaction.find(
+          { partyType: "Supplier" },
+          { partyId: 1, referenceId: 1, date: 1, transactionId: 1, paymentMode: 1, amount: 1, type: 1 }
+        ).lean(),
+      ]);
+    })();
+    ledgerReads.catch(() => {});
+
+    const [allInvoicesRaw, customersCount, allItemsRaw, allSuppliersRaw, allExpensesRaw, allPaymentsRaw, allFinanceTxnsRaw, purchaseBills, allPurchaseOrdersRaw] = await Promise.all([
+      Invoice.find({}, INVOICE_SUMMARY_FIELDS).sort({ createdAt: -1 }).lean(),
+      // Only the number of customers is shown.
+      Customer.countDocuments({}),
+      // Only the low-stock count and the warehouse filter read items.
+      Item.find({}, { currentStock: 1, reorderLevel: 1, warehouse: 1 }).lean(),
+      Supplier.find({}, { name: 1, code: 1, phone: 1 }).sort({ createdAt: -1 }).lean(),
+      // Just enough to pick the period's expenses; those are then read in full.
+      Expense.find({}, { warehouse: 1, branchName: 1, date: 1, createdAt: 1 }).sort({ createdAt: -1 }).lean(),
+      PaymentTransaction.find({}, PAYMENT_SUMMARY_FIELDS).sort({ createdAt: -1 }).lean(),
       FinanceTransaction.find({}, { invoiceNumber: 1, approvalStatus: 1, financeProvider: 1, doId: 1, bankAccountRef: 1, transactionRef: 1, paymentReceivedDate: 1, actualReceivedAmount: 1 }).lean(),
-      PurchaseEntry.find({ type: { $ne: "debit-note" }, status: { $ne: "cancelled" } }).sort({ createdAt: -1 }).lean(),
-      PurchaseOrder.find({}).sort({ createdAt: -1 }).lean(),
+      // Every purchase bill, once, in stored order: the supplier ledgers need all of them (debit notes and — a known
+      // quirk, kept as it was — cancelled bills too); the Average Purchase KPI takes its subset below.
+      PurchaseEntry.find({}, PURCHASE_FIELDS).lean(),
+      PurchaseOrder.find({}, { status: 1, date: 1, createdAt: 1, totalAmount: 1 }).sort({ createdAt: -1 }).lean(),
     ]);
+    // What `PurchaseEntry.find({ type: { $ne: "debit-note" }, status: { $ne: "cancelled" } }).sort({ createdAt: -1 })`
+    // returned when it was a read of its own.
+    const allPurchaseEntriesRaw = newestFirst(
+      (purchaseBills as any[]).filter((p) => notEqual(p.type, "debit-note") && notEqual(p.status, "cancelled"))
+    );
 
     // Estimates are stored beside invoices as type "proforma". They are quotations:
     // counting them made a quote look like a credit sale and put its amount in the
     // pending dues. A token advance taken on one still counts, through its receipt.
     let allInvoices = allInvoicesRaw.filter((inv: any) => inv.type !== "proforma");
-    let allCustomers = allCustomersRaw;
     let allItems = allItemsRaw;
     let allSuppliers = allSuppliersRaw;
     let allExpenses = allExpensesRaw;
@@ -174,30 +278,6 @@ export async function GET(request: Request) {
       }
     }
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    
-    const startOfWeek = new Date(today);
-    startOfWeek.setDate(today.getDate() - today.getDay());
-    
-    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-
-    // Resolve the active date range once so it can be reused for invoices, reprints & payments
-    let rangeStart: Date;
-    let rangeEnd: Date;
-    if (startDateParam && endDateParam) {
-      rangeStart = new Date(startDateParam);
-      rangeStart.setHours(0, 0, 0, 0);
-      rangeEnd = new Date(endDateParam);
-      rangeEnd.setHours(23, 59, 59, 999);
-    } else {
-      rangeStart = startOfMonth;
-      rangeEnd = new Date();
-      rangeEnd.setHours(23, 59, 59, 999);
-    }
-
     let filteredInvoices = allInvoices;
     if (startDateParam && endDateParam) {
       filteredInvoices = allInvoices.filter((inv: any) => {
@@ -208,6 +288,103 @@ export async function GET(request: Request) {
       // Fallback to current month if no dates provided
       filteredInvoices = allInvoices.filter((inv: any) => new Date(inv.date || inv.createdAt) >= startOfMonth);
     }
+
+    // ─── BACK-DATED ENTRIES ─────────────────────────────────────────────────
+    // A bill punched today but dated earlier. It is matched on WHEN it was entered
+    // (createdAt), not on its own date — otherwise it would only ever show up under
+    // the past day it claims to belong to, where nobody is looking for it. The
+    // entry day is taken in IST so a bill made late in the evening is not compared
+    // against the UTC calendar day.
+    const istDay = (d: Date) => new Date(d.getTime() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    let backDatedInvoices = allInvoices.filter((inv: any) => {
+      if (!inv.createdAt || !inv.date || inv.status === "cancelled") return false;
+      const enteredAt = new Date(inv.createdAt);
+      if (isNaN(enteredAt.getTime()) || enteredAt < rangeStart || enteredAt > rangeEnd) return false;
+      const billDay = String(inv.date).slice(0, 10);
+      return /^\d{4}-\d{2}-\d{2}$/.test(billDay) && billDay < istDay(enteredAt);
+    });
+
+    // Reprints are matched against the active range by WHEN the print happened,
+    // not the invoice's original creation date — an old bill reprinted today must
+    // still count as "today's" reprint activity.
+    const printEventsInRange = (inv: any): number => {
+      const logs = Array.isArray(inv.printLogs) ? inv.printLogs : [];
+      const logHits = logs.filter((l: any) => {
+        const d = new Date(l.printedAt);
+        return !isNaN(d.getTime()) && d >= rangeStart && d <= rangeEnd;
+      }).length;
+      if (logHits > 0) return logHits;
+      if (inv.lastPrintedAt) {
+        const d = new Date(inv.lastPrintedAt);
+        if (!isNaN(d.getTime()) && d >= rangeStart && d <= rangeEnd) return Number(inv.reprintCount) || 1;
+      }
+      return 0;
+    };
+    const reprintedInvoices = allInvoices.filter((inv: any) => printEventsInRange(inv) > 0);
+
+    // ─── EDITED BILLS ────────────────────────────────────────────────────────
+    // A bill changed after it was punched ("Edit Invoice" by the Admin / Store Manager, or a change to its contact /
+    // delivery details). Read from the audit trail and matched on WHEN the edit was made (India day), so a bill from
+    // an earlier day edited today shows up today. It used to be missing from this card: only discounts and
+    // back-dated bills were counted.
+    let editLogs: any[] = [];
+    try {
+      editLogs = await editLogsRead;
+    } catch (editErr) {
+      console.warn("Notice: edited-bills bucket:", editErr);
+    }
+    const editsByBill = new Map<string, any[]>();
+    for (const log of editLogs) {
+      if (!log.entityRef || !invoiceByNumber.has(log.entityRef)) continue;
+      editsByBill.set(log.entityRef, [...(editsByBill.get(log.entityRef) || []), log]);
+    }
+    const editedCount = editsByBill.size;
+
+    // Expenses of the active window (picked from the summary rows; their full rows are read just below).
+    let filteredExpenses = allExpenses;
+    if (startDateParam && endDateParam) {
+      const start = new Date(startDateParam);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(endDateParam);
+      end.setHours(23, 59, 59, 999);
+      filteredExpenses = allExpenses.filter((exp: any) => {
+        const d = new Date(exp.date || exp.createdAt);
+        return d >= start && d <= end;
+      });
+    } else {
+      filteredExpenses = allExpenses.filter((exp: any) => new Date(exp.date || exp.createdAt) >= startOfMonth);
+    }
+
+    // Payments recorded via "Receive Payment" are stored separately from invoices,
+    // so they're matched to the active range by their own transaction date.
+    const paymentsInRange = allPayments.filter((p: any) => {
+      let d: Date;
+      const dateStr = p.date || p.createdAt;
+      if (typeof dateStr === "string" && dateStr.includes("-") && dateStr.length === 10) {
+        const [yyyy, mm, dd] = dateStr.split("-").map(Number);
+        d = new Date(yyyy, mm - 1, dd, 12, 0, 0);
+      } else {
+        d = new Date(dateStr);
+      }
+      return !isNaN(d.getTime()) && d >= rangeStart && d <= rangeEnd;
+    });
+
+    // The documents this response sends back whole are read in full now: the period's bills (recent bills, leakage
+    // lists, and every per-bill figure below), back-dated / reprinted / edited bills from any date, the period's
+    // expenses and the latest receipts. Everything else was settled from the summary rows above.
+    const [completeInvoice, completeExpense, completePayment] = await Promise.all([
+      loadComplete(Invoice, [
+        ...filteredInvoices,
+        ...backDatedInvoices,
+        ...reprintedInvoices.slice(0, 10),
+        ...Array.from(editsByBill.keys()).map((no) => invoiceByNumber.get(no)),
+      ]),
+      loadComplete(Expense, filteredExpenses),
+      loadComplete(PaymentTransaction, paymentsInRange.slice(0, 15)),
+    ]);
+    filteredInvoices = filteredInvoices.map(completeInvoice);
+    backDatedInvoices = backDatedInvoices.map(completeInvoice);
+    filteredExpenses = filteredExpenses.map(completeExpense);
 
     // Purchases in the same active window, for the Average Purchase KPI — the
     // purchase-side counterpart to Average Order Value. Counts every Purchase
@@ -230,19 +407,6 @@ export async function GET(request: Request) {
     const totalPurchaseBills = filteredPurchaseEntries.length + filteredUnfulfilledPurchaseOrders.length;
     const avgPurchaseValue = totalPurchaseBills > 0 ? totalPurchaseAmount / totalPurchaseBills : 0;
 
-    // Payments recorded via "Receive Payment" are stored separately from invoices,
-    // so they're matched to the active range by their own transaction date.
-    const paymentsInRange = allPayments.filter((p: any) => {
-      let d: Date;
-      const dateStr = p.date || p.createdAt;
-      if (typeof dateStr === "string" && dateStr.includes("-") && dateStr.length === 10) {
-        const [yyyy, mm, dd] = dateStr.split("-").map(Number);
-        d = new Date(yyyy, mm - 1, dd, 12, 0, 0);
-      } else {
-        d = new Date(dateStr);
-      }
-      return !isNaN(d.getTime()) && d >= rangeStart && d <= rangeEnd;
-    });
     // Finance Disbursement entries are bank settlements from the finance company, not a
     // customer clearing an owed due, so they're excluded from this "dues collected" metric
     // (they're still counted as revenue via the Online bucket below).
@@ -947,21 +1111,7 @@ export async function GET(request: Request) {
       .sort((a, b) => b.revenue - a.revenue)
       .slice(0, 5);
 
-    // Calculate Expenses for date range
-    let filteredExpenses = allExpenses;
-    if (startDateParam && endDateParam) {
-      const start = new Date(startDateParam);
-      start.setHours(0, 0, 0, 0);
-      const end = new Date(endDateParam);
-      end.setHours(23, 59, 59, 999);
-      filteredExpenses = allExpenses.filter((exp: any) => {
-        const d = new Date(exp.date || exp.createdAt);
-        return d >= start && d <= end;
-      });
-    } else {
-      filteredExpenses = allExpenses.filter((exp: any) => new Date(exp.date || exp.createdAt) >= startOfMonth);
-    }
-
+    // Calculate Expenses for date range (`filteredExpenses` is picked above, with the other reads).
     let totalExpenses = 0;
     let cashExpense = 0;
     let upiExpense = 0;
@@ -1071,46 +1221,7 @@ export async function GET(request: Request) {
 
     const discountedInvoices = filteredInvoices.filter((inv: any) => Number(inv.discount) > 0 && inv.status !== "cancelled");
 
-    // ─── BACK-DATED ENTRIES ─────────────────────────────────────────────────
-    // A bill punched today but dated earlier. It is matched on WHEN it was entered
-    // (createdAt), not on its own date — otherwise it would only ever show up under
-    // the past day it claims to belong to, where nobody is looking for it. The
-    // entry day is taken in IST so a bill made late in the evening is not compared
-    // against the UTC calendar day.
-    const istDay = (d: Date) => new Date(d.getTime() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    const backDatedInvoices = allInvoices.filter((inv: any) => {
-      if (!inv.createdAt || !inv.date || inv.status === "cancelled") return false;
-      const enteredAt = new Date(inv.createdAt);
-      if (isNaN(enteredAt.getTime()) || enteredAt < rangeStart || enteredAt > rangeEnd) return false;
-      const billDay = String(inv.date).slice(0, 10);
-      return /^\d{4}-\d{2}-\d{2}$/.test(billDay) && billDay < istDay(enteredAt);
-    });
-
-    // ─── EDITED BILLS ────────────────────────────────────────────────────────
-    // A bill changed after it was punched ("Edit Invoice" by the Admin / Store Manager, or a change to its contact /
-    // delivery details). Read from the audit trail and matched on WHEN the edit was made (India day), so a bill from
-    // an earlier day edited today shows up today. It used to be missing from this card: only discounts and
-    // back-dated bills were counted.
-    const editWindowStart = startDateParam && endDateParam ? new Date(`${startDateParam}T00:00:00+05:30`) : rangeStart;
-    const editWindowEnd = startDateParam && endDateParam ? new Date(`${endDateParam}T23:59:59.999+05:30`) : rangeEnd;
-    let editLogs: any[] = [];
-    try {
-      editLogs = await AuditLog.find({
-        action: { $in: ["invoice.edit", "invoice.details.edit"] },
-        createdAt: { $gte: editWindowStart, $lte: editWindowEnd },
-      })
-        .sort({ createdAt: -1 })
-        .lean();
-    } catch (editErr) {
-      console.warn("Notice: edited-bills bucket:", editErr);
-    }
-    const editsByBill = new Map<string, any[]>();
-    for (const log of editLogs) {
-      if (!log.entityRef || !invoiceByNumber.has(log.entityRef)) continue;
-      editsByBill.set(log.entityRef, [...(editsByBill.get(log.entityRef) || []), log]);
-    }
-    const editedCount = editsByBill.size;
-
+    // Back-dated bills (`backDatedInvoices`) and edited bills (`editsByBill`) are worked out above, with the reads.
     const billsModifiedByNumber = new Map<string, any>();
     for (const inv of discountedInvoices as any[]) {
       billsModifiedByNumber.set(inv.invoiceNumber, {
@@ -1133,7 +1244,7 @@ export async function GET(request: Request) {
     }
     for (const [no, logs] of editsByBill) {
       const latest = logs[0];
-      const inv = invoiceByNumber.get(no);
+      const inv = completeInvoice(invoiceByNumber.get(no));
       const reason = `Edited${logs.length > 1 ? ` ${logs.length} times` : ""}: ${String(latest.reason || "").trim() || (latest.action === "invoice.details.edit" ? "contact / delivery details changed" : "bill changed")}`;
       const existing = billsModifiedByNumber.get(no);
       billsModifiedByNumber.set(no, {
@@ -1166,23 +1277,7 @@ export async function GET(request: Request) {
     const billsModifiedAmount = discountedInvoices.reduce((sum: number, inv: any) => sum + (Number(inv.discount) || 0), 0);
     const backDatedCount = backDatedInvoices.length;
 
-    // Reprints are matched against the active range by WHEN the print happened,
-    // not the invoice's original creation date — an old bill reprinted today must
-    // still count as "today's" reprint activity.
-    const printEventsInRange = (inv: any): number => {
-      const logs = Array.isArray(inv.printLogs) ? inv.printLogs : [];
-      const logHits = logs.filter((l: any) => {
-        const d = new Date(l.printedAt);
-        return !isNaN(d.getTime()) && d >= rangeStart && d <= rangeEnd;
-      }).length;
-      if (logHits > 0) return logHits;
-      if (inv.lastPrintedAt) {
-        const d = new Date(inv.lastPrintedAt);
-        if (!isNaN(d.getTime()) && d >= rangeStart && d <= rangeEnd) return Number(inv.reprintCount) || 1;
-      }
-      return 0;
-    };
-    const reprintedInvoices = allInvoices.filter((inv: any) => printEventsInRange(inv) > 0);
+    // Reprints (`reprintedInvoices`, matched by WHEN the print happened) are picked above, with the reads.
     const reprintedCount = reprintedInvoices.length;
     const totalReprintTimes = reprintedInvoices.reduce((sum: number, inv: any) => sum + printEventsInRange(inv), 0);
     const reprintedAmount = reprintedInvoices.reduce((sum: number, inv: any) => sum + (Number(inv.total) || 0), 0);
@@ -1198,12 +1293,7 @@ export async function GET(request: Request) {
     // the invoice's own date — an old bill deleted today is today's incident.
     let deletedBucket = { count: 0, amount: 0, invoices: [] as any[] };
     try {
-      const DeletedInvoice = (await import("@/models/DeletedInvoice")).default;
-      const deletedRows = await DeletedInvoice.find({
-        deletedAt: { $gte: rangeStart, $lte: rangeEnd },
-      })
-        .sort({ deletedAt: -1 })
-        .lean();
+      const deletedRows = await deletedRowsRead;
 
       deletedBucket = {
         count: deletedRows.length,
@@ -1254,7 +1344,7 @@ export async function GET(request: Request) {
       modified: { count: modifiedCount, amount: modifiedAmount, invoices: modifiedInvoices.slice(0, 10) },
       shifted: { count: shiftedCount, amount: shiftedAmount, invoices: shiftedInvoices.slice(0, 10) },
       billsModified: { count: billsModifiedCount, amount: billsModifiedAmount, backDatedCount, editedCount, invoices: billsModifiedInvoices.slice(0, 25) },
-      reprinted: { count: reprintedCount, totalPrints: totalReprintTimes, amount: reprintedAmount, invoices: reprintedInvoices.slice(0, 10) },
+      reprinted: { count: reprintedCount, totalPrints: totalReprintTimes, amount: reprintedAmount, invoices: reprintedInvoices.slice(0, 10).map(completeInvoice) },
       waivedOff: { count: waivedCount, amount: waivedAmount, invoices: waivedInvoices.slice(0, 10) },
     };
 
@@ -1272,16 +1362,13 @@ export async function GET(request: Request) {
       supplierOutstanding: { total: 0, count: 0, overdue: 0, parties: [] as any[] },
     };
     try {
-      const Vendor = (await import("@/models/Vendor")).default;
-      const VendorBill = (await import("@/models/VendorBill")).default;
-      const VendorPayment = (await import("@/models/VendorPayment")).default;
       const { buildLedger } = await import("@/lib/ledger");
-
-      const [vendors, vendorBills, vendorPayments] = await Promise.all([
-        Vendor.find({}).lean(),
-        VendorBill.find({}).lean(),
-        VendorPayment.find({}).lean(),
-      ]);
+      // Read at the top, with everything else (cancelled vendor bills already left out there).
+      const [vendors, vendorBills, vendorPayments, supplierPaymentRows] = await ledgerReads;
+      // Each party's bills and payments, looked up instead of scanning every bill once per party. A group keeps the
+      // stored order, so each ledger sees its rows in the same order as before.
+      const billsByVendor = groupRows(vendorBills as any[], (b) => String(b.vendorId));
+      const paymentsByVendor = groupRows(vendorPayments as any[], (p) => String(p.vendorId));
 
       // Collections are matched to the active range by their own payment date.
       const paymentsInWindow = (vendorPayments as any[]).filter((p) => {
@@ -1304,8 +1391,7 @@ export async function GET(request: Request) {
       for (const v of vendors as any[]) {
         const vid = String(v._id);
         const entries = [
-          ...(vendorBills as any[])
-            .filter((b) => String(b.vendorId) === vid && b.status !== "cancelled")
+          ...(billsByVendor.get(vid) || [])
             .map((b) => ({
               kind: "bill" as const,
               date: b.date,
@@ -1314,8 +1400,7 @@ export async function GET(request: Request) {
               amount: Number(b.total) || 0,
               dueDate: b.dueDate,
             })),
-          ...(vendorPayments as any[])
-            .filter((p) => String(p.vendorId) === vid)
+          ...(paymentsByVendor.get(vid) || [])
             .map((p) => ({
               kind: "payment" as const,
               date: p.date,
@@ -1354,11 +1439,34 @@ export async function GET(request: Request) {
       // paths — recording a supplier payment never touches it — so trusting it
       // here would print a different number from the one the ledger screens show
       // for the same supplier.
-      const PurchaseEntry = (await import("@/models/PurchaseEntry")).default;
-      const [purchaseBills, supplierPaymentRows] = await Promise.all([
-        PurchaseEntry.find({}).lean(),
-        PaymentTransaction.find({ partyType: "Supplier" }).lean(),
-      ]);
+      // `purchaseBills` (every purchase bill, stored order) and `supplierPaymentRows` were read at the top.
+      // Looked up per supplier instead of scanned per supplier; each list is put back into stored order.
+      const supplierPaymentsByParty = groupRows(
+        (supplierPaymentRows as any[]).map((row, index) => ({ row, index })),
+        (x) => String(x.row.partyId || "")
+      );
+      const billsBySupplierId = groupRows(
+        (purchaseBills as any[]).map((row, index) => ({ row, index })).filter((x) => x.row.supplierId),
+        (x) => String(x.row.supplierId)
+      );
+      const billsBySupplierName = groupRows(
+        (purchaseBills as any[]).map((row, index) => ({ row, index })),
+        (x) => String(x.row.supplierName || "").trim()
+      );
+      /** The rows of several groups, each once, in stored order. */
+      const inStoredOrder = (groups: { row: any; index: number }[][]): any[] => {
+        const seen = new Set<number>();
+        const all: { row: any; index: number }[] = [];
+        for (const group of groups) {
+          for (const x of group) {
+            if (!seen.has(x.index)) {
+              seen.add(x.index);
+              all.push(x);
+            }
+          }
+        }
+        return all.sort((a, b) => a.index - b.index).map((x) => x.row);
+      };
 
       const supplierRows = (allSuppliers as any[])
         .map((s: any) => {
@@ -1368,18 +1476,22 @@ export async function GET(request: Request) {
             ? new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i")
             : null;
 
-          const theirPayments = (supplierPaymentRows as any[]).filter((p) => {
-            const pid = String(p.partyId || "");
-            return pid === sid || (s.code && pid === String(s.code));
-          });
+          // Payments made out to this supplier's id or to its code.
+          const theirPayments = inStoredOrder([
+            supplierPaymentsByParty.get(sid) || [],
+            (s.code && supplierPaymentsByParty.get(String(s.code))) || [],
+          ]);
           const referencedBills = new Set(
             theirPayments.map((p: any) => p.referenceId).filter(Boolean)
           );
 
-          const theirBills = (purchaseBills as any[]).filter((b) => {
-            if (b.supplierId && String(b.supplierId) === sid) return true;
-            return nameMatch ? nameMatch.test(String(b.supplierName || "").trim()) : false;
-          });
+          // Same rule as before: the bill carries this supplier's id, or its name matches (ignoring case). The
+          // name test now runs once per distinct name on the bills instead of once per bill.
+          const sameName: { row: any; index: number }[][] = [];
+          if (nameMatch) {
+            for (const [billName, group] of billsBySupplierName) if (nameMatch.test(billName)) sameName.push(group);
+          }
+          const theirBills = inStoredOrder([billsBySupplierId.get(sid) || [], ...sameName]);
 
           const entries = [
             ...theirBills.map((b) => ({
@@ -1521,7 +1633,7 @@ export async function GET(request: Request) {
         avgPurchaseValue,
         pendingOrders: allInvoices.filter((i: any) => i.status === "pending").length || 0,
         lowStockItems: allItems.filter((it: any) => Number(it.currentStock) <= (Number(it.reorderLevel) + 5)).length || 0,
-        customersCount: allCustomers.length || 0,
+        customersCount: customersCount || 0,
         suppliersCount: allSuppliers.length || 0,
       },
       transactions: {
@@ -1541,7 +1653,7 @@ export async function GET(request: Request) {
         duesCollected,
         duesCollectedCount,
         supplierPayouts,
-        recent: paymentsInRange.slice(0, 15),
+        recent: paymentsInRange.slice(0, 15).map(completePayment),
       },
       expenses: {
         total: totalExpenses,

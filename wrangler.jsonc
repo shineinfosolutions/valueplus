@@ -24,7 +24,10 @@
   },
   // Every 5 minutes (worker.ts picks the job): office-time reminder at 10:00 India time, late / break alerts,
   // automatic check-out at the shift end. Was every minute — 1,440 runs a day, each opening a database connection.
-  "triggers": { "crons": ["*/5 * * * *"] },
+  // Only from 03:00 to 18:55 UTC = 08:30 to 00:25 India time (192 runs a day instead of 288): nothing is due at
+  // night. The 10:00 reminder, the 21:00 automatic check-out and the 00:00-00:25 clean-up of days left open all
+  // fall inside it (see lib/attendance-alerts.ts).
+  "triggers": { "crons": ["*/5 3-18 * * *"] },
   "routes": [
     { "pattern": "valuplus.shineinfosolutions.in", "custom_domain": true }
   ],

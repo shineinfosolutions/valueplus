@@ -2,14 +2,14 @@ import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import Warehouse from "@/models/Warehouse";
 import Item from "@/models/Item";
+import { NOT_LEGACY_WAREHOUSE } from "@/lib/legacy-rows";
 
 export async function GET() {
   try {
     await connectToDatabase();
-    // Clean up any legacy generic dummy entries
-    await Warehouse.deleteMany({ name: { $in: ["Showroom", "Godown", "Main Warehouse"] } });
-
-    let warehouses = await Warehouse.find({}).sort({ createdAt: 1 }).lean();
+    // Old generic placeholder warehouses are left out of the list. This used to delete them on every open (a
+    // database write each time); scripts/cleanup-legacy-bank-warehouse.ts now removes them once.
+    let warehouses = await Warehouse.find(NOT_LEGACY_WAREHOUSE).sort({ createdAt: 1 }).lean();
     
     if (!warehouses || warehouses.length === 0) {
       const defaultWarehouses = [
@@ -72,7 +72,7 @@ export async function GET() {
       ];
 
       await Warehouse.insertMany(defaultWarehouses);
-      warehouses = await Warehouse.find({}).sort({ createdAt: 1 }).lean();
+      warehouses = await Warehouse.find(NOT_LEGACY_WAREHOUSE).sort({ createdAt: 1 }).lean();
     }
 
     return NextResponse.json({ success: true, data: warehouses });

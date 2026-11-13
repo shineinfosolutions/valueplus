@@ -9,7 +9,12 @@
 const RealDate = Date;
 
 export const FIXED_NOW_ISO = "2026-11-13T15:30:00+05:30";
-const FIXED_NOW = RealDate.parse(FIXED_NOW_ISO);
+let FIXED_NOW = RealDate.parse(FIXED_NOW_ISO);
+
+/** Move the frozen clock (e.g. to run the cron "at" a given time). */
+export function setNow(iso: string) {
+  FIXED_NOW = RealDate.parse(iso);
+}
 
 class FrozenDate extends RealDate {
   constructor(...args: any[]) {
