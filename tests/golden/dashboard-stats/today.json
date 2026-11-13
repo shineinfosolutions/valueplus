@@ -1,0 +1,991 @@
+{
+ "success": true,
+ "dateRange": {
+  "start": "2026-11-13",
+  "end": "2026-11-13"
+ },
+ "metrics": {
+  "totalRevenue": 59199,
+  "cashRevenue": 21199,
+  "upiRevenue": 0,
+  "onlineRevenue": 0,
+  "cardRevenue": 20000,
+  "financeRevenue": 0,
+  "warrantyRevenue": 0,
+  "warrantyCount": 0,
+  "dueRevenue": 20000,
+  "dueCount": 1,
+  "unclassifiedRevenue": 1250,
+  "dueSalesRevenue": 20000,
+  "dueSalesCount": 1,
+  "duePendingRevenue": 20000,
+  "duePendingCount": 1,
+  "dueClearedRevenue": 2000,
+  "dueClearedCount": 1,
+  "dueClearedByMode": {
+   "cash": 2000
+  },
+  "financePendingRevenue": 0,
+  "financePendingCount": 0,
+  "financeReceivedRevenue": 0,
+  "financeReceivedCount": 0,
+  "financeReceivedByAccount": {},
+  "duesCollected": 3250,
+  "duesCollectedCount": 2,
+  "supplierPayouts": 0,
+  "totalExpenses": 920,
+  "netProfit": 58279,
+  "totalOrders": 3,
+  "totalUnits": 3,
+  "totalPurchaseAmount": 0,
+  "totalPurchaseBills": 0,
+  "avgPurchaseValue": 0,
+  "pendingOrders": 2,
+  "lowStockItems": 4,
+  "customersCount": 6,
+  "suppliersCount": 4
+ },
+ "transactions": {
+  "cash": [
+   {
+    "id": "VP-017",
+    "customer": "Today Late",
+    "amount": 1999,
+    "paidAmount": 1999,
+    "dueAmount": 0,
+    "time": "2026-11-13 02:30 PM",
+    "mode": "Cash",
+    "bucket": "cash",
+    "isSplit": false,
+    "status": "paid",
+    "reprintCount": 0
+   },
+   {
+    "id": "VP-016",
+    "customer": "Today Split",
+    "amount": 14000,
+    "paidAmount": 14000,
+    "dueAmount": 20000,
+    "time": "2026-11-13 02:30 PM",
+    "mode": "Cash (Split ₹14,000 of ₹54,000)",
+    "bucket": "cash",
+    "isSplit": true,
+    "status": "partial",
+    "reprintCount": 0
+   },
+   {
+    "id": "VP-015",
+    "customer": "Today Early",
+    "amount": 3200,
+    "paidAmount": 3200,
+    "dueAmount": 0,
+    "time": "2026-11-13 02:30 PM",
+    "mode": "Cash",
+    "bucket": "cash",
+    "isSplit": false,
+    "status": "paid",
+    "reprintCount": 0
+   },
+   {
+    "id": "VP-008",
+    "customer": "Rakesh Verma",
+    "amount": 2000,
+    "paidAmount": 2000,
+    "dueAmount": 0,
+    "time": "2026-11-13 (Receipt)",
+    "mode": "Cash",
+    "bucket": "cash",
+    "status": "paid",
+    "notes": "Due payment receipt (VP-008)",
+    "isReceipt": true
+   }
+  ],
+  "upi": [],
+  "online": [],
+  "card": [
+   {
+    "id": "VP-016",
+    "customer": "Today Split",
+    "amount": 20000,
+    "paidAmount": 20000,
+    "dueAmount": 20000,
+    "time": "2026-11-13 02:30 PM",
+    "mode": "Card (Split ₹20,000 of ₹54,000)",
+    "bucket": "card",
+    "isSplit": true,
+    "status": "partial",
+    "reprintCount": 0
+   }
+  ],
+  "finance": [],
+  "due": [
+   {
+    "id": "VP-016",
+    "customer": "Today Split",
+    "amount": 54000,
+    "paidAmount": 34000,
+    "dueAmount": 20000,
+    "time": "2026-11-13 Due",
+    "mode": "Multiple",
+    "status": "partial",
+    "dueDate": "2026-11-13"
+   }
+  ],
+  "unclassified": [
+   {
+    "id": "TXN-4003",
+    "customer": "No Mode",
+    "amount": 1250,
+    "paidAmount": 1250,
+    "dueAmount": 0,
+    "time": "2026-11-13 (Receipt)",
+    "mode": "Unclassified",
+    "bucket": "unclassified",
+    "status": "paid",
+    "notes": "No payment mode recorded (Direct)",
+    "isReceipt": true
+   }
+  ],
+  "all": [
+   {
+    "id": "VP-017",
+    "customer": "Today Late",
+    "amount": 1999,
+    "paidAmount": 1999,
+    "dueAmount": 0,
+    "time": "2026-11-13 02:30 PM",
+    "mode": "Cash",
+    "bucket": "cash",
+    "isSplit": false,
+    "status": "paid",
+    "reprintCount": 0,
+    "partCount": 1
+   },
+   {
+    "id": "VP-016",
+    "customer": "Today Split",
+    "amount": 34000,
+    "paidAmount": 34000,
+    "dueAmount": 20000,
+    "time": "2026-11-13 02:30 PM",
+    "mode": "Cash + Card",
+    "bucket": "cash",
+    "isSplit": true,
+    "status": "partial",
+    "reprintCount": 0,
+    "partCount": 2,
+    "isReceipt": false
+   },
+   {
+    "id": "VP-015",
+    "customer": "Today Early",
+    "amount": 3200,
+    "paidAmount": 3200,
+    "dueAmount": 0,
+    "time": "2026-11-13 02:30 PM",
+    "mode": "Cash",
+    "bucket": "cash",
+    "isSplit": false,
+    "status": "paid",
+    "reprintCount": 0,
+    "partCount": 1
+   },
+   {
+    "id": "VP-008",
+    "customer": "Rakesh Verma",
+    "amount": 2000,
+    "paidAmount": 2000,
+    "dueAmount": 0,
+    "time": "2026-11-13 (Receipt)",
+    "mode": "Cash",
+    "bucket": "cash",
+    "status": "paid",
+    "notes": "Due payment receipt (VP-008)",
+    "isReceipt": true,
+    "partCount": 1,
+    "isSplit": false
+   },
+   {
+    "id": "TXN-4003",
+    "customer": "No Mode",
+    "amount": 1250,
+    "paidAmount": 1250,
+    "dueAmount": 0,
+    "time": "2026-11-13 (Receipt)",
+    "mode": "Unclassified",
+    "bucket": "unclassified",
+    "status": "paid",
+    "notes": "No payment mode recorded (Direct)",
+    "isReceipt": true,
+    "partCount": 1,
+    "isSplit": false
+   }
+  ],
+  "details": {
+   "VP-017": {
+    "id": "VP-017",
+    "customer": "Today Late",
+    "total": 1999,
+    "date": "2026-11-13",
+    "status": "paid",
+    "parts": [
+     {
+      "kind": "billing",
+      "bucket": "cash",
+      "mode": "Cash",
+      "amount": 1999,
+      "date": "2026-11-13",
+      "reference": ""
+     }
+    ]
+   },
+   "VP-016": {
+    "id": "VP-016",
+    "customer": "Today Split",
+    "total": 54000,
+    "date": "2026-11-13",
+    "status": "partial",
+    "parts": [
+     {
+      "kind": "billing",
+      "bucket": "card",
+      "mode": "Card",
+      "amount": 20000,
+      "date": "2026-11-13",
+      "reference": ""
+     },
+     {
+      "kind": "billing",
+      "bucket": "cash",
+      "mode": "Cash",
+      "amount": 14000,
+      "date": "2026-11-13",
+      "reference": ""
+     },
+     {
+      "kind": "due",
+      "bucket": "due",
+      "mode": "Due / Credit",
+      "amount": 20000,
+      "date": "2026-11-13",
+      "note": "₹20,000 still pending"
+     }
+    ]
+   },
+   "VP-015": {
+    "id": "VP-015",
+    "customer": "Today Early",
+    "total": 3200,
+    "date": "2026-11-13",
+    "status": "paid",
+    "parts": [
+     {
+      "kind": "billing",
+      "bucket": "cash",
+      "mode": "Cash",
+      "amount": 3200,
+      "date": "2026-11-13",
+      "reference": ""
+     }
+    ]
+   },
+   "VP-008": {
+    "id": "VP-008",
+    "customer": "Rakesh Verma",
+    "total": 20000,
+    "date": "2026-11-06",
+    "status": "partial",
+    "parts": [
+     {
+      "kind": "due-clear",
+      "bucket": "cash",
+      "mode": "Cash",
+      "amount": 2000,
+      "date": "2026-11-13",
+      "reference": "TXN-DUE-2002",
+      "bankAccount": "",
+      "note": "Due cleared"
+     },
+     {
+      "kind": "due-clear",
+      "bucket": "upi",
+      "mode": "UPI",
+      "amount": 5000,
+      "date": "2026-11-10",
+      "reference": "TXN-DUE-2001",
+      "bankAccount": "",
+      "note": "Due cleared"
+     }
+    ]
+   }
+  }
+ },
+ "payments": {
+  "duesCollected": 3250,
+  "duesCollectedCount": 2,
+  "supplierPayouts": 0,
+  "recent": [
+   {
+    "_id": "000000000000000000000036",
+    "partyId": "CUST-X",
+    "partyType": "Customer",
+    "partyName": "Rakesh Verma",
+    "receivedBy": "Cashier",
+    "type": "received",
+    "bankAccountId": "",
+    "bankAccountRef": "",
+    "bankTxnRef": "",
+    "editCount": 0,
+    "transactionId": "TXN-DUE-2002",
+    "amount": 2000,
+    "paymentMode": "Cash",
+    "date": "2026-11-13",
+    "referenceId": "VP-008",
+    "createdAt": "2026-11-13T13:00:00.000Z"
+   },
+   {
+    "_id": "00000000000000000000003b",
+    "partyId": "CUST-X",
+    "partyType": "Customer",
+    "partyName": "No Mode",
+    "receivedBy": "Cashier",
+    "type": "received",
+    "bankAccountId": "",
+    "bankAccountRef": "",
+    "bankTxnRef": "",
+    "editCount": 0,
+    "transactionId": "TXN-4003",
+    "amount": 1250,
+    "date": "2026-11-13",
+    "createdAt": "2026-11-13T02:45:00.000Z"
+   }
+  ]
+ },
+ "expenses": {
+  "total": 920,
+  "cash": 120,
+  "upi": 800,
+  "bank": 0,
+  "card": 0,
+  "categories": [
+   {
+    "category": "Fuel",
+    "amount": 800,
+    "count": 1,
+    "percentage": 87
+   },
+   {
+    "category": "Tea",
+    "amount": 120,
+    "count": 1,
+    "percentage": 13
+   }
+  ],
+  "modes": [
+   {
+    "mode": "UPI",
+    "amount": 800,
+    "count": 1,
+    "percentage": 87
+   },
+   {
+    "mode": "Cash",
+    "amount": 120,
+    "count": 1,
+    "percentage": 13
+   }
+  ],
+  "recent": [
+   {
+    "_id": "000000000000000000000030",
+    "status": "paid",
+    "expenseNo": "EXP-3",
+    "category": "Fuel ",
+    "description": "Delivery fuel",
+    "amount": 800,
+    "date": "2026-11-13",
+    "paymentMode": "PhonePe UPI",
+    "createdAt": "2026-11-13T11:50:00.000Z"
+   },
+   {
+    "_id": "00000000000000000000002f",
+    "status": "paid",
+    "expenseNo": "EXP-2",
+    "category": "Tea",
+    "description": "Tea",
+    "amount": 120,
+    "date": "2026-11-13",
+    "paymentMode": "Cash",
+    "createdAt": "2026-11-13T05:00:00.000Z"
+   }
+  ],
+  "all": [
+   {
+    "_id": "000000000000000000000030",
+    "status": "paid",
+    "expenseNo": "EXP-3",
+    "category": "Fuel ",
+    "description": "Delivery fuel",
+    "amount": 800,
+    "date": "2026-11-13",
+    "paymentMode": "PhonePe UPI",
+    "createdAt": "2026-11-13T11:50:00.000Z"
+   },
+   {
+    "_id": "00000000000000000000002f",
+    "status": "paid",
+    "expenseNo": "EXP-2",
+    "category": "Tea",
+    "description": "Tea",
+    "amount": 120,
+    "date": "2026-11-13",
+    "paymentMode": "Cash",
+    "createdAt": "2026-11-13T05:00:00.000Z"
+   }
+  ]
+ },
+ "leakage": {
+  "cancelled": {
+   "count": 0,
+   "amount": 0,
+   "invoices": []
+  },
+  "deleted": {
+   "count": 0,
+   "amount": 0,
+   "invoices": []
+  },
+  "modified": {
+   "count": 0,
+   "amount": 0,
+   "invoices": []
+  },
+  "shifted": {
+   "count": 0,
+   "amount": 0,
+   "invoices": []
+  },
+  "billsModified": {
+   "count": 1,
+   "amount": 0,
+   "backDatedCount": 1,
+   "editedCount": 0,
+   "invoices": [
+    {
+     "_id": "00000000000000000000000d",
+     "invoiceNumber": "VP-013",
+     "type": "tax-invoice",
+     "customerId": "CUST-013",
+     "customerName": "Back Dated Buyer",
+     "customerPhone": "9800000000",
+     "customerAddress": "Golghar, Gorakhpur",
+     "customerCity": "Gorakhpur",
+     "customerState": "Uttar Pradesh",
+     "placeOfSupply": "Uttar Pradesh(09)",
+     "billingEntity": "valueplus",
+     "date": "2026-11-05",
+     "dueDate": "2026-11-05",
+     "status": "paid",
+     "items": [
+      {
+       "itemId": "ITM-15",
+       "itemName": "Realme Narzo 70",
+       "itemCode": "8471",
+       "description": "Realme Narzo 70 with standard warranty",
+       "quantity": 2,
+       "unit": "Pcs",
+       "rate": 5932,
+       "discount": 0,
+       "discountType": "amount",
+       "taxableAmount": 11864,
+       "gstRate": 18,
+       "cgst": 1067.76,
+       "sgst": 1067.76,
+       "igst": 0,
+       "amount": 13999.519999999999,
+       "serialNumbers": [
+        "SN-REA-2"
+       ]
+      }
+     ],
+     "subtotal": 14000,
+     "discount": 0,
+     "taxableAmount": 11864,
+     "cgst": 0,
+     "sgst": 0,
+     "igst": 0,
+     "totalGST": 2136,
+     "extendedWarrantyTotal": 0,
+     "roundOff": 0,
+     "total": 14000,
+     "paidAmount": 14000,
+     "balanceAmount": 0,
+     "paymentMode": "UPI",
+     "payments": [],
+     "paymentTerms": "Net 30",
+     "dueAdvanceAmount": 0,
+     "dueAdvanceMode": "Cash",
+     "deliveryStatus": "delivered",
+     "salesExecutive": "Amit Singh",
+     "reprintCount": 0,
+     "printLogs": [],
+     "createdAt": "2026-11-13T05:30:00.000Z",
+     "updatedAt": "2026-11-13T05:30:00.000Z",
+     "__v": 0,
+     "isBackDated": true,
+     "auditReason": "Back-dated entry: bill dated 2026-11-05, entered on 2026-11-13",
+     "auditBy": "Amit Singh",
+     "auditAt": "2026-11-13T05:30:00.000Z"
+    }
+   ]
+  },
+  "reprinted": {
+   "count": 0,
+   "totalPrints": 0,
+   "amount": 0,
+   "invoices": []
+  },
+  "waivedOff": {
+   "count": 0,
+   "amount": 0,
+   "invoices": []
+  }
+ },
+ "vendorSupplier": {
+  "vendorCollections": {
+   "total": -500,
+   "count": 1,
+   "byMode": {
+    "cash": -500,
+    "upi": 0,
+    "online": 0,
+    "card": 0
+   },
+   "recent": [
+    {
+     "_id": "000000000000000000000056",
+     "paymentId": "VP-PAY-2",
+     "vendorId": "00000000000000000000004f",
+     "vendorName": "Mobile Repair Hub",
+     "date": "2026-11-13",
+     "amount": 500,
+     "mode": "Cash",
+     "type": "paid",
+     "refNo": ""
+    }
+   ]
+  },
+  "vendorDue": {
+   "total": 5000,
+   "count": 1,
+   "overdue": 5000,
+   "parties": [
+    {
+     "_id": "00000000000000000000004f",
+     "name": "Mobile Repair Hub",
+     "code": "VEN-1",
+     "phone": "9700000001",
+     "pending": 5000,
+     "overdue": 5000,
+     "lastPaymentDate": "2026-11-13",
+     "lastPaymentAmount": -500
+    }
+   ]
+  },
+  "supplierOutstanding": {
+   "total": 39000.5,
+   "count": 2,
+   "overdue": 13000.5,
+   "parties": [
+    {
+     "_id": "00000000000000000000002a",
+     "name": "Gupta Electronics",
+     "code": "SUP-1",
+     "phone": "9811111111",
+     "pending": 38000.5,
+     "overdue": 12000.5,
+     "lastPaymentDate": "2026-11-09"
+    },
+    {
+     "_id": "00000000000000000000002b",
+     "name": "A.B. Traders (P) Ltd",
+     "code": "SUP-2",
+     "phone": "9822222222",
+     "pending": 1000,
+     "overdue": 1000,
+     "lastPaymentDate": "2026-11-08"
+    }
+   ]
+  }
+ },
+ "dailyRevenue": [
+  {
+   "date": "08:00 AM",
+   "revenue": 1250,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 1250,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "10:00 AM",
+   "revenue": 3200,
+   "cash": 3200,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 120,
+   "profit": 1
+  },
+  {
+   "date": "12:00 PM",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "02:00 PM",
+   "revenue": 54000,
+   "cash": 14000,
+   "upi": 0,
+   "card": 20000,
+   "online": 0,
+   "finance": 0,
+   "due": 20000,
+   "expense": 0,
+   "profit": 1
+  },
+  {
+   "date": "04:00 PM",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "06:00 PM",
+   "revenue": 2000,
+   "cash": 2000,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 800,
+   "profit": 0
+  },
+  {
+   "date": "08:00 PM",
+   "revenue": 1999,
+   "cash": 1999,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 1
+  },
+  {
+   "date": "10:00 PM",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  }
+ ],
+ "topCustomers": [
+  {
+   "name": "Today Split",
+   "amount": 54000,
+   "invoices": 1,
+   "city": "Gorakhpur"
+  },
+  {
+   "name": "Today Early",
+   "amount": 3200,
+   "invoices": 1,
+   "city": "Gorakhpur"
+  },
+  {
+   "name": "Today Late",
+   "amount": 1999,
+   "invoices": 1,
+   "city": "Gorakhpur"
+  }
+ ],
+ "topProducts": [
+  {
+   "name": "Samsung 8kg Front Load Washing Machine",
+   "revenue": 54000.34,
+   "sales": 1,
+   "growth": 15
+  },
+  {
+   "name": "Philips Iron",
+   "revenue": 3200.16,
+   "sales": 1,
+   "growth": 15
+  },
+  {
+   "name": "Generic Product",
+   "revenue": 1998.9199999999998,
+   "sales": 1,
+   "growth": 15
+  }
+ ],
+ "topMobiles": [],
+ "topElectronics": [
+  {
+   "name": "Samsung 8kg Front Load Washing Machine",
+   "brand": "Samsung",
+   "category": "Washing Machine",
+   "revenue": 54000.34,
+   "sales": 1,
+   "avgPrice": 54000,
+   "growth": 17
+  },
+  {
+   "name": "Philips Iron",
+   "brand": "Brand",
+   "category": "Consumer Electronics",
+   "revenue": 3200.16,
+   "sales": 1,
+   "avgPrice": 3200,
+   "growth": 17
+  },
+  {
+   "name": "Generic Product",
+   "brand": "Brand",
+   "category": "Consumer Electronics",
+   "revenue": 1998.9199999999998,
+   "sales": 1,
+   "avgPrice": 1999,
+   "growth": 17
+  }
+ ],
+ "recentInvoices": [
+  {
+   "_id": "000000000000000000000014",
+   "invoiceNumber": "VP-017",
+   "type": "tax-invoice",
+   "customerId": "CUST-017",
+   "customerName": "Today Late",
+   "customerPhone": "9800000000",
+   "customerAddress": "Golghar, Gorakhpur",
+   "customerCity": "Gorakhpur",
+   "customerState": "Uttar Pradesh",
+   "placeOfSupply": "Uttar Pradesh(09)",
+   "billingEntity": "valueplus",
+   "date": "2026-11-13",
+   "dueDate": "2026-11-13",
+   "status": "paid",
+   "items": [
+    {
+     "itemId": "ITM-15",
+     "itemName": "Generic Product",
+     "itemCode": "8471",
+     "description": "Generic Product with standard warranty",
+     "quantity": 1,
+     "unit": "Pcs",
+     "rate": 1694,
+     "discount": 0,
+     "discountType": "amount",
+     "taxableAmount": 1694,
+     "gstRate": 18,
+     "cgst": 152.46,
+     "sgst": 152.46,
+     "igst": 0,
+     "amount": 1998.9199999999998,
+     "serialNumbers": [
+      "SN-GEN-1"
+     ]
+    }
+   ],
+   "subtotal": 1999,
+   "discount": 0,
+   "taxableAmount": 1694,
+   "cgst": 0,
+   "sgst": 0,
+   "igst": 0,
+   "totalGST": 305,
+   "extendedWarrantyTotal": 0,
+   "roundOff": 0,
+   "total": 1999,
+   "paidAmount": 1999,
+   "balanceAmount": 0,
+   "paymentMode": "",
+   "payments": [],
+   "paymentTerms": "Net 30",
+   "dueAdvanceAmount": 0,
+   "dueAdvanceMode": "Cash",
+   "deliveryStatus": "delivered",
+   "salesExecutive": "Amit Singh",
+   "reprintCount": 0,
+   "printLogs": [],
+   "createdAt": "2026-11-13T14:45:00.000Z",
+   "updatedAt": "2026-11-13T14:45:00.000Z",
+   "__v": 0
+  },
+  {
+   "_id": "000000000000000000000013",
+   "invoiceNumber": "VP-016",
+   "type": "tax-invoice",
+   "customerId": "CUST-016",
+   "customerName": "Today Split",
+   "customerPhone": "9800000000",
+   "customerAddress": "Golghar, Gorakhpur",
+   "customerCity": "Gorakhpur",
+   "customerState": "Uttar Pradesh",
+   "placeOfSupply": "Uttar Pradesh(09)",
+   "billingEntity": "valueplus",
+   "date": "2026-11-13",
+   "dueDate": "2026-11-13",
+   "status": "partial",
+   "items": [
+    {
+     "itemId": "ITM-38",
+     "itemName": "Samsung 8kg Front Load Washing Machine",
+     "itemCode": "8471",
+     "description": "Samsung 8kg Front Load Washing Machine with standard warranty",
+     "quantity": 1,
+     "unit": "Pcs",
+     "rate": 45763,
+     "discount": 0,
+     "discountType": "amount",
+     "taxableAmount": 45763,
+     "gstRate": 18,
+     "cgst": 4118.67,
+     "sgst": 4118.67,
+     "igst": 0,
+     "amount": 54000.34,
+     "serialNumbers": [
+      "SN-SAM-1"
+     ]
+    }
+   ],
+   "subtotal": 54000,
+   "discount": 0,
+   "taxableAmount": 45763,
+   "cgst": 0,
+   "sgst": 0,
+   "igst": 0,
+   "totalGST": 8237,
+   "extendedWarrantyTotal": 0,
+   "roundOff": 0,
+   "total": 54000,
+   "paidAmount": 34000,
+   "balanceAmount": 20000,
+   "paymentMode": "Multiple",
+   "payments": [
+    {
+     "mode": "Card",
+     "amount": 20000
+    },
+    {
+     "mode": "Cash",
+     "amount": 14000
+    },
+    {
+     "mode": "Due / Credit",
+     "amount": 20000
+    }
+   ],
+   "paymentTerms": "Net 30",
+   "dueAdvanceAmount": 0,
+   "dueAdvanceMode": "Cash",
+   "deliveryStatus": "delivered",
+   "salesExecutive": "Amit Singh",
+   "reprintCount": 0,
+   "printLogs": [],
+   "createdAt": "2026-11-13T07:40:00.000Z",
+   "updatedAt": "2026-11-13T07:40:00.000Z",
+   "__v": 0
+  },
+  {
+   "_id": "000000000000000000000012",
+   "invoiceNumber": "VP-015",
+   "type": "tax-invoice",
+   "customerId": "CUST-015",
+   "customerName": "Today Early",
+   "customerPhone": "9800000000",
+   "customerAddress": "Golghar, Gorakhpur",
+   "customerCity": "Gorakhpur",
+   "customerState": "Uttar Pradesh",
+   "placeOfSupply": "Uttar Pradesh(09)",
+   "billingEntity": "valueplus",
+   "date": "2026-11-13",
+   "dueDate": "2026-11-13",
+   "status": "paid",
+   "items": [
+    {
+     "itemId": "ITM-12",
+     "itemName": "Philips Iron",
+     "itemCode": "8471",
+     "description": "Philips Iron with standard warranty",
+     "quantity": 1,
+     "unit": "Pcs",
+     "rate": 2712,
+     "discount": 0,
+     "discountType": "amount",
+     "taxableAmount": 2712,
+     "gstRate": 18,
+     "cgst": 244.07999999999998,
+     "sgst": 244.07999999999998,
+     "igst": 0,
+     "amount": 3200.16,
+     "serialNumbers": [
+      "SN-PHI-1"
+     ]
+    }
+   ],
+   "subtotal": 3200,
+   "discount": 0,
+   "taxableAmount": 2712,
+   "cgst": 0,
+   "sgst": 0,
+   "igst": 0,
+   "totalGST": 488,
+   "extendedWarrantyTotal": 0,
+   "roundOff": 0,
+   "total": 3200,
+   "paidAmount": 3200,
+   "balanceAmount": 0,
+   "paymentMode": "Cash",
+   "payments": [],
+   "paymentTerms": "Net 30",
+   "dueAdvanceAmount": 0,
+   "dueAdvanceMode": "Cash",
+   "deliveryStatus": "delivered",
+   "salesExecutive": "Amit Singh",
+   "reprintCount": 0,
+   "printLogs": [],
+   "createdAt": "2026-11-13T04:10:00.000Z",
+   "updatedAt": "2026-11-13T04:10:00.000Z",
+   "__v": 0
+  }
+ ],
+ "timestamp": "2026-11-13T10:00:00.000Z"
+}

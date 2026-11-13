@@ -55,3 +55,6 @@ next-env.d.ts
 .open-next/
 .wrangler/
 .dev.vars*
+
+# Server-side test output (tests/run-tests.mjs)
+tests/.out/

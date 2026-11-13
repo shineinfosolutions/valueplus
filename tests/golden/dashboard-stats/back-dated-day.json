@@ -1,0 +1,642 @@
+{
+ "success": true,
+ "dateRange": {
+  "start": "2026-11-05",
+  "end": "2026-11-05"
+ },
+ "metrics": {
+  "totalRevenue": 86000,
+  "cashRevenue": 0,
+  "upiRevenue": 26000,
+  "onlineRevenue": 0,
+  "cardRevenue": 0,
+  "financeRevenue": 60000,
+  "warrantyRevenue": 2500,
+  "warrantyCount": 1,
+  "dueRevenue": 60000,
+  "dueCount": 1,
+  "unclassifiedRevenue": 0,
+  "dueSalesRevenue": 0,
+  "dueSalesCount": 0,
+  "duePendingRevenue": 0,
+  "duePendingCount": 0,
+  "dueClearedRevenue": 0,
+  "dueClearedCount": 0,
+  "dueClearedByMode": {},
+  "financePendingRevenue": 0,
+  "financePendingCount": 0,
+  "financeReceivedRevenue": 0,
+  "financeReceivedCount": 0,
+  "financeReceivedByAccount": {},
+  "duesCollected": 0,
+  "duesCollectedCount": 1,
+  "supplierPayouts": 0,
+  "totalExpenses": 1500,
+  "netProfit": 84500,
+  "totalOrders": 2,
+  "totalUnits": 3,
+  "totalPurchaseAmount": 12000.5,
+  "totalPurchaseBills": 1,
+  "avgPurchaseValue": 12000.5,
+  "pendingOrders": 2,
+  "lowStockItems": 4,
+  "customersCount": 6,
+  "suppliersCount": 4
+ },
+ "transactions": {
+  "cash": [],
+  "upi": [
+   {
+    "id": "VP-013",
+    "customer": "Back Dated Buyer",
+    "amount": 14000,
+    "paidAmount": 14000,
+    "dueAmount": 0,
+    "time": "2026-11-05 02:30 PM",
+    "mode": "UPI",
+    "bucket": "upi",
+    "isSplit": false,
+    "status": "paid",
+    "reprintCount": 0
+   },
+   {
+    "id": "VP-007",
+    "customer": "Neha Gupta",
+    "amount": 12000,
+    "paidAmount": 12000,
+    "dueAmount": 60000,
+    "time": "2026-11-05 02:30 PM",
+    "mode": "UPI (Split ₹12,000 of ₹72,000)",
+    "bucket": "upi",
+    "isSplit": true,
+    "status": "partial",
+    "reprintCount": 0
+   }
+  ],
+  "online": [],
+  "card": [],
+  "finance": [
+   {
+    "id": "VP-007",
+    "customer": "Neha Gupta",
+    "amount": 60000,
+    "paidAmount": 12000,
+    "dueAmount": 60000,
+    "time": "2026-11-05 04:45 PM",
+    "mode": "Multiple (HDB)",
+    "bucket": "finance",
+    "isSplit": true,
+    "status": "partial",
+    "dueDate": "2026-11-05",
+    "balanceAmount": 60000,
+    "payoutStatus": "received",
+    "payoutBankAccount": "ICICI 5678",
+    "payoutUtr": "UTR-HDB-77",
+    "payoutDate": "2026-11-07",
+    "payoutAmount": 59500,
+    "reprintCount": 0
+   }
+  ],
+  "due": [],
+  "unclassified": [],
+  "all": [
+   {
+    "id": "VP-013",
+    "customer": "Back Dated Buyer",
+    "amount": 14000,
+    "paidAmount": 14000,
+    "dueAmount": 0,
+    "time": "2026-11-05 02:30 PM",
+    "mode": "UPI",
+    "bucket": "upi",
+    "isSplit": false,
+    "status": "paid",
+    "reprintCount": 0,
+    "partCount": 1
+   },
+   {
+    "id": "VP-007",
+    "customer": "Neha Gupta",
+    "amount": 72000,
+    "paidAmount": 72000,
+    "dueAmount": 60000,
+    "time": "2026-11-05 02:30 PM",
+    "mode": "UPI + Finance",
+    "bucket": "upi",
+    "isSplit": true,
+    "status": "partial",
+    "reprintCount": 0,
+    "partCount": 2,
+    "isReceipt": false
+   }
+  ],
+  "details": {
+   "VP-013": {
+    "id": "VP-013",
+    "customer": "Back Dated Buyer",
+    "total": 14000,
+    "date": "2026-11-05",
+    "status": "paid",
+    "parts": [
+     {
+      "kind": "billing",
+      "bucket": "upi",
+      "mode": "UPI",
+      "amount": 14000,
+      "date": "2026-11-05",
+      "reference": ""
+     }
+    ]
+   },
+   "VP-007": {
+    "id": "VP-007",
+    "customer": "Neha Gupta",
+    "total": 72000,
+    "date": "2026-11-05",
+    "status": "partial",
+    "parts": [
+     {
+      "kind": "billing",
+      "bucket": "upi",
+      "mode": "UPI",
+      "amount": 12000,
+      "date": "2026-11-05",
+      "reference": "UPI-7001"
+     },
+     {
+      "kind": "finance",
+      "bucket": "finance",
+      "mode": "Finance · HDB Financial",
+      "amount": 60000,
+      "date": "2026-11-05",
+      "reference": "DO DO-HDB-1",
+      "payoutStatus": "received",
+      "payoutBankAccount": "ICICI 5678",
+      "payoutUtr": "UTR-HDB-77",
+      "payoutDate": "2026-11-07",
+      "payoutAmount": 59500
+     }
+    ]
+   }
+  }
+ },
+ "payments": {
+  "duesCollected": 0,
+  "duesCollectedCount": 1,
+  "supplierPayouts": 0,
+  "recent": [
+   {
+    "_id": "00000000000000000000003d",
+    "partyId": "CUST-X",
+    "partyType": "Customer",
+    "partyName": "Zero",
+    "receivedBy": "Cashier",
+    "type": "received",
+    "bankAccountId": "",
+    "bankAccountRef": "",
+    "bankTxnRef": "",
+    "editCount": 0,
+    "transactionId": "TXN-4005",
+    "amount": 0,
+    "paymentMode": "Cash",
+    "date": "2026-11-05",
+    "createdAt": "2026-11-05T03:30:00.000Z"
+   }
+  ]
+ },
+ "expenses": {
+  "total": 1500,
+  "cash": 0,
+  "upi": 0,
+  "bank": 0,
+  "card": 1500,
+  "categories": [
+   {
+    "category": "Repairs",
+    "amount": 1500,
+    "count": 1,
+    "percentage": 100
+   }
+  ],
+  "modes": [
+   {
+    "mode": "Card",
+    "amount": 1500,
+    "count": 1,
+    "percentage": 100
+   }
+  ],
+  "recent": [
+   {
+    "_id": "000000000000000000000031",
+    "status": "paid",
+    "expenseNo": "EXP-4",
+    "category": "Repairs",
+    "description": "AC repair",
+    "amount": 1500,
+    "date": "2026-11-05",
+    "paymentMode": "Debit Card",
+    "createdAt": "2026-11-05T06:30:00.000Z",
+    "warehouse": "Main Branch"
+   }
+  ],
+  "all": [
+   {
+    "_id": "000000000000000000000031",
+    "status": "paid",
+    "expenseNo": "EXP-4",
+    "category": "Repairs",
+    "description": "AC repair",
+    "amount": 1500,
+    "date": "2026-11-05",
+    "paymentMode": "Debit Card",
+    "createdAt": "2026-11-05T06:30:00.000Z",
+    "warehouse": "Main Branch"
+   }
+  ]
+ },
+ "leakage": {
+  "cancelled": {
+   "count": 0,
+   "amount": 0,
+   "invoices": []
+  },
+  "deleted": {
+   "count": 0,
+   "amount": 0,
+   "invoices": []
+  },
+  "modified": {
+   "count": 0,
+   "amount": 0,
+   "invoices": []
+  },
+  "shifted": {
+   "count": 0,
+   "amount": 0,
+   "invoices": []
+  },
+  "billsModified": {
+   "count": 0,
+   "amount": 0,
+   "backDatedCount": 0,
+   "editedCount": 0,
+   "invoices": []
+  },
+  "reprinted": {
+   "count": 0,
+   "totalPrints": 0,
+   "amount": 0,
+   "invoices": []
+  },
+  "waivedOff": {
+   "count": 0,
+   "amount": 0,
+   "invoices": []
+  }
+ },
+ "vendorSupplier": {
+  "vendorCollections": {
+   "total": 0,
+   "count": 0,
+   "byMode": {
+    "cash": 0,
+    "upi": 0,
+    "online": 0,
+    "card": 0
+   },
+   "recent": []
+  },
+  "vendorDue": {
+   "total": 5000,
+   "count": 1,
+   "overdue": 5000,
+   "parties": [
+    {
+     "_id": "00000000000000000000004f",
+     "name": "Mobile Repair Hub",
+     "code": "VEN-1",
+     "phone": "9700000001",
+     "pending": 5000,
+     "overdue": 5000,
+     "lastPaymentDate": "2026-11-13",
+     "lastPaymentAmount": -500
+    }
+   ]
+  },
+  "supplierOutstanding": {
+   "total": 39000.5,
+   "count": 2,
+   "overdue": 13000.5,
+   "parties": [
+    {
+     "_id": "00000000000000000000002a",
+     "name": "Gupta Electronics",
+     "code": "SUP-1",
+     "phone": "9811111111",
+     "pending": 38000.5,
+     "overdue": 12000.5,
+     "lastPaymentDate": "2026-11-09"
+    },
+    {
+     "_id": "00000000000000000000002b",
+     "name": "A.B. Traders (P) Ltd",
+     "code": "SUP-2",
+     "phone": "9822222222",
+     "pending": 1000,
+     "overdue": 1000,
+     "lastPaymentDate": "2026-11-08"
+    }
+   ]
+  }
+ },
+ "dailyRevenue": [
+  {
+   "date": "08:00 AM",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "10:00 AM",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "12:00 PM",
+   "revenue": 14000,
+   "cash": 0,
+   "upi": 14000,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 1500,
+   "profit": 1
+  },
+  {
+   "date": "02:00 PM",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "04:00 PM",
+   "revenue": 72000,
+   "cash": 0,
+   "upi": 12000,
+   "card": 0,
+   "online": 0,
+   "finance": 60000,
+   "due": 60000,
+   "expense": 0,
+   "profit": 1
+  },
+  {
+   "date": "06:00 PM",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "08:00 PM",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "10:00 PM",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  }
+ ],
+ "topCustomers": [
+  {
+   "name": "Neha Gupta",
+   "amount": 72000,
+   "invoices": 1,
+   "city": "Gorakhpur"
+  },
+  {
+   "name": "Back Dated Buyer",
+   "amount": 14000,
+   "invoices": 1,
+   "city": "Gorakhpur"
+  }
+ ],
+ "topProducts": [
+  {
+   "name": "Sony Bravia 55 OLED TV",
+   "revenue": 72000.06,
+   "sales": 1,
+   "growth": 15
+  },
+  {
+   "name": "Realme Narzo 70",
+   "revenue": 13999.519999999999,
+   "sales": 2,
+   "growth": 15
+  }
+ ],
+ "topMobiles": [
+  {
+   "name": "Realme Narzo 70",
+   "brand": "Realme",
+   "category": "Smartphone",
+   "revenue": 13999.519999999999,
+   "sales": 2,
+   "avgPrice": 7000,
+   "growth": 20
+  }
+ ],
+ "topElectronics": [
+  {
+   "name": "Sony Bravia 55 OLED TV",
+   "brand": "Sony",
+   "category": "Smart TV",
+   "revenue": 72000.06,
+   "sales": 1,
+   "avgPrice": 72000,
+   "growth": 17
+  }
+ ],
+ "recentInvoices": [
+  {
+   "_id": "00000000000000000000000d",
+   "invoiceNumber": "VP-013",
+   "type": "tax-invoice",
+   "customerId": "CUST-013",
+   "customerName": "Back Dated Buyer",
+   "customerPhone": "9800000000",
+   "customerAddress": "Golghar, Gorakhpur",
+   "customerCity": "Gorakhpur",
+   "customerState": "Uttar Pradesh",
+   "placeOfSupply": "Uttar Pradesh(09)",
+   "billingEntity": "valueplus",
+   "date": "2026-11-05",
+   "dueDate": "2026-11-05",
+   "status": "paid",
+   "items": [
+    {
+     "itemId": "ITM-15",
+     "itemName": "Realme Narzo 70",
+     "itemCode": "8471",
+     "description": "Realme Narzo 70 with standard warranty",
+     "quantity": 2,
+     "unit": "Pcs",
+     "rate": 5932,
+     "discount": 0,
+     "discountType": "amount",
+     "taxableAmount": 11864,
+     "gstRate": 18,
+     "cgst": 1067.76,
+     "sgst": 1067.76,
+     "igst": 0,
+     "amount": 13999.519999999999,
+     "serialNumbers": [
+      "SN-REA-2"
+     ]
+    }
+   ],
+   "subtotal": 14000,
+   "discount": 0,
+   "taxableAmount": 11864,
+   "cgst": 0,
+   "sgst": 0,
+   "igst": 0,
+   "totalGST": 2136,
+   "extendedWarrantyTotal": 0,
+   "roundOff": 0,
+   "total": 14000,
+   "paidAmount": 14000,
+   "balanceAmount": 0,
+   "paymentMode": "UPI",
+   "payments": [],
+   "paymentTerms": "Net 30",
+   "dueAdvanceAmount": 0,
+   "dueAdvanceMode": "Cash",
+   "deliveryStatus": "delivered",
+   "salesExecutive": "Amit Singh",
+   "reprintCount": 0,
+   "printLogs": [],
+   "createdAt": "2026-11-13T05:30:00.000Z",
+   "updatedAt": "2026-11-13T05:30:00.000Z",
+   "__v": 0
+  },
+  {
+   "_id": "000000000000000000000007",
+   "invoiceNumber": "VP-007",
+   "type": "tax-invoice",
+   "customerId": "CUST-007",
+   "customerName": "Neha Gupta",
+   "customerPhone": "9800000000",
+   "customerAddress": "Golghar, Gorakhpur",
+   "customerCity": "Gorakhpur",
+   "customerState": "Uttar Pradesh",
+   "placeOfSupply": "Uttar Pradesh(09)",
+   "billingEntity": "valueplus",
+   "date": "2026-11-05",
+   "dueDate": "2026-11-05",
+   "status": "partial",
+   "items": [
+    {
+     "itemId": "ITM-22",
+     "itemName": "Sony Bravia 55 OLED TV",
+     "itemCode": "8471",
+     "description": "Sony Bravia 55 OLED TV with standard warranty",
+     "quantity": 1,
+     "unit": "Pcs",
+     "rate": 61017,
+     "discount": 0,
+     "discountType": "amount",
+     "taxableAmount": 61017,
+     "gstRate": 18,
+     "cgst": 5491.53,
+     "sgst": 5491.53,
+     "igst": 0,
+     "amount": 72000.06,
+     "serialNumbers": [
+      "SN-SON-1"
+     ],
+     "extendedWarrantyAmount": 2500,
+     "extendedWarrantyPlan": "2 Years"
+    }
+   ],
+   "subtotal": 72000,
+   "discount": 0,
+   "taxableAmount": 61017,
+   "cgst": 0,
+   "sgst": 0,
+   "igst": 0,
+   "totalGST": 10983,
+   "extendedWarrantyTotal": 0,
+   "roundOff": 0,
+   "total": 72000,
+   "paidAmount": 12000,
+   "balanceAmount": 60000,
+   "paymentMode": "Multiple",
+   "payments": [
+    {
+     "mode": "UPI",
+     "amount": 12000,
+     "txnId": "UPI-7001"
+    },
+    {
+     "mode": "HDB Finance",
+     "amount": 60000,
+     "reference": "DO-HDB-1"
+    }
+   ],
+   "paymentTerms": "Net 30",
+   "dueAdvanceAmount": 0,
+   "dueAdvanceMode": "Cash",
+   "deliveryStatus": "delivered",
+   "salesExecutive": "Amit Singh",
+   "reprintCount": 0,
+   "printLogs": [],
+   "createdAt": "2026-11-05T09:30:00.000Z",
+   "updatedAt": "2026-11-05T09:30:00.000Z",
+   "__v": 0,
+   "financeCompany": "HDB"
+  }
+ ],
+ "timestamp": "2026-11-13T10:00:00.000Z"
+}

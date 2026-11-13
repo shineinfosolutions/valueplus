@@ -1,0 +1,549 @@
+{
+ "success": true,
+ "dateRange": {
+  "start": "2025-01-01",
+  "end": "2025-01-31"
+ },
+ "metrics": {
+  "totalRevenue": 0,
+  "cashRevenue": 0,
+  "upiRevenue": 0,
+  "onlineRevenue": 0,
+  "cardRevenue": 0,
+  "financeRevenue": 0,
+  "warrantyRevenue": 0,
+  "warrantyCount": 0,
+  "dueRevenue": 0,
+  "dueCount": 0,
+  "unclassifiedRevenue": 0,
+  "dueSalesRevenue": 0,
+  "dueSalesCount": 0,
+  "duePendingRevenue": 0,
+  "duePendingCount": 0,
+  "dueClearedRevenue": 0,
+  "dueClearedCount": 0,
+  "dueClearedByMode": {},
+  "financePendingRevenue": 0,
+  "financePendingCount": 0,
+  "financeReceivedRevenue": 0,
+  "financeReceivedCount": 0,
+  "financeReceivedByAccount": {},
+  "duesCollected": 0,
+  "duesCollectedCount": 0,
+  "supplierPayouts": 0,
+  "totalExpenses": 0,
+  "netProfit": 0,
+  "totalOrders": 0,
+  "totalUnits": 0,
+  "totalPurchaseAmount": 0,
+  "totalPurchaseBills": 0,
+  "avgPurchaseValue": 0,
+  "pendingOrders": 2,
+  "lowStockItems": 4,
+  "customersCount": 6,
+  "suppliersCount": 4
+ },
+ "transactions": {
+  "cash": [],
+  "upi": [],
+  "online": [],
+  "card": [],
+  "finance": [],
+  "due": [],
+  "unclassified": [],
+  "all": [],
+  "details": {}
+ },
+ "payments": {
+  "duesCollected": 0,
+  "duesCollectedCount": 0,
+  "supplierPayouts": 0,
+  "recent": []
+ },
+ "expenses": {
+  "total": 0,
+  "cash": 0,
+  "upi": 0,
+  "bank": 0,
+  "card": 0,
+  "categories": [],
+  "modes": [],
+  "recent": [],
+  "all": []
+ },
+ "leakage": {
+  "cancelled": {
+   "count": 0,
+   "amount": 0,
+   "invoices": []
+  },
+  "deleted": {
+   "count": 0,
+   "amount": 0,
+   "invoices": []
+  },
+  "modified": {
+   "count": 0,
+   "amount": 0,
+   "invoices": []
+  },
+  "shifted": {
+   "count": 0,
+   "amount": 0,
+   "invoices": []
+  },
+  "billsModified": {
+   "count": 0,
+   "amount": 0,
+   "backDatedCount": 0,
+   "editedCount": 0,
+   "invoices": []
+  },
+  "reprinted": {
+   "count": 0,
+   "totalPrints": 0,
+   "amount": 0,
+   "invoices": []
+  },
+  "waivedOff": {
+   "count": 0,
+   "amount": 0,
+   "invoices": []
+  }
+ },
+ "vendorSupplier": {
+  "vendorCollections": {
+   "total": 0,
+   "count": 0,
+   "byMode": {
+    "cash": 0,
+    "upi": 0,
+    "online": 0,
+    "card": 0
+   },
+   "recent": []
+  },
+  "vendorDue": {
+   "total": 5000,
+   "count": 1,
+   "overdue": 5000,
+   "parties": [
+    {
+     "_id": "00000000000000000000004f",
+     "name": "Mobile Repair Hub",
+     "code": "VEN-1",
+     "phone": "9700000001",
+     "pending": 5000,
+     "overdue": 5000,
+     "lastPaymentDate": "2026-11-13",
+     "lastPaymentAmount": -500
+    }
+   ]
+  },
+  "supplierOutstanding": {
+   "total": 39000.5,
+   "count": 2,
+   "overdue": 13000.5,
+   "parties": [
+    {
+     "_id": "00000000000000000000002a",
+     "name": "Gupta Electronics",
+     "code": "SUP-1",
+     "phone": "9811111111",
+     "pending": 38000.5,
+     "overdue": 12000.5,
+     "lastPaymentDate": "2026-11-09"
+    },
+    {
+     "_id": "00000000000000000000002b",
+     "name": "A.B. Traders (P) Ltd",
+     "code": "SUP-2",
+     "phone": "9822222222",
+     "pending": 1000,
+     "overdue": 1000,
+     "lastPaymentDate": "2026-11-08"
+    }
+   ]
+  }
+ },
+ "dailyRevenue": [
+  {
+   "date": "01 Jan",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "02 Jan",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "03 Jan",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "04 Jan",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "05 Jan",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "06 Jan",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "07 Jan",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "08 Jan",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "09 Jan",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "10 Jan",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "11 Jan",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "12 Jan",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "13 Jan",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "14 Jan",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "15 Jan",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "16 Jan",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "17 Jan",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "18 Jan",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "19 Jan",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "20 Jan",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "21 Jan",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "22 Jan",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "23 Jan",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "24 Jan",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "25 Jan",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "26 Jan",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "27 Jan",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "28 Jan",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "29 Jan",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "30 Jan",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  },
+  {
+   "date": "31 Jan",
+   "revenue": 0,
+   "cash": 0,
+   "upi": 0,
+   "card": 0,
+   "online": 0,
+   "finance": 0,
+   "due": 0,
+   "expense": 0,
+   "profit": 0
+  }
+ ],
+ "topCustomers": [],
+ "topProducts": [],
+ "topMobiles": [],
+ "topElectronics": [],
+ "recentInvoices": [],
+ "timestamp": "2026-11-13T10:00:00.000Z"
+}
