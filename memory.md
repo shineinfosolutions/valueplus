@@ -385,7 +385,7 @@
   - Print uses `printElement` (only the receipt). WhatsApp opens the text for the customer's mobile.
 - **Billing side unchanged**: the bill form already offers the customer's credit with a tick box (`applyAdvanceCredit`), see section 14.
 
-## 39. Speed / cost optimisation (OPTIMIZATION.md) and the 10 PM shift
+## 39. Speed / cost optimisation (OPTIMIZATION.md)
 - **Page JavaScript** (average 351 kB → 180 kB; dashboard 696 → 309 kB):
   - xlsx / jspdf / html2canvas load only when an export runs (`lib/export/*` functions are async now).
   - The billing form loads through `components/LazyInvoiceCreationModal.tsx`; charts load from `components/dashboard/DashboardCharts.tsx` and `components/shared/TrendAreaCharts.tsx`.
@@ -403,7 +403,7 @@
   - The Mongo client uses `maxPoolSize 1` and `serverMonitoringMode: "poll"` (`lib/db-options.ts`).
   - The cron runs `*/5 3-18 * * *` (08:30–00:29 IST).
 - **Tests:** `npm test` (`tests/run-tests.mjs`, MongoDB in memory via the `mongodb-memory-server` devDependency). 9 files, 101 checks.
-- **Shift 10:00 AM – 10:00 PM** (the store is open till 10 PM): the built-in 9 PM (and old 6 PM) shift is moved to 22:00 on the next read (`lib/shift-settings.ts`). The automatic check-out is at 10 PM.
+- **Store hours:** Value Plus closes its operations at 10:00 PM. The attendance shift is **not** changed (still 10 AM – 9 PM, as the owner set it).
 - **Deploys:** there is no staging now (removed 2026-11-05). Deploy to live **after 10 PM IST**, when the store is closed.
 - **D1:**
   - Plan in `docs/D1_MIGRATION_PLAN.md`.
@@ -745,4 +745,4 @@
 - **2026-11-13** — Deployed to production (version 22e133ce): discount chips 2-15% with Cashier (orange) / Manager-Admin (red) colours. Smoke test: login 200, `/masters/items` 307, `/api/items` 401 signed out. Not checked on screen. (Build first failed with EINVAL readlink on `.next` under OneDrive; deleting `.next` fixed it.)
 - **2026-11-13** — A bill can now sell Godown stock when the Showroom has too few (e.g. AISEN A95DMHV18: Showroom 0, Godown 12 was refused as OUT OF STOCK). Bill form (`components/InvoiceCreationModal.tsx`): a line passes when its quantity fits in the Showroom OR in the Godown (message names both counts otherwise); picking such a product says it will be billed from the Godown. Server (`app/api/invoices/route.ts`, new `pickSaleWarehouse` in `lib/stock.ts`): per product, the bill's own warehouse when it holds the whole quantity, else the active Godown holding the most (if it has the whole quantity); the line stores it as `stockWarehouseId` (new field on the invoice line; empty = bill's warehouse) and stock is taken from there. Cancel and delete put stock back to `stockWarehouseId` too; full edit (`lib/invoice-full-edit.ts`) moves stock per product + warehouse, keeps an existing product's source and picks one for a newly added product. No split across Showroom + Godown in one line. Typecheck 67. Not tested signed in, not deployed yet.
 - **2026-11-13** — Deployed to production (version b0414d9f): bills may sell Godown stock when the Showroom is short (line `stockWarehouseId`). Smoke test: login 200, `/sales/invoices` 307, GET/POST `/api/invoices` 401 signed out. Not tested signed in.
-- **2026-11-13** — Speed / cost work (OPTIMIZATION.md): lazy export / billing form / charts, no framer-motion in the layout, self-hosted font, compressed images, `/api/me/summary`, offline lists for billing roles every 12 h, targeted refresh, leaner dashboard stats (golden-tested), no deletes on GET, 40 indexes via the cron, leaner Mongo client, cron 08:30–00:29 IST; shift moved to 10 AM – 10 PM; `npm test` suite; D1 database `valueplus-db` created. See section 39.
+- **2026-11-13** — Speed / cost work (OPTIMIZATION.md): lazy export / billing form / charts, no framer-motion in the layout, self-hosted font, compressed images, `/api/me/summary`, offline lists for billing roles every 12 h, targeted refresh, leaner dashboard stats (golden-tested), no deletes on GET, 40 indexes via the cron, leaner Mongo client, cron 08:30–00:29 IST; `npm test` suite; D1 database `valueplus-db` created. See section 39.
