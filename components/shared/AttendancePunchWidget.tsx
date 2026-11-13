@@ -178,7 +178,7 @@ function AttendancePunchWidgetBody() {
 
   const shiftDisplay = shiftConfig
     ? `${shiftConfig.startTime} - ${shiftConfig.endTime}`
-    : "10:00 AM - 10:00 PM";
+    : "10:00 AM - 09:00 PM";
 
   return (
     <div className="p-4 bg-gradient-to-br from-[#1B2537] via-[#243753] to-[#1B2537] text-white rounded-2xl shadow-md border border-slate-700/80 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">

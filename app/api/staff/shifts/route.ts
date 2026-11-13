@@ -23,7 +23,7 @@ export async function POST(req: Request) {
     const {
       shiftName = SHIFT_NAME,
       startTime = "10:00",
-      endTime = "22:00",
+      endTime = "21:00",
       lateGraceMinutes = 15,
       halfDayLateCutoff = "12:00",
       minHoursForFullDay = 7.5,
