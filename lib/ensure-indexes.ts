@@ -74,6 +74,14 @@ export const INDEXES: IndexSpec[] = [
   { collection: "audit_logs", key: { action: 1, createdAt: -1 }, why: "audit screen and edited-bills card" },
   { collection: "audit_logs", key: { entityRef: 1 }, why: "history of one bill" },
   { collection: "push_subscriptions", key: { userId: 1 }, why: "a user's phones for push alerts" },
+  // v2: the D1 copy job (lib/d1/sync.ts) reads each master collection by updatedAt every 5 minutes.
+  { collection: "items", key: { updatedAt: 1 }, why: "D1 copy: changed since the last run" },
+  { collection: "categories", key: { updatedAt: 1 }, why: "D1 copy: changed since the last run" },
+  { collection: "brands", key: { updatedAt: 1 }, why: "D1 copy: changed since the last run" },
+  { collection: "units", key: { updatedAt: 1 }, why: "D1 copy: changed since the last run" },
+  { collection: "warehouses", key: { updatedAt: 1 }, why: "D1 copy: changed since the last run" },
+  { collection: "customers", key: { updatedAt: 1 }, why: "D1 copy: changed since the last run" },
+  { collection: "suppliers", key: { updatedAt: 1 }, why: "D1 copy: changed since the last run" },
 ];
 
 export interface EnsureIndexesResult {
@@ -137,7 +145,7 @@ export async function ensureIndexes(specs: IndexSpec[] = INDEXES, db: any = mong
 }
 
 /** Bump the version (":v2") after adding entries to INDEXES, so the cron runs it again. */
-export const ENSURE_INDEXES_JOB = "ensure-indexes:v1";
+export const ENSURE_INDEXES_JOB = "ensure-indexes:v2";
 
 /**
  * Runs ensureIndexes from the cron until it has succeeded once. `claim` is the cron's once-only helper
