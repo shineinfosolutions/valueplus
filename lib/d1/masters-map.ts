@@ -55,6 +55,12 @@ export interface MasterSpec {
   /** 1:1 subdocuments flattened into columns: their unknown keys also go to `extra`. */
   flattened?: Record<string, string[]>;
   children?: ChildSpec[];
+  /**
+   * Optional: more top-level fields to keep in `extra`, exactly as they are in Mongo, on top of the unknown ones.
+   * For a known field whose value its column cannot hold faithfully (a number written as text, a legacy string
+   * where an array or subdocument is expected). Its keys replace any the default `extra` already has.
+   */
+  extraFields?: (doc: any) => Record<string, unknown> | null | undefined;
 }
 
 /** Columns every main table ends with, in this order. */
@@ -449,6 +455,14 @@ function extraOf(spec: MasterSpec, doc: any): string | null {
         if (sk !== "_id" && !subFields.includes(sk) && s[sk] !== undefined) rest[sk] = s[sk];
       }
       if (Object.keys(rest).length) extra[k] = rest;
+    }
+  }
+  if (spec.extraFields) {
+    try {
+      const more = spec.extraFields(doc);
+      for (const k of Object.keys(more || {})) if (more![k] !== undefined) extra[k] = more![k];
+    } catch {
+      // never throw on odd data: the default `extra` is still written
     }
   }
   return Object.keys(extra).length ? canonicalJson(extra) : null;
