@@ -1,4 +1,6 @@
-import * as XLSX from "xlsx";
+// xlsx (~90 kB compressed) is fetched only when an export actually runs, not with every page that shows an
+// Export button: most visits never press it.
+const loadXlsx = () => import("xlsx");
 
 /**
  * Export a flat array of objects to a real .xlsx file — same signature as the
@@ -13,12 +15,13 @@ import * as XLSX from "xlsx";
  * Making the header row bold for real needs a styling-capable fork
  * (`xlsx-js-style`), a separate dependency this task doesn't call for.
  */
-export function exportToExcel(
+export async function exportToExcel(
   data: Record<string, unknown>[],
   filename: string,
   sheetName = "Sheet1"
-): void {
+): Promise<void> {
   if (!data.length) return;
+  const XLSX = await loadXlsx();
 
   const headers = Object.keys(data[0]);
   const worksheet = XLSX.utils.json_to_sheet(data, { header: headers });
@@ -45,10 +48,11 @@ export function exportToExcel(
  * and B2C parts, which the portal keeps apart). An empty table still gets its
  * sheet, with just its header row, so the file always has the same shape.
  */
-export function exportSheetsToExcel(
+export async function exportSheetsToExcel(
   sheets: { name: string; rows: Record<string, unknown>[]; headers: string[] }[],
   filename: string
-): void {
+): Promise<void> {
+  const XLSX = await loadXlsx();
   const workbook = XLSX.utils.book_new();
   sheets.forEach(({ name, rows, headers }) => {
     const worksheet = XLSX.utils.json_to_sheet(rows, { header: headers });

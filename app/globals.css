@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+/* Inter is self-hosted by next/font in app/layout.tsx (--font-inter); no Google Fonts request here. */
 
 @tailwind base;
 @tailwind components;
@@ -34,7 +34,7 @@
 
   body {
     @apply bg-[#F4F7FB] text-[#1A202C] antialiased;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-family: var(--font-inter), 'Inter', system-ui, -apple-system, sans-serif;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;

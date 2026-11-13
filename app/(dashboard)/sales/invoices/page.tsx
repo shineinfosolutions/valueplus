@@ -8,7 +8,8 @@ import {
   Clock, AlertTriangle, XCircle, Printer, ShoppingCart, User, Building, CreditCard,
   Sparkles, CheckCircle2, FileText, Calendar, MapPin, Calculator, ShieldCheck, Ban, MessageCircle
 } from "lucide-react";
-import { InvoiceCreationModal } from "@/components/InvoiceCreationModal";
+// Loaded on demand (its own chunk), see components/LazyInvoiceCreationModal.tsx.
+import { InvoiceCreationModal } from "@/components/LazyInvoiceCreationModal";
 import { EditHistory } from "@/components/shared/EditHistory";
 import { useChangeRole, usePendingChanges } from "@/components/shared/pending-changes";
 import { toast } from "sonner";

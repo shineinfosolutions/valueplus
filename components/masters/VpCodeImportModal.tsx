@@ -6,7 +6,6 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { UploadCloud, FileSpreadsheet, CheckCircle2, AlertTriangle, ArrowRight, Download } from "lucide-react";
-import * as XLSX from "xlsx";
 import { toast } from "sonner";
 
 /**
@@ -105,7 +104,9 @@ export function VpCodeImportModal({ open, onOpenChange, onApplied }: { open: boo
   const busy = previewMutation.isPending || applyMutation.isPending;
   const toApply = (report?.updates.length || 0) + ticked.size;
 
-  const downloadSample = () => {
+  const downloadSample = async () => {
+    // xlsx is only needed to build this sample file, so it is fetched on click instead of with the page.
+    const XLSX = await import("xlsx");
     const rows = [
       ["VP Code", "Product Name", "Brand"],
       ["VP0002116", "EI3V-C1(I)-P IVORY- HAIER", "HAIER"],

@@ -1,6 +1,3 @@
-import { jsPDF } from "jspdf";
-import { autoTable } from "jspdf-autotable";
-
 /**
  * Export a flat array of objects to a paginated table PDF, entirely
  * client-side (no server round trip) — the same "click, file downloads"
@@ -13,12 +10,16 @@ export interface ExportPdfOptions {
   columns?: { key: string; label: string }[];
 }
 
-export function exportToPdf(
+export async function exportToPdf(
   data: Record<string, unknown>[],
   filename: string,
   options: ExportPdfOptions = {}
-): void {
+): Promise<void> {
   if (!data.length) return;
+
+  // jspdf + autotable are fetched only when a PDF is actually made, so pages that merely show an Export button
+  // don't download them.
+  const [{ jsPDF }, { autoTable }] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
 
   const columns = options.columns || Object.keys(data[0]).map((key) => ({ key, label: key }));
   const doc = new jsPDF({ orientation: columns.length > 6 ? "landscape" : "portrait", unit: "pt" });

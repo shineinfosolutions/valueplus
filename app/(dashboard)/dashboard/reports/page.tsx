@@ -3,7 +3,7 @@
 import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Search, Calendar, Clock, Printer, Send, IndianRupee, CreditCard, Receipt, Wallet, Package, Eye } from "lucide-react";
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import dynamic from "next/dynamic";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,12 @@ import { cn, formatCurrency, formatDateShort } from "@/lib/utils";
 import { DateRangeFilter, resolveDateRange } from "@/components/shared/date-range-filter";
 import { TableShimmer } from "@/components/shared/shimmer-skeleton";
 import { ExportMenu } from "@/components/shared/ExportMenu";
+
+// recharts (~110 kB) loads with the chart, not with the page; the placeholder fills the chart's fixed-height box.
+const ReportTrendChart = dynamic(
+  () => import("@/components/shared/TrendAreaCharts").then((m) => m.ReportTrendChart),
+  { ssr: false, loading: () => <div className="w-full h-full bg-slate-100 animate-pulse rounded-xl" /> }
+);
 
 function StatusBadge({ status }: { status: string }) {
   if (!status) return <span className="inline-flex items-center px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-700 border border-slate-200">Completed</span>;
@@ -265,24 +271,7 @@ function ReportsContent() {
             {loading ? (
               <div className="w-full h-full bg-slate-100 animate-pulse rounded-xl" />
             ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor={details.color} stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor={details.color} stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" opacity={0.5} />
-                  <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} dy={10} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} dx={-10} tickFormatter={(val) => reportType === "orders" ? `${val}` : `₹${(val/1000).toFixed(0)}k`} />
-                  <Tooltip 
-                    cursor={{ stroke: '#94a3b8', strokeWidth: 1, strokeDasharray: '4 4' }}
-                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}
-                  />
-                  <Area type="monotone" dataKey="value" stroke={details.color} strokeWidth={3} fillOpacity={1} fill="url(#colorValue)" />
-                </AreaChart>
-              </ResponsiveContainer>
+              <ReportTrendChart data={chartData} color={details.color} isCount={reportType === "orders"} />
             )}
           </div>
         </div>

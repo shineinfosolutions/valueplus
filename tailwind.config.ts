@@ -71,7 +71,8 @@ const config: Config = {
         sm: "calc(var(--radius) - 4px)",
       },
       fontFamily: {
-        sans: ["Inter", "system-ui", "sans-serif"],
+        // --font-inter is the self-hosted Inter from next/font (app/layout.tsx).
+        sans: ["var(--font-inter)", "Inter", "system-ui", "sans-serif"],
       },
       keyframes: {
         "accordion-down": {

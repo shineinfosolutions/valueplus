@@ -15,7 +15,8 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { TableShimmer, GridCardsShimmer } from "@/components/shared/shimmer-skeleton";
 import { BrandLogo, getBrandMeta } from "@/components/shared/brand-logo";
-import { InvoiceCreationModal } from "@/components/InvoiceCreationModal";
+// Loaded on demand (its own chunk), see components/LazyInvoiceCreationModal.tsx.
+import { InvoiceCreationModal } from "@/components/LazyInvoiceCreationModal";
 import Link from "next/link";
 
 export default function BrandsPage() {

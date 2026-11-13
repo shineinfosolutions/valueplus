@@ -5,7 +5,6 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { signOutAndForgetDevice } from "@/lib/push-client";
-import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useBranch } from "@/context/BranchContext";
 import { 
@@ -203,10 +202,9 @@ export function MobileBottomNav() {
                 <div className="relative">
                   <Icon className={cn("w-5 h-5 transition-transform", isActive ? "scale-110 stroke-[2.5]" : "stroke-[2]")} />
                   {isActive && (
-                    <motion.div
-                      layoutId="activeIndicator"
-                      className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-[#76C043] rounded-full shadow-[0_0_8px_#76C043]"
-                    />
+                    // The dot fades/grows in under the new tab (CSS) instead of sliding over: no framer-motion on every page.
+                    // Centred with calc() rather than -translate-x-1/2, which the zoom-in keyframes would override.
+                    <div className="absolute -bottom-1 left-[calc(50%-3px)] w-1.5 h-1.5 bg-[#76C043] rounded-full shadow-[0_0_8px_#76C043] animate-in fade-in zoom-in-50 duration-300" />
                   )}
                 </div>
                 <span className={cn("text-[11px] mt-1.5 leading-none", isActive ? "font-bold" : "font-medium")}>{tab.label}</span>

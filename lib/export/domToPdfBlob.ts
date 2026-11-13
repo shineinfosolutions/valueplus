@@ -1,6 +1,3 @@
-import { jsPDF } from "jspdf";
-import html2canvas from "html2canvas";
-
 /**
  * Renders an on-screen element (an invoice, estimate …) into an A4 PDF Blob, entirely in the browser — a picture of
  * exactly what is on screen, so it always matches it.
@@ -17,6 +14,9 @@ const MARGIN = 8;
 const FIT_ONE_PAGE_UP_TO = 1.25;
 
 export async function domToPdfBlob(element: HTMLElement): Promise<Blob> {
+  // Both libraries are big (~150 kB compressed together) and only needed when a PDF is made, so they are fetched
+  // here rather than with the page.
+  const [{ jsPDF }, { default: html2canvas }] = await Promise.all([import("jspdf"), import("html2canvas")]);
   const canvas = await html2canvas(element, {
     scale: 2, // sharper than a 1:1 pixel capture, still a reasonable file size
     useCORS: true,

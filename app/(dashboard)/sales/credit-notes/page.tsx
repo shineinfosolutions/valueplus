@@ -7,7 +7,8 @@ import {
   Plus, Search, FileMinus, MoreHorizontal, FileText, XCircle,
   CheckCircle2, Printer, MessageCircle, Truck
 } from "lucide-react";
-import { InvoiceCreationModal } from "@/components/InvoiceCreationModal";
+// Loaded on demand (its own chunk), see components/LazyInvoiceCreationModal.tsx.
+import { InvoiceCreationModal } from "@/components/LazyInvoiceCreationModal";
 import { toast } from "sonner";
 import { PageShell } from "@/components/shared/page-shell";
 import { Button } from "@/components/ui/button";

@@ -5,7 +5,6 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { signOutAndForgetDevice } from "@/lib/push-client";
-import { motion, AnimatePresence } from "framer-motion";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { panelForRole } from "@/lib/role-routes";
@@ -61,19 +60,20 @@ function SidebarSection({ title, children, defaultOpen = true }: SidebarSectionP
           className={cn("w-3.5 h-3.5 transition-transform duration-200", isOpen ? "rotate-0" : "-rotate-90")}
         />
       </button>
-      <AnimatePresence initial={false}>
-        {isOpen && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2, ease: "easeInOut" }}
-            className="overflow-hidden"
-          >
-            <div className="space-y-0.5 pb-2">{children}</div>
-          </motion.div>
+      {/* Open/close slide in plain CSS (grid rows 0fr <-> 1fr animates to the content's real height), so the sidebar,
+          which is on every page, doesn't need framer-motion. A closed section stays in the page but is `inert`:
+          its links can't be tabbed to or clicked, as when it was removed. */}
+      <div
+        inert={!isOpen}
+        className={cn(
+          "grid transition-[grid-template-rows,opacity] duration-200 ease-in-out",
+          isOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
         )}
-      </AnimatePresence>
+      >
+        <div className="overflow-hidden">
+          <div className="space-y-0.5 pb-2">{children}</div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -296,10 +296,8 @@ export function Sidebar() {
                     )}
                   >
                     {isActive && (
-                      <motion.div
-                        layoutId="sidebar-active"
-                        className="absolute left-0 w-1 h-5 bg-[#76C043] rounded-r-full"
-                      />
+                      // The active bar fades/grows in on the new item (CSS) instead of sliding over from the old one.
+                      <div className="absolute left-0 w-1 h-5 bg-[#76C043] rounded-r-full animate-in fade-in zoom-in-50 duration-300" />
                     )}
                     <Icon
                       className={cn(

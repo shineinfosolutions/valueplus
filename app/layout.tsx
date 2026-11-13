@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Inter } from "next/font/google";
 import "./globals.css";
 import AuthProvider from "@/components/providers/AuthProvider";
 import QueryProvider from "@/components/providers/QueryProvider";
@@ -19,6 +20,16 @@ export const metadata: Metadata = {
   },
 };
 
+// Inter is downloaded at build time and served from our own domain (next/font), instead of a Google Fonts <link>
+// that made every first visit wait on an outside server before painting. Exposed as --font-inter, which
+// globals.css and tailwind.config.ts use. 900 is kept because some screens use font-black.
+const inter = Inter({
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700", "800", "900"],
+  display: "swap",
+  variable: "--font-inter",
+});
+
 export const viewport = {
   themeColor: "#1B2537",
   width: "device-width",
@@ -29,7 +40,7 @@ export const viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" className={inter.variable} suppressHydrationWarning>
       <head>
         <link rel="manifest" href="/manifest.json" />
         <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
@@ -46,12 +57,6 @@ window.addEventListener("unhandledrejection",function(e){var m=String(e&&e.reaso
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
-          rel="stylesheet"
-        />
       </head>
       <body className="antialiased" suppressHydrationWarning>
         <QueryProvider>

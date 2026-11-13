@@ -13,7 +13,8 @@ import { AuthorizePinDialog, PinAuthResult } from "@/components/AuthorizePinDial
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { InvoiceCreationModal } from "@/components/InvoiceCreationModal";
+// Loaded on demand (its own chunk), see components/LazyInvoiceCreationModal.tsx.
+import { InvoiceCreationModal } from "@/components/LazyInvoiceCreationModal";
 import ValueplusInvoice from "@/app/invoice/page";
 
 import { DateRangeFilter, resolveDateRange, isDateInRange } from "@/components/shared/date-range-filter";

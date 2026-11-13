@@ -12,7 +12,8 @@ import { useState, useMemo, useEffect } from "react";
 import { toast } from "sonner";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
-import { InvoiceCreationModal } from "@/components/InvoiceCreationModal";
+// Loaded on demand (its own chunk), see components/LazyInvoiceCreationModal.tsx.
+import { InvoiceCreationModal } from "@/components/LazyInvoiceCreationModal";
 import { DateRangeFilter, resolveDateRange, isDateInRange } from "@/components/shared/date-range-filter";
 import { TableShimmer } from "@/components/shared/shimmer-skeleton";
 import { useSession } from "next-auth/react";

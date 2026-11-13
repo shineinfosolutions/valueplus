@@ -36,15 +36,21 @@ export function ExportMenu({
   size?: "sm" | "default" | "lg" | "icon";
   className?: string;
 }) {
-  const handleExport = (format: "excel" | "pdf") => {
+  const handleExport = async (format: "excel" | "pdf") => {
     if (!data.length) {
       toast.error("Nothing to export");
       return;
     }
-    if (format === "excel") {
-      exportToExcel(data, filename);
-    } else {
-      exportToPdf(data, filename, { title: title || filename, subtitle, columns });
+    // The export functions fetch their library on first use, so a failed download (e.g. offline) surfaces here.
+    try {
+      if (format === "excel") {
+        await exportToExcel(data, filename);
+      } else {
+        await exportToPdf(data, filename, { title: title || filename, subtitle, columns });
+      }
+    } catch (err) {
+      console.error("Export failed", err);
+      toast.error("Export failed. Please try again.");
     }
   };
 

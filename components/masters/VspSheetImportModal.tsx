@@ -6,7 +6,6 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { UploadCloud, FileSpreadsheet, CheckCircle2, AlertTriangle, ArrowRight, Download } from "lucide-react";
-import * as XLSX from "xlsx";
 import { toast } from "sonner";
 import { formatCurrency } from "@/lib/utils";
 
@@ -122,7 +121,9 @@ export function VspSheetImportModal({
   const busy = previewMutation.isPending || applyMutation.isPending;
 
   // A ready-made sheet in the format this screen reads, so the next upload matches without any changes.
-  const downloadSample = () => {
+  const downloadSample = async () => {
+    // xlsx is only needed to build this sample file, so it is fetched on click instead of with the page.
+    const XLSX = await import("xlsx");
     const rows = [
       ["VP CODE", "Material code", "Material Description", "New V+NLC", "New VSP", "Status"],
       ["-", 1234567, "BRAND EXAMPLE-MODEL-ABC123", 14750, 18590, ""],

@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { signIn, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
 import { Eye, EyeOff, ArrowRight, Shield, Zap, BarChart2, Lock, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -130,10 +129,11 @@ export default function LoginPage() {
 
           {/* Main content */}
           <div className="flex-1 flex flex-col justify-center max-w-md">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: 0.1 }}
+            {/* Entrance animations are plain CSS (tailwindcss-animate) so the login page doesn't load framer-motion;
+                fill-mode-both keeps each block hidden until its delay has passed, as before. */}
+            <div
+              className="animate-in fade-in slide-in-from-bottom-5 ease-out fill-mode-both"
+              style={{ animationDuration: "600ms", animationDelay: "100ms" }}
             >
               <h1 className="text-4xl font-bold text-white leading-tight mb-4">
                 India's Most Premium{" "}
@@ -146,12 +146,10 @@ export default function LoginPage() {
               {/* Feature list */}
               <div className="space-y-5">
                 {FEATURES.map((feature, i) => (
-                  <motion.div
+                  <div
                     key={feature.title}
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ duration: 0.5, delay: 0.2 + i * 0.1 }}
-                    className="flex items-start gap-4"
+                    className="flex items-start gap-4 animate-in fade-in slide-in-from-left-5 duration-500 ease-out fill-mode-both"
+                    style={{ animationDelay: `${200 + i * 100}ms` }}
                   >
                     <div className="w-10 h-10 rounded-xl bg-[#3F63AD]/30 border border-[#3F63AD]/40 flex items-center justify-center flex-shrink-0">
                       <feature.icon className="w-5 h-5 text-[#76C043]" />
@@ -160,10 +158,10 @@ export default function LoginPage() {
                       <p className="text-white font-semibold">{feature.title}</p>
                       <p className="text-slate-400 text-sm mt-0.5">{feature.desc}</p>
                     </div>
-                  </motion.div>
+                  </div>
                 ))}
               </div>
-            </motion.div>
+            </div>
           </div>
 
           {/* Footer note */}
@@ -175,12 +173,7 @@ export default function LoginPage() {
 
       {/* Right form panel */}
       <div className="flex-1 flex flex-col justify-center items-center p-4 sm:p-8 bg-slate-50/50">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="w-full max-w-[430px]"
-        >
+        <div className="w-full max-w-[430px] animate-in fade-in slide-in-from-bottom-5 duration-500 ease-out fill-mode-both">
           {/* Mobile Logo */}
           <div className="lg:hidden flex flex-col items-center mb-6">
             <ValuePlusBrand size="large" dark />
@@ -337,7 +330,7 @@ export default function LoginPage() {
               © 2026 ValuePlus ERP · All rights reserved · <span className="text-[#3F63AD] font-medium">Made in India 🇮🇳</span>
             </p>
           </div>
-        </motion.div>
+        </div>
       </div>
     </div>
   );

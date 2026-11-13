@@ -206,7 +206,7 @@ export function hsnExportRows({ b2b, b2c }: HsnSummary) {
 
 /** One .xlsx with hsn(b2b) and hsn(b2c) sheets, in the GST portal's column order. */
 export function exportHsnSummaryExcel({ b2b, b2c }: HsnSummary, period: string) {
-  exportSheetsToExcel(
+  return exportSheetsToExcel(
     [
       { name: "hsn(b2b)", rows: b2b.map(({ Bills, ...r }) => r), headers: HSN_COLUMNS },
       { name: "hsn(b2c)", rows: b2c.map(({ Bills, ...r }) => r), headers: HSN_COLUMNS },

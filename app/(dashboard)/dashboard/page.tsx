@@ -13,10 +13,7 @@ import {
   X, Filter, ExternalLink, Printer, Send, ShieldAlert, Plus, FileText, Download, Trash2, Building, Building2, UserCheck, Tv, Smartphone, Laptop, Fan, HardDrive, Headphones, BarChart3, PieChart as PieChartIcon, ArrowUpRight, MessageCircle, Wifi, WifiOff, Zap, MapPin, Phone, CheckSquare, ListTodo, UserPlus, Target, Crown, MessageSquare, Check, ScanBarcode
 } from "lucide-react";
 import { QuickScan, QUICK_SCAN_ROLES } from "@/components/delivery/QuickScan";
-import {
-  AreaChart, Area, BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
-  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
-} from "recharts";
+import dynamic from "next/dynamic";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -40,7 +37,8 @@ import {
 import { toast } from "sonner";
 import { cn, formatCurrency, formatNumber, indianNumberFormat, formatDateShort } from "@/lib/utils";
 import ValueplusInvoice from "@/app/invoice/page";
-import { InvoiceCreationModal } from "@/components/InvoiceCreationModal";
+// Loaded on demand (its own chunk), see components/LazyInvoiceCreationModal.tsx.
+import { InvoiceCreationModal } from "@/components/LazyInvoiceCreationModal";
 import { DateRangeFilter, dayLabelIST, resolveDateRange, isDateInRange } from "@/components/shared/date-range-filter";
 import { BillEditDetailDialog } from "@/components/dashboard/BillEditDetailDialog";
 import { StaffFilter, useStaffParam, sameStaff, normStaff, UNASSIGNED } from "@/components/shared/StaffFilter";
@@ -70,6 +68,16 @@ import { ProductLedgerModal } from "@/components/ProductLedgerModal";
 import { ExportMenu } from "@/components/shared/ExportMenu";
 import { isFinanceInvoice } from "@/lib/payment-modes";
 import { todayInIndia } from "@/lib/today";
+
+// recharts (~110 kB) loads with the charts, not with the page; the placeholder keeps each chart's box filled meanwhile.
+const DashboardTrendChart = dynamic(
+  () => import("@/components/dashboard/DashboardCharts").then((m) => m.DashboardTrendChart),
+  { ssr: false, loading: () => <div className="w-full h-full bg-slate-100 rounded-xl animate-pulse" /> }
+);
+const DashboardExpenseDonut = dynamic(
+  () => import("@/components/dashboard/DashboardCharts").then((m) => m.DashboardExpenseDonut),
+  { ssr: false, loading: () => <div className="w-full h-full rounded-full bg-slate-100 animate-pulse" /> }
+);
 
 
 
@@ -1924,26 +1932,7 @@ export default function DashboardPage() {
                   <div className="h-36 w-full bg-slate-100 rounded-xl"></div>
                 </div>
               ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={widgetData.trends?.dailyRevenue || DAILY_REVENUE} margin={{ top: 10, right: 5, left: -25, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="colorTrends" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#76C043" stopOpacity={0.4}/>
-                        <stop offset="95%" stopColor="#76C043" stopOpacity={0}/>
-                      </linearGradient>
-                      <linearGradient id="colorOnline" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#3F63AD" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="#3F63AD" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
-                    <XAxis dataKey="date" tickLine={false} axisLine={false} tick={{ fill: "#64748B", fontSize: 11, fontWeight: "bold" }} />
-                    <YAxis tickLine={false} axisLine={false} tick={{ fill: "#64748B", fontSize: 11 }} tickFormatter={(val) => `₹${val > 99999 ? (val/100000).toFixed(1)+'L' : val > 999 ? (val/1000).toFixed(0)+'k' : val}`} />
-                    <Tooltip content={<CustomTooltip />} />
-                    <Area type="monotone" dataKey="revenue" name="Total Revenue" stroke="#76C043" strokeWidth={3} fillOpacity={1} fill="url(#colorTrends)" />
-                    <Area type="monotone" dataKey="online" name="Online & Card" stroke="#3F63AD" strokeWidth={2.5} fillOpacity={1} fill="url(#colorOnline)" />
-                  </AreaChart>
-                </ResponsiveContainer>
+                <DashboardTrendChart data={widgetData.trends?.dailyRevenue || DAILY_REVENUE} tooltip={<CustomTooltip />} />
               )}
             </div>
 
@@ -2395,50 +2384,23 @@ export default function DashboardPage() {
                       {/* Compact Donut */}
                       <div className="col-span-4 flex items-center justify-center relative">
                         <div className="w-[95px] h-[95px] relative flex items-center justify-center">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
-                              <Pie
-                                data={expTotal > 0 ? (expenseViewTab === "purpose" ? categories : modes) : [{ name: "Zero", amount: 1 }]}
-                                cx="50%"
-                                cy="50%"
-                                innerRadius={28}
-                                outerRadius={44}
-                                paddingAngle={3}
-                                dataKey="amount"
-                              >
-                                {expTotal > 0 ? (
-                                  (expenseViewTab === "purpose" ? categories : modes).map((entry: any, i: number) => {
-                                    const pieColors = expenseViewTab === "purpose"
-                                      ? ["#F43F5E", "#F59E0B", "#3F63AD", "#10B981", "#8B5CF6", "#06B6D4", "#EC4899"]
-                                      : ["#10B981", "#8B5CF6", "#3F63AD", "#06B6D4", "#F59E0B"];
-                                    return (
-                                      <Cell 
-                                        key={i} 
-                                        fill={pieColors[i % pieColors.length]} 
-                                        className="cursor-pointer hover:opacity-80 transition-opacity"
-                                        onClick={() => {
-                                          if (expenseViewTab === "purpose") {
-                                            setExpenseModalModeFilter("all");
-                                            setSearchQuery(entry.category);
-                                          } else {
-                                            setExpenseModalModeFilter(entry.mode);
-                                          }
-                                          setActiveModal("expenses");
-                                        }}
-                                      />
-                                    );
-                                  })
-                                ) : (
-                                  <Cell fill="#E2E8F0" />
-                                )}
-                              </Pie>
-                              <Tooltip
-                                formatter={(v: any) => [`${indianNumberFormat(expTotal > 0 ? Number(v) : 0)}`, "Amount"]}
-                                position={{ x: 0, y: -10 }}
-                                wrapperStyle={{ zIndex: 20 }}
-                              />
-                            </PieChart>
-                          </ResponsiveContainer>
+                          <DashboardExpenseDonut
+                            data={expenseViewTab === "purpose" ? categories : modes}
+                            hasData={expTotal > 0}
+                            colors={expenseViewTab === "purpose"
+                              ? ["#F43F5E", "#F59E0B", "#3F63AD", "#10B981", "#8B5CF6", "#06B6D4", "#EC4899"]
+                              : ["#10B981", "#8B5CF6", "#3F63AD", "#06B6D4", "#F59E0B"]}
+                            onSliceClick={(entry: any) => {
+                              if (expenseViewTab === "purpose") {
+                                setExpenseModalModeFilter("all");
+                                setSearchQuery(entry.category);
+                              } else {
+                                setExpenseModalModeFilter(entry.mode);
+                              }
+                              setActiveModal("expenses");
+                            }}
+                            formatAmount={(v: any) => `${indianNumberFormat(expTotal > 0 ? Number(v) : 0)}`}
+                          />
                           <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                             <span className="text-[7px] font-black text-slate-400 uppercase">EXP</span>
                             <span className="text-[11px] font-black text-rose-600 font-mono">
