@@ -10,6 +10,7 @@ import { getShift } from "@/lib/shift-settings";
 import { publishChange } from "@/lib/realtime";
 import { awayTooLongAlerts, closeAwayAtCheckout } from "@/lib/presence";
 import { ensureIndexesOnce } from "@/lib/ensure-indexes";
+import { readStaff } from "@/lib/repo/staff/shadow-read";
 
 /** Everyone who works at the store (not the Admin, not outside suppliers). */
 const STAFF_ROLES = ["salesman", "sales", "cashier", "manager", "warehouse", "accounts", "hr", "driver"];
@@ -34,10 +35,13 @@ async function claim(key: string): Promise<boolean> {
  * Used for the "please check in" reminders, which go to these people and nobody else.
  */
 export async function staffNotCheckedIn(day: string): Promise<any[]> {
-  const staff: any[] = await User.find({ role: { $in: STAFF_ROLES }, status: { $nin: ["inactive", "terminated", "suspended"] } }).select("name role").lean();
-  const todays: any[] = await Attendance.find({ date: day }, { staffName: 1, checkInTime: 1, status: 1 }).lean();
+  // The three reads go through the read:staff switch (lib/repo/staff/shadow-read.ts), the same queries as before:
+  // working staff (name, role), the day's check-ins, approved leave (not breaks) covering the day. They only decide
+  // who is reminded; the alerts below that change records (breaks over, auto check-out) still read MongoDB.
+  const staff: any[] = await readStaff("users.workingStaff");
+  const todays: any[] = await readStaff("attendance.dayCheckins", day);
   const here = new Set(todays.filter((a) => (a.checkInTime && a.checkInTime !== "--") || a.status === "On Leave").map((a) => normName(a.staffName)));
-  const away: any[] = await LeaveRequest.find({ status: "approved", kind: { $ne: "break" }, fromDate: { $lte: day }, toDate: { $gte: day } }, { staffName: 1 }).lean();
+  const away: any[] = await readStaff("leave.approvedAwayOn", day);
   for (const l of away) here.add(normName(l.staffName));
   return staff.filter((u) => !here.has(normName(u.name)));
 }

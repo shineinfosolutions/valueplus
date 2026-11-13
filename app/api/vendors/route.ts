@@ -4,6 +4,7 @@ import Vendor from "@/models/Vendor";
 import VendorBill from "@/models/VendorBill";
 import VendorPayment from "@/models/VendorPayment";
 import { requirePermission } from "@/lib/requirePermission";
+import { readStock } from "@/lib/repo/stock/shadow-read";
 
 function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -28,14 +29,12 @@ export async function GET(req: Request) {
   if (!gate.ok) return gate.response;
 
   try {
-    await connectToDatabase();
     const { searchParams } = new URL(req.url);
     const status = searchParams.get("status");
 
-    const filter: any = {};
-    if (status && status !== "all") filter.status = status;
-
-    const vendors = await Vendor.find(filter).sort({ createdAt: -1 }).lean();
+    // Through the read:stock switch (lib/repo/stock/shadow-read.ts): MongoDB, MongoDB compared with D1, or D1.
+    // One status unless "all"; newest first.
+    const vendors = await readStock("vendors.list", { status });
     return NextResponse.json({ success: true, data: vendors });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

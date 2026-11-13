@@ -3,6 +3,7 @@ import connectToDatabase from "@/lib/db";
 import RolePermission from "@/models/RolePermission";
 import { requirePermission, invalidatePermissionCache } from "@/lib/requirePermission";
 import { ALL_PERMISSIONS, Permission, defaultPermissionsForRole } from "@/lib/permissions";
+import { readStaff } from "@/lib/repo/staff/shadow-read";
 
 /** Roles that can be configured. Mirrors the enum on the User model. */
 const CONFIGURABLE_ROLES = [
@@ -22,8 +23,8 @@ export async function GET() {
   if (!gate.ok) return gate.response;
 
   try {
-    await connectToDatabase();
-    const stored = await RolePermission.find({}).lean();
+    // Through the read:staff switch (lib/repo/staff/shadow-read.ts).
+    const stored: any[] = await readStaff("rolePermissions.all");
     const overrides = new Map<string, string[]>();
     for (const row of stored as any[]) {
       overrides.set(String(row.role).toLowerCase(), row.permissions || []);

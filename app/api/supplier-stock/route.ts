@@ -7,6 +7,7 @@ import { getActor } from "@/lib/requirePermission";
 import { notifyAssignee } from "@/lib/notify";
 import { parseSupplierStockSheet, STOCK_UPLOAD_ROLES } from "@/lib/supplier-stock";
 import { todayInIndia } from "@/lib/today";
+import { readStock } from "@/lib/repo/stock/shadow-read";
 
 const istDay = (d: any) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date(d));
 
@@ -20,14 +21,14 @@ export async function GET() {
   try {
     const actor = await getActor();
     if (!actor) return NextResponse.json({ success: false, error: "You must be signed in to do this." }, { status: 401 });
-    await connectToDatabase();
-    const lastUpload: any = await SupplierStockUpload.findOne({}).sort({ createdAt: -1 }).lean();
+    // Both reads go through the read:stock switch (lib/repo/stock/shadow-read.ts).
+    const lastUpload: any = await readStock("supplierStock.lastUpload", {});
     // The stock sheet is uploaded every day. If today's has not been uploaded yet, yesterday's stock is
     // not shown (it may be sold or changed), so nothing can be ordered from it.
     const stale = !lastUpload || istDay(lastUpload.createdAt) !== todayInIndia();
     const items = stale
       ? []
-      : await SupplierStockItem.find({ active: true, availableStock: { $gt: 0 } }).sort({ isNewArrival: -1, brand: 1, description: 1 }).lean();
+      : await readStock("supplierStock.items", {});
     return NextResponse.json({ success: true, data: items, lastUpload, stale });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

@@ -5,6 +5,7 @@ import { getActor } from "@/lib/requirePermission";
 import { recordPresence } from "@/lib/presence";
 import { GEOFENCE_ROLES } from "@/lib/store-location";
 import { todayInIndia } from "@/lib/today";
+import { readStaff } from "@/lib/repo/staff/shadow-read";
 
 export const dynamic = "force-dynamic";
 
@@ -60,13 +61,9 @@ export async function GET(req: Request) {
     const date = searchParams.get("date") || todayInIndia();
     const staff = searchParams.get("staff");
 
-    await connectToDatabase();
-    const filter: any = { date };
-    if (staff) filter.staffName = staff;
-    const rows: any[] = await Attendance.find(filter)
-      .select("staffName staffRole date checkInTime checkOutTime awayPeriods totalAwayMinutes unknownMinutes lastPresence")
-      .sort({ staffName: 1 })
-      .lean();
+    // Through the read:staff switch (lib/repo/staff/shadow-read.ts): MongoDB, MongoDB compared with D1, or D1.
+    // The day's rows (one person if asked) with the presence fields, by name.
+    const rows: any[] = await readStaff("attendance.presenceRows", date, staff);
 
     const outsideNow = rows
       .map((r) => {

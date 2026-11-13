@@ -4,6 +4,7 @@ import connectToDatabase from "@/lib/db";
 import User from "@/models/User";
 import { getActor } from "@/lib/requirePermission";
 import { brandSalesFor } from "@/lib/staff-brand-sales";
+import { readStaff } from "@/lib/repo/staff/shadow-read";
 
 export const dynamic = "force-dynamic";
 
@@ -30,13 +31,14 @@ export async function GET(req: Request) {
     if (id) {
       if (!VIEW_ROLES.includes(actor.role)) return NextResponse.json({ success: false, error: "Only the Admin or Store Manager can see this." }, { status: 403 });
       if (!mongoose.isValidObjectId(id)) return NextResponse.json({ success: false, error: "Staff member not found." }, { status: 400 });
-      const user: any = await User.findById(id).select("name assignedBrand").lean();
+      // The user through the read:staff switch (lib/repo/staff/shadow-read.ts); the sales figures are brandSalesFor's.
+      const user: any = await readStaff("users.findById", id, "name assignedBrand");
       if (!user) return NextResponse.json({ success: false, error: "Staff member not found." }, { status: 404 });
       return NextResponse.json({ success: true, data: { range, ...(await brandSalesFor(user.name, user.assignedBrand || "", from, to)) } });
     }
 
     // A person's own figures: pieces only, no amounts, and the name comes from the login.
-    const me: any = await User.findById(actor.id).select("assignedBrand").lean();
+    const me: any = await readStaff("users.findById", actor.id, "assignedBrand");
     const full = await brandSalesFor(actor.name, me?.assignedBrand || "", from, to);
     return NextResponse.json({
       success: true,

@@ -4,11 +4,12 @@ import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import StockAdjustment from "@/models/StockAdjustment";
 import { applyStockMovement } from "@/lib/stock";
+import { readStock } from "@/lib/repo/stock/shadow-read";
 
 export async function GET() {
   try {
-    await connectToDatabase();
-    const adjustments = await StockAdjustment.find({}).sort({ createdAt: -1 }).lean();
+    // Read through the read:stock switch (lib/repo/stock/shadow-read.ts): MongoDB, MongoDB compared with D1, or D1.
+    const adjustments = await readStock("stockAdjustments.list", {});
     return NextResponse.json({ success: true, data: adjustments });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

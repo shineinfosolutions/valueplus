@@ -3,12 +3,15 @@ import connectToDatabase from "@/lib/db";
 import PurchaseEntry from "@/models/PurchaseEntry";
 import Item from "@/models/Item";
 import Invoice from "@/models/Invoice";
+import { readStock } from "@/lib/repo/stock/shadow-read";
 
 export async function GET() {
   try {
     await connectToDatabase();
 
-    const purchaseEntries = await PurchaseEntry.find({}).sort({ createdAt: -1 }).lean();
+    // The purchase bills read through the read:stock switch (lib/repo/stock/shadow-read.ts); items and invoices
+    // belong to other areas and still read MongoDB.
+    const purchaseEntries: any[] = await readStock("purchaseEntries.allNewestFirst", {});
     const items = await Item.find({}).sort({ updatedAt: -1 }).lean();
     const invoices = await Invoice.find({}).sort({ createdAt: -1 }).lean();
 

@@ -31,15 +31,22 @@ export function setStaffD1(db: D1DatabaseLike | null) {
   override = db;
 }
 
-function d1(): D1DatabaseLike {
-  const db = override ?? getD1();
+/**
+ * The database a read uses: the one the caller passes (the shadow-read framework passes the database it resolved),
+ * else the one given to setStaffD1, else the Worker binding. Every read below takes it as its FIRST argument, so the
+ * read's own optional arguments never get mixed up with it.
+ */
+export type DbArg = D1DatabaseLike | null | undefined;
+
+function d1(given?: DbArg): D1DatabaseLike {
+  const db = given ?? override ?? getD1();
   if (!db) throw new Error("D1 is not available here");
   return db;
 }
 
 /** SELECT * from a table, rebuilt into the Mongo documents (in the query's order). */
-async function docs(collection: string, table: string, where: string, order: string, args: unknown[], limit?: number): Promise<any[]> {
-  const db = d1();
+async function docs(given: DbArg, collection: string, table: string, where: string, order: string, args: unknown[], limit?: number): Promise<any[]> {
+  const db = d1(given);
   const sql = `SELECT * FROM ${table}${where ? ` WHERE ${where}` : ""} ORDER BY ${order}${limit !== undefined ? ` LIMIT ${Math.trunc(limit)}` : ""}`;
   const rows = await all(db, sql, ...args);
   return rowsToDocs(db, collection, rows);
@@ -61,74 +68,74 @@ function idArg(id: string): string {
 // users
 // ---------------------------------------------------------------------------
 
-export async function usersList() {
-  const list = await docs("users", "users", "", "createdAt DESC, id", []);
+export async function usersList(db: DbArg) {
+  const list = await docs(db, "users", "users", "", "createdAt DESC, id", []);
   return list.map((u) => project("users", u, "-password"));
 }
 
-export async function authLoginLookup(inputIdentifier: string) {
-  const list = await docs("users", "users", `${likeExact("email")} OR mobile = ?`, "id", [likeLiteral(inputIdentifier), inputIdentifier], 1);
+export async function authLoginLookup(db: DbArg, inputIdentifier: string) {
+  const list = await docs(db, "users", "users", `${likeExact("email")} OR mobile = ?`, "id", [likeLiteral(inputIdentifier), inputIdentifier], 1);
   return list.length ? project("users", list[0], undefined) : null;
 }
 
-export async function usersFindById(id: string, select?: string) {
-  const list = await docs("users", "users", "id = ?", "id", [idArg(id)], 1);
+export async function usersFindById(db: DbArg, id: string, select?: string) {
+  const list = await docs(db, "users", "users", "id = ?", "id", [idArg(id)], 1);
   return list.length ? project("users", list[0], select) : null;
 }
 
-export async function usersActive() {
-  const list = await docs("users", "users", "status = 'active'", "id", []);
+export async function usersActive(db: DbArg) {
+  const list = await docs(db, "users", "users", "status = 'active'", "id", []);
   return list.map((u) => project("users", u, undefined));
 }
 
-export async function usersDirectory() {
-  const list = await docs("users", "users", "role IS NULL OR role NOT IN ('supplier', 'vendor')", "name, id", []);
+export async function usersDirectory(db: DbArg) {
+  const list = await docs(db, "users", "users", "role IS NULL OR role NOT IN ('supplier', 'vendor')", "name, id", []);
   return list.map((u) => project("users", u, "name email role mobile designation status joiningDate assignedBrand"));
 }
 
-export async function usersSecurityPinState(id: string) {
-  const list = await docs("users", "users", "id = ?", "id", [idArg(id)], 1);
+export async function usersSecurityPinState(db: DbArg, id: string) {
+  const list = await docs(db, "users", "users", "id = ?", "id", [idArg(id)], 1);
   return list.length ? hydrateJson("users", list[0], "+securityPin +pinLockedUntil") : null;
 }
 
-export async function usersIdByExactName(name: string) {
-  const list = await docs("users", "users", likeExactTrimmed("name"), "id", [PCRE_WS, likeLiteral(name.trim())], 1);
+export async function usersIdByExactName(db: DbArg, name: string) {
+  const list = await docs(db, "users", "users", likeExactTrimmed("name"), "id", [PCRE_WS, likeLiteral(name.trim())], 1);
   return list.length ? project("users", list[0], { _id: 1 }) : null;
 }
 
-export async function usersNotifyById(assigneeId: string) {
+export async function usersNotifyById(db: DbArg, assigneeId: string) {
   if (!isObjectIdHex(assigneeId)) return [];
-  const list = await docs("users", "users", "id = ?", "id", [assigneeId.toLowerCase()]);
+  const list = await docs(db, "users", "users", "id = ?", "id", [assigneeId.toLowerCase()]);
   return list.map((u) => project("users", u, { name: 1 }));
 }
 
-export async function usersNotifyAllStaff() {
-  const list = await docs("users", "users", `${ACTIVE_SQL} AND (role IS NULL OR role NOT IN ('admin', 'superadmin'))`, "id", []);
+export async function usersNotifyAllStaff(db: DbArg) {
+  const list = await docs(db, "users", "users", `${ACTIVE_SQL} AND (role IS NULL OR role NOT IN ('admin', 'superadmin'))`, "id", []);
   return list.map((u) => project("users", u, { name: 1 }));
 }
 
-export async function usersNotifySalesStaff() {
-  const list = await docs("users", "users", `${ACTIVE_SQL} AND role IN ('salesman', 'sales')`, "id", []);
+export async function usersNotifySalesStaff(db: DbArg) {
+  const list = await docs(db, "users", "users", `${ACTIVE_SQL} AND role IN ('salesman', 'sales')`, "id", []);
   return list.map((u) => project("users", u, { name: 1 }));
 }
 
-export async function usersNotifyByName(name: string) {
-  const list = await docs("users", "users", likeExact("name"), "id", [likeLiteral(name)]);
+export async function usersNotifyByName(db: DbArg, name: string) {
+  const list = await docs(db, "users", "users", likeExact("name"), "id", [likeLiteral(name)]);
   return list.map((u) => project("users", u, { name: 1 }));
 }
 
-export async function usersNotifyRoles(roles: string[]) {
-  const list = await docs("users", "users", `${ACTIVE_SQL} AND ${IN_JSON("role")}`, "id", [JSON.stringify(roles)]);
+export async function usersNotifyRoles(db: DbArg, roles: string[]) {
+  const list = await docs(db, "users", "users", `${ACTIVE_SQL} AND ${IN_JSON("role")}`, "id", [JSON.stringify(roles)]);
   return list.map((u) => project("users", u, { name: 1 }));
 }
 
-export async function usersNotifyEmail(e: string) {
-  const list = await docs("users", "users", likeExact("email"), "id", [likeLiteral(e)]);
+export async function usersNotifyEmail(db: DbArg, e: string) {
+  const list = await docs(db, "users", "users", likeExact("email"), "id", [likeLiteral(e)]);
   return list.map((u) => project("users", u, { name: 1 }));
 }
 
-export async function usersWorkingStaff() {
-  const list = await docs(
+export async function usersWorkingStaff(db: DbArg) {
+  const list = await docs(db, 
     "users",
     "users",
     `${IN_JSON("role")} AND (status IS NULL OR status NOT IN ('inactive', 'terminated', 'suspended'))`,
@@ -142,15 +149,15 @@ export async function usersWorkingStaff() {
 // role permissions
 // ---------------------------------------------------------------------------
 
-export async function rolePermissionsAll() {
-  return docs("role_permissions", "rolePermissions", "", "id", []);
+export async function rolePermissionsAll(db: DbArg) {
+  return docs(db, "role_permissions", "rolePermissions", "", "id", []);
 }
 
 // ---------------------------------------------------------------------------
 // attendance
 // ---------------------------------------------------------------------------
 
-export async function attendanceList(a: AttendanceListArgs) {
+export async function attendanceList(db: DbArg, a: AttendanceListArgs) {
   const { dateParam, staffName, staffId, month, today } = a;
   const where: string[] = [];
   const args: unknown[] = [];
@@ -181,54 +188,54 @@ export async function attendanceList(a: AttendanceListArgs) {
     where.push("staffId = ?");
     args.push(staffId);
   }
-  let list = await docs("attendance", "attendance", where.join(" AND "), "date DESC, createdAt DESC, id", args);
+  let list = await docs(db, "attendance", "attendance", where.join(" AND "), "date DESC, createdAt DESC, id", args);
   if (monthRx) list = list.filter((r) => typeof r.date === "string" && monthRx!.test(r.date));
   return list;
 }
 
-export async function attendancePhotoRef(id: string) {
-  const list = await docs("attendance", "attendance", "id = ?", "id", [idArg(id)], 1);
+export async function attendancePhotoRef(db: DbArg, id: string) {
+  const list = await docs(db, "attendance", "attendance", "id = ?", "id", [idArg(id)], 1);
   return list.length ? project("attendance", list[0], "checkInPhotoKey userId staffId staffName") : null;
 }
 
-export async function attendanceBetween(from: string, to: string) {
-  return docs("attendance", "attendance", "date >= ? AND date <= ?", "date DESC, id", [from, to]);
+export async function attendanceBetween(db: DbArg, from: string, to: string) {
+  return docs(db, "attendance", "attendance", "date >= ? AND date <= ?", "date DESC, id", [from, to]);
 }
 
-export async function attendanceOverviewDay(today: string) {
-  const list = await docs("attendance", "attendance", "date = ?", "id", [today]);
+export async function attendanceOverviewDay(db: DbArg, today: string) {
+  const list = await docs(db, "attendance", "attendance", "date = ?", "id", [today]);
   return list.map((r) => project("attendance", r, { staffName: 1, checkInTime: 1, checkOutTime: 1, status: 1, lateMinutes: 1, isLate: 1 }));
 }
 
-export async function attendanceRecentForStaff(staffName: string) {
-  return docs("attendance", "attendance", "staffName = ?", "date DESC, id", [staffName], 60);
+export async function attendanceRecentForStaff(db: DbArg, staffName: string) {
+  return docs(db, "attendance", "attendance", "staffName = ?", "date DESC, id", [staffName], 60);
 }
 
-export async function attendancePresenceRows(date: string, staff?: string | null) {
+export async function attendancePresenceRows(db: DbArg, date: string, staff?: string | null) {
   const where = ["date = ?"];
   const args: unknown[] = [date];
   if (staff) {
     where.push("staffName = ?");
     args.push(staff);
   }
-  const list = await docs("attendance", "attendance", where.join(" AND "), "staffName, id", args);
+  const list = await docs(db, "attendance", "attendance", where.join(" AND "), "staffName, id", args);
   return list.map((r) =>
     project("attendance", r, "staffName staffRole date checkInTime checkOutTime awayPeriods totalAwayMinutes unknownMinutes lastPresence")
   );
 }
 
-export async function attendanceDayCheckins(day: string) {
-  const list = await docs("attendance", "attendance", "date = ?", "id", [day]);
+export async function attendanceDayCheckins(db: DbArg, day: string) {
+  const list = await docs(db, "attendance", "attendance", "date = ?", "id", [day]);
   return list.map((r) => project("attendance", r, { staffName: 1, checkInTime: 1, status: 1 }));
 }
 
-export async function attendanceFindByStaffDate(staffName: string, date: string) {
-  const list = await docs("attendance", "attendance", "staffName = ? AND date = ?", "id", [staffName, date], 1);
+export async function attendanceFindByStaffDate(db: DbArg, staffName: string, date: string) {
+  const list = await docs(db, "attendance", "attendance", "staffName = ? AND date = ?", "id", [staffName, date], 1);
   return list.length ? hydrateJson("attendance", list[0]) : null;
 }
 
-export async function attendanceAutoCheckoutCandidates(day: string) {
-  const list = await docs(
+export async function attendanceAutoCheckoutCandidates(db: DbArg, day: string) {
+  const list = await docs(db, 
     "attendance",
     "attendance",
     [
@@ -245,8 +252,8 @@ export async function attendanceAutoCheckoutCandidates(day: string) {
 
 const isObj = (v: any) => v !== null && typeof v === "object" && !Array.isArray(v);
 
-export async function attendanceOpenAway(today: string) {
-  const list = await docs("attendance", "attendance", "date = ? AND awayPeriods IS NOT NULL", "id", [today]);
+export async function attendanceOpenAway(db: DbArg, today: string) {
+  const list = await docs(db, "attendance", "attendance", "date = ? AND awayPeriods IS NOT NULL", "id", [today]);
   return list
     .filter((r) => Array.isArray(r.awayPeriods) && r.awayPeriods.some((p: any) => isObj(p) && !("backAt" in p) && ["away", "break"].includes(p.kind)))
     .map((r) => hydrateJson("attendance", r));
@@ -256,7 +263,7 @@ export async function attendanceOpenAway(today: string) {
 // leave requests
 // ---------------------------------------------------------------------------
 
-export async function leaveList(a: LeaveListArgs) {
+export async function leaveList(db: DbArg, a: LeaveListArgs) {
   const where: string[] = [];
   const args: unknown[] = [];
   if (a.status) {
@@ -270,15 +277,15 @@ export async function leaveList(a: LeaveListArgs) {
     where.push(IN_JSON("kind"));
     args.push(JSON.stringify(a.kinds));
   }
-  return docs("leaverequests", "leaveRequests", where.join(" AND "), "createdAt DESC, id", args, 1000);
+  return docs(db, "leaverequests", "leaveRequests", where.join(" AND "), "createdAt DESC, id", args, 1000);
 }
 
-export async function leaveForStaffBetween(from: string, to: string, staffId: string, staffName: string) {
-  return docs("leaverequests", "leaveRequests", "fromDate <= ? AND toDate >= ? AND (staffId = ? OR staffName = ?)", "fromDate DESC, id", [to, from, staffId, staffName]);
+export async function leaveForStaffBetween(db: DbArg, from: string, to: string, staffId: string, staffName: string) {
+  return docs(db, "leaverequests", "leaveRequests", "fromDate <= ? AND toDate >= ? AND (staffId = ? OR staffName = ?)", "fromDate DESC, id", [to, from, staffId, staffName]);
 }
 
-export async function leaveApprovedAwayOn(day: string) {
-  const list = await docs(
+export async function leaveApprovedAwayOn(db: DbArg, day: string) {
+  const list = await docs(db, 
     "leaverequests",
     "leaveRequests",
     "status = 'approved' AND (kind IS NULL OR kind <> 'break') AND fromDate <= ? AND toDate >= ?",
@@ -288,8 +295,8 @@ export async function leaveApprovedAwayOn(day: string) {
   return list.map((r) => project("leaverequests", r, { staffName: 1 }));
 }
 
-export async function leaveBreakOverCandidates(now: Date) {
-  const list = await docs(
+export async function leaveBreakOverCandidates(db: DbArg, now: Date) {
+  const list = await docs(db, 
     "leaverequests",
     "leaveRequests",
     "kind = 'break' AND status = 'approved' AND breakStartedAt IS NOT NULL AND breakEndsAt <= ? AND breakReturnedAt IS NULL",
@@ -299,9 +306,9 @@ export async function leaveBreakOverCandidates(now: Date) {
   return list.map((r) => hydrateJson("leaverequests", r));
 }
 
-export async function leaveRunningBreak(staffName: string, now: Date) {
+export async function leaveRunningBreak(db: DbArg, staffName: string, now: Date) {
   const iso = now.toISOString();
-  const list = await docs(
+  const list = await docs(db, 
     "leaverequests",
     "leaveRequests",
     "staffName = ? AND kind = 'break' AND status = 'approved' AND breakStartedAt <= ? AND breakEndsAt >= ? AND breakReturnedAt IS NULL",
@@ -316,7 +323,7 @@ export async function leaveRunningBreak(staffName: string, now: Date) {
 // staff tasks
 // ---------------------------------------------------------------------------
 
-export async function tasksList(a: TaskListArgs) {
+export async function tasksList(db: DbArg, a: TaskListArgs) {
   const { actor, staff: assignedStaff, status } = a;
   const where: string[] = [];
   const args: unknown[] = [];
@@ -346,16 +353,16 @@ export async function tasksList(a: TaskListArgs) {
     where.push("status = ?");
     args.push(status);
   }
-  return docs("staff_tasks", "staffTasks", where.join(" AND "), "dueDate, createdAt DESC, id", args);
+  return docs(db, "staff_tasks", "staffTasks", where.join(" AND "), "dueDate, createdAt DESC, id", args);
 }
 
-export async function tasksOwnership() {
-  const list = await docs("staff_tasks", "staffTasks", "", "id", []);
+export async function tasksOwnership(db: DbArg) {
+  const list = await docs(db, "staff_tasks", "staffTasks", "", "id", []);
   return list.map((t) => project("staff_tasks", t, { assignedStaff: 1, assignedStaffId: 1, status: 1 }));
 }
 
-export async function tasksFindById(id: string) {
-  const list = await docs("staff_tasks", "staffTasks", "id = ?", "id", [idArg(id)], 1);
+export async function tasksFindById(db: DbArg, id: string) {
+  const list = await docs(db, "staff_tasks", "staffTasks", "id = ?", "id", [idArg(id)], 1);
   return list.length ? list[0] : null;
 }
 
@@ -363,7 +370,7 @@ export async function tasksFindById(id: string) {
 // salaries and incentive payouts
 // ---------------------------------------------------------------------------
 
-export async function salariesList(month?: string | null, employeeId?: string | null) {
+export async function salariesList(db: DbArg, month?: string | null, employeeId?: string | null) {
   const where: string[] = [];
   const args: unknown[] = [];
   if (month) {
@@ -374,21 +381,21 @@ export async function salariesList(month?: string | null, employeeId?: string | 
     where.push("employeeId = ?");
     args.push(employeeId);
   }
-  const list = await docs("salaries", "salaries", where.join(" AND "), "employeeName, id", args);
+  const list = await docs(db, "salaries", "salaries", where.join(" AND "), "employeeName, id", args);
   return list.map((s) => hydrateJson("salaries", s));
 }
 
-export async function salariesPaidIncentives() {
-  const list = await docs("salaries", "salaries", "paymentStatus = 'Paid'", "id", []);
+export async function salariesPaidIncentives(db: DbArg) {
+  const list = await docs(db, "salaries", "salaries", "paymentStatus = 'Paid'", "id", []);
   return list.map((s) => project("salaries", s, { employeeName: 1, incentives: 1 }));
 }
 
-export async function payoutsForUser(userId: string, limit?: number) {
-  return docs("incentive_payouts", "incentivePayouts", "userId = ?", "date DESC, createdAt DESC, id", [userId], limit ? Math.abs(limit) : undefined);
+export async function payoutsForUser(db: DbArg, userId: string, limit?: number) {
+  return docs(db, "incentive_payouts", "incentivePayouts", "userId = ?", "date DESC, createdAt DESC, id", [userId], limit ? Math.abs(limit) : undefined);
 }
 
-export async function payoutsAmounts() {
-  const list = await docs("incentive_payouts", "incentivePayouts", "", "id", []);
+export async function payoutsAmounts(db: DbArg) {
+  const list = await docs(db, "incentive_payouts", "incentivePayouts", "", "id", []);
   return list.map((p) => project("incentive_payouts", p, { userId: 1, amount: 1 }));
 }
 
@@ -396,18 +403,18 @@ export async function payoutsAmounts() {
 // settings
 // ---------------------------------------------------------------------------
 
-export async function shiftLatest() {
-  const list = await docs("shift_settings", "shiftSettings", "", "updatedAt DESC, id", [], 1);
+export async function shiftLatest(db: DbArg) {
+  const list = await docs(db, "shift_settings", "shiftSettings", "", "updatedAt DESC, id", [], 1);
   return list.length ? hydrateJson("shift_settings", list[0]) : null;
 }
 
-export async function priceUnlockSetting() {
-  const list = await docs("price_unlock_settings", "priceUnlockSettings", "key = 'price-unlock'", "id", [], 1);
+export async function priceUnlockSetting(db: DbArg) {
+  const list = await docs(db, "price_unlock_settings", "priceUnlockSettings", "key = 'price-unlock'", "id", [], 1);
   return list.length ? list[0] : null;
 }
 
-export async function scheduledRunExists(key: string) {
-  const rows = await all(d1(), "SELECT id FROM scheduledRuns WHERE key = ? ORDER BY id LIMIT 1", key);
+export async function scheduledRunExists(db: DbArg, key: string) {
+  const rows = await all(d1(db), "SELECT id FROM scheduledRuns WHERE key = ? ORDER BY id LIMIT 1", key);
   return rows.length ? { _id: rows[0].id } : null;
 }
 
@@ -415,40 +422,40 @@ export async function scheduledRunExists(key: string) {
 // notifications and push
 // ---------------------------------------------------------------------------
 
-export async function notificationsLatest(recipientId: string) {
-  return docs("notifications", "notifications", "recipientId = ?", "createdAt DESC, id", [recipientId], 30);
+export async function notificationsLatest(db: DbArg, recipientId: string) {
+  return docs(db, "notifications", "notifications", "recipientId = ?", "createdAt DESC, id", [recipientId], 30);
 }
 
-export async function notificationsUnreadCount(recipientId: string) {
-  const rows = await all(d1(), "SELECT COUNT(*) AS n FROM notifications WHERE recipientId = ? AND readAt IS NULL", recipientId);
+export async function notificationsUnreadCount(db: DbArg, recipientId: string) {
+  const rows = await all(d1(db), "SELECT COUNT(*) AS n FROM notifications WHERE recipientId = ? AND readAt IS NULL", recipientId);
   return Number(rows[0]?.n ?? 0);
 }
 
-export async function notificationsUnreadTaskRefs(recipientId: string, id?: string) {
+export async function notificationsUnreadTaskRefs(db: DbArg, recipientId: string, id?: string) {
   const where = ["recipientId = ?", "readAt IS NULL", "refType = 'task'"];
   const args: unknown[] = [recipientId];
   if (id) {
     where.unshift("id = ?");
     args.unshift(idArg(id));
   }
-  const list = await docs("notifications", "notifications", where.join(" AND "), "id", args);
+  const list = await docs(db, "notifications", "notifications", where.join(" AND "), "id", args);
   return list.map((n) => project("notifications", n, { refId: 1 }));
 }
 
-export async function pushIdsForUser(userId: string) {
-  const rows: Row[] = await all(d1(), "SELECT id FROM pushSubscriptions WHERE userId = ? ORDER BY updatedAt DESC, id", userId);
+export async function pushIdsForUser(db: DbArg, userId: string) {
+  const rows: Row[] = await all(d1(db), "SELECT id FROM pushSubscriptions WHERE userId = ? ORDER BY updatedAt DESC, id", userId);
   return rows.map((r) => ({ _id: r.id }));
 }
 
-export async function pushSubsForUsers(userIds: string[]) {
-  return docs("push_subscriptions", "pushSubscriptions", IN_JSON("userId"), "id", [JSON.stringify(userIds.map(String))], 300);
+export async function pushSubsForUsers(db: DbArg, userIds: string[]) {
+  return docs(db, "push_subscriptions", "pushSubscriptions", IN_JSON("userId"), "id", [JSON.stringify(userIds.map(String))], 300);
 }
 
 // ---------------------------------------------------------------------------
 // audit
 // ---------------------------------------------------------------------------
 
-export async function auditList(a: AuditListArgs) {
+export async function auditList(db: DbArg, a: AuditListArgs) {
   const { action, from, to } = a;
   const q = (a.q || "").trim();
   const limit = Math.min(Number(a.limit) || 200, 1000);
@@ -476,5 +483,5 @@ export async function auditList(a: AuditListArgs) {
     where.push(`(entityRef LIKE ? ${ESC} OR partyName LIKE ? ${ESC} OR performedBy LIKE ? ${ESC} OR reason LIKE ? ${ESC})`);
     args.push(pat, pat, pat, pat);
   }
-  return docs("audit_logs", "auditLogs", where.join(" AND "), "createdAt DESC, id", args, limit < 0 ? -limit : limit);
+  return docs(db, "audit_logs", "auditLogs", where.join(" AND "), "createdAt DESC, id", args, limit < 0 ? -limit : limit);
 }

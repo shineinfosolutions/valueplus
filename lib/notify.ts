@@ -1,7 +1,7 @@
-import User from "@/models/User";
 import Notification, { INotification } from "@/models/Notification";
 import { pushToUsers } from "@/lib/push";
 import { publishChange } from "@/lib/realtime";
+import { readStaff } from "@/lib/repo/staff/shadow-read";
 
 /**
  * Send a notification to the bell of one or more users. Best-effort: a failure
@@ -46,24 +46,28 @@ async function send(recipients: Recipient[], input: NotifyInput): Promise<number
   return unique.size;
 }
 
-const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const ACTIVE = { $or: [{ status: "active" }, { status: { $exists: false } }] };
 
-/** Users addressed by a task's "Assign To": a person's name, "All Staff" or "Sales Staff". */
+/**
+ * Users addressed by a task's "Assign To": a person's name, "All Staff" or "Sales Staff".
+ * Every user look-up in this file goes through the read:staff switch (lib/repo/staff/shadow-read.ts); the queries
+ * are the same (lib/repo/staff/mongo.ts usersNotify*): {_id, name} of the matching users. ACTIVE there is "status
+ * active or no status".
+ */
 export async function usersForAssignee(assignee: string, assigneeId?: string): Promise<Recipient[]> {
   const name = String(assignee || "").trim();
   if (assigneeId) {
-    const byId = await User.find({ _id: assigneeId }, { name: 1 }).lean().catch(() => []);
-    if ((byId as any[]).length) return byId as any[];
+    // An id that is not an ObjectId finds nobody (the MongoDB read's cast error is caught, as before).
+    const byId: any[] = await readStaff("users.notifyById", assigneeId);
+    if (byId.length) return byId;
   }
   if (!name || /^admin \(self\)$/i.test(name)) return [];
   if (/^all staff$/i.test(name)) {
-    return (await User.find({ ...ACTIVE, role: { $nin: ["admin", "superadmin"] } }, { name: 1 }).lean()) as any[];
+    return readStaff<Recipient[]>("users.notifyAllStaff");
   }
   if (/^sales staff$/i.test(name)) {
-    return (await User.find({ ...ACTIVE, role: { $in: ["salesman", "sales"] } }, { name: 1 }).lean()) as any[];
+    return readStaff<Recipient[]>("users.notifySalesStaff");
   }
-  return (await User.find({ name: { $regex: new RegExp(`^${escapeRegex(name)}$`, "i") } }, { name: 1 }).lean()) as any[];
+  return readStaff<Recipient[]>("users.notifyByName", name);
 }
 
 export async function notifyAssignee(assignee: string, assigneeId: string | undefined, input: NotifyInput) {
@@ -78,7 +82,7 @@ export async function notifyAssignee(assignee: string, assigneeId: string | unde
 /** Every active admin (the approvers). */
 export async function notifyAdmins(input: NotifyInput) {
   try {
-    const admins = (await User.find({ ...ACTIVE, role: { $in: ["admin", "superadmin"] } }, { name: 1 }).lean()) as any[];
+    const admins: any[] = await readStaff("users.notifyRoles", ["admin", "superadmin"]);
     return await send(admins, input);
   } catch (e) {
     console.warn("Notice: could not notify admins:", e);
@@ -89,7 +93,7 @@ export async function notifyAdmins(input: NotifyInput) {
 /** Every active user with one of these roles (bell + phone notification). */
 export async function notifyRoles(roles: string[], input: NotifyInput, exceptUserId?: string) {
   try {
-    const users = (await User.find({ ...ACTIVE, role: { $in: roles } }, { name: 1 }).lean()) as any[];
+    const users: any[] = await readStaff("users.notifyRoles", roles);
     return await send(users.filter((u) => String(u._id) !== String(exceptUserId || "")), input);
   } catch (e) {
     console.warn("Notice: could not notify roles:", e);
@@ -102,7 +106,7 @@ export async function notifyEmail(email: string, input: NotifyInput) {
   try {
     const e = String(email || "").trim();
     if (!e) return 0;
-    const users = (await User.find({ email: { $regex: new RegExp(`^${escapeRegex(e)}$`, "i") } }, { name: 1 }).lean()) as any[];
+    const users: any[] = await readStaff("users.notifyEmail", e);
     return await send(users, input);
   } catch (err) {
     console.warn("Notice: could not send notification:", err);

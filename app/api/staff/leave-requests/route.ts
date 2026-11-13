@@ -4,6 +4,7 @@ import LeaveRequest from "@/models/LeaveRequest";
 import Attendance from "@/models/Attendance";
 import { getActor } from "@/lib/requirePermission";
 import { notifyRoles, notifyAssignee } from "@/lib/notify";
+import { readStaff } from "@/lib/repo/staff/shadow-read";
 
 export const dynamic = "force-dynamic";
 
@@ -37,15 +38,12 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
     const status = url.searchParams.get("status") || "";
     const mine = url.searchParams.get("mine") === "1";
-    await connectToDatabase();
-    const query: any = {};
-    if (status) query.status = status;
-    if (mine || !VIEWERS.includes(actor.role)) {
-      query.$or = [{ staffId: actor.id }, { staffName: actor.name }];
-    } else if (url.searchParams.get("decidable") === "1") {
-      query.kind = { $in: ["break", "leave", "emergency", "weekly_off"].filter((k) => canDecide(actor.role, k)) };
-    }
-    const rows = await LeaveRequest.find(query).sort({ createdAt: -1 }).limit(1000).lean();
+    // Through the read:staff switch (lib/repo/staff/shadow-read.ts): MongoDB, MongoDB compared with D1, or D1.
+    // leave.list builds the same query: one status if asked; only this person's own requests (by id or name) when
+    // asked or when the role may not see others'; else, for "decidable", only the kinds this role may decide.
+    const mineOf = mine || !VIEWERS.includes(actor.role) ? { id: actor.id, name: actor.name } : null;
+    const kinds = !mineOf && url.searchParams.get("decidable") === "1" ? ["break", "leave", "emergency", "weekly_off"].filter((k) => canDecide(actor.role, k)) : null;
+    const rows = await readStaff("leave.list", { status, mineOf, kinds });
     return NextResponse.json({ success: true, data: rows, role: actor.role });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

@@ -4,6 +4,7 @@ import mongoose from "mongoose";
 import connectToDatabase from "@/lib/db";
 import Attendance from "@/models/Attendance";
 import { getActor } from "@/lib/requirePermission";
+import { readStaff } from "@/lib/repo/staff/shadow-read";
 
 export const dynamic = "force-dynamic";
 
@@ -47,8 +48,8 @@ export async function GET(req: Request) {
     if (!actor) return NextResponse.json({ success: false, error: "You must be signed in to do this." }, { status: 401 });
     const id = new URL(req.url).searchParams.get("id") || "";
     if (!mongoose.isValidObjectId(id)) return NextResponse.json({ success: false, error: "Attendance record not found." }, { status: 400 });
-    await connectToDatabase();
-    const rec: any = await Attendance.findById(id).select("checkInPhotoKey userId staffId staffName").lean();
+    // Through the read:staff switch (lib/repo/staff/shadow-read.ts): MongoDB, MongoDB compared with D1, or D1.
+    const rec: any = await readStaff("attendance.photoRef", id);
     if (!rec?.checkInPhotoKey) return NextResponse.json({ success: false, error: "No photo for this attendance." }, { status: 404 });
     const own = String(rec.userId || rec.staffId || "") === actor.id || rec.staffName === actor.name;
     if (!VIEW_ROLES.includes(actor.role) && !own) {

@@ -3,6 +3,7 @@ import connectToDatabase from "@/lib/db";
 import Item from "@/models/Item";
 import PurchaseEntry from "@/models/PurchaseEntry";
 import { buildAgedStock } from "@/lib/agedStock";
+import { readStock } from "@/lib/repo/stock/shadow-read";
 
 /** Products still in stock whose last purchase was 6+ months or 1+ year ago. */
 export async function GET() {
@@ -14,7 +15,8 @@ export async function GET() {
         { currentStock: { $gt: 0 } },
         { name: 1, code: 1, vpCode: 1, brand: 1, category: 1, currentStock: 1, sellingPrice: 1, purchasePrice: 1, createdAt: 1 }
       ).lean(),
-      PurchaseEntry.find({}, { billDate: 1, date: 1, createdAt: 1, status: 1, type: 1, "items.itemId": 1, "items.name": 1 }).lean(),
+      // Purchase bills through the read:stock switch (lib/repo/stock/shadow-read.ts); the items above stay on MongoDB.
+      readStock<any[]>("purchaseEntries.agedStock", {}),
     ]);
 
     return NextResponse.json({ success: true, data: buildAgedStock(items, purchaseEntries) });

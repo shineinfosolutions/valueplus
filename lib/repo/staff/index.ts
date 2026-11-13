@@ -3,20 +3,30 @@
  * (lib/repo/staff/mongo.ts); `d1` gives the same JSON from D1 (lib/repo/staff/d1.ts). Both take the same arguments.
  * A shadow comparison or a test calls both and compares JSON.stringify of the results (object keys in sorted order:
  * D1 cannot know the order the fields were first saved in). The list of reads, and what each covers, is in
- * lib/repo/staff/INVENTORY.md. Nothing calls these from the routes yet.
+ * lib/repo/staff/INVENTORY.md. The routes call them through readStaff (lib/repo/staff/shadow.ts).
  */
 import * as mongo from "./mongo";
 import * as d1 from "./d1";
+import type { D1DatabaseLike } from "@/lib/d1/types";
 
 export interface ReadPair {
   mongo: (...args: any[]) => Promise<any>;
+  /** The D1 read on the Worker binding (or setStaffD1's database), same arguments as `mongo`. */
   d1: (...args: any[]) => Promise<any>;
+  /** The D1 read on a given database (the shadow-read framework passes the one it resolved), then `mongo`'s arguments. */
+  d1On: (db: D1DatabaseLike | null | undefined, ...args: any[]) => Promise<any>;
 }
 
-const pair = (name: keyof typeof d1 & keyof typeof mongo): ReadPair => ({
-  mongo: mongo[name] as (...args: any[]) => Promise<any>,
-  d1: d1[name] as (...args: any[]) => Promise<any>,
-});
+type D1Read = (db: d1.DbArg, ...args: any[]) => Promise<any>;
+
+const pair = (name: keyof typeof d1 & keyof typeof mongo): ReadPair => {
+  const read = d1[name] as unknown as D1Read;
+  return {
+    mongo: mongo[name] as (...args: any[]) => Promise<any>,
+    d1: (...args: any[]) => read(null, ...args),
+    d1On: (db, ...args) => read(db, ...args),
+  };
+};
 
 export const STAFF_READS: Record<string, ReadPair> = {
   // users

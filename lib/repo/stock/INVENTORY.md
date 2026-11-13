@@ -6,7 +6,16 @@ serial / import preview, or by a lib helper the routes share. Each one is an ent
 the same documents from D1. Parity: `tests/d1-stock-reads.test.ts`.
 
 Files: `purchases.ts`, `inventory.ts`, `vendors.ts`, `cash.ts`; shared row → document code in `d1-doc.ts`.
-Nothing calls these yet: no route was changed.
+The routes call them through `readStock(name, args)` (`shadow-read.ts`: the `read:stock` switch, with the comparison
+rules per read). Test of the wiring: `tests/d1-wiring-stock-staff.test.ts`.
+
+Left on MongoDB on purpose (a read that decides a WRITE, or works on mongoose documents): `purchaseEntries.byBillNo`
+and `serialNumbers.byNumbers` (POST serials, PUT / DELETE purchase entries, change requests), the serial-number
+reconcile's `purchaseEntries.allNatural` (it upserts serials from what it reads), `dayCloses.latest` in POST
+/api/day-close (which day it is about to close), `dayCloses.allAsc` (recompute writes), `bankAccounts.legacy` (the
+one-off clean-up script, which deletes), and the bank-accounts default / IFSC back-fill path (the list itself is
+switched; when it needs a write it reads MongoDB again). The reads of lib/cashRegister.ts, dashboard/stats,
+profit-loss, product-ledger, gstr-reports are wired by their own owner.
 
 ## What "the same" means
 

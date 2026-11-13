@@ -4,6 +4,7 @@ import Category from "@/models/Category";
 import ProductCatalogReference from "@/models/ProductCatalogReference";
 import { getActor } from "@/lib/requirePermission";
 import { extractRowsFromExcel } from "@/lib/purchase-import/excel";
+import { readStock } from "@/lib/repo/stock/shadow-read";
 
 /**
  * Read a stock/reference Excel sheet (Itemcode / Brand / Group Name style,
@@ -145,10 +146,8 @@ export async function POST(req: Request) {
     // twice) before falling back to the word-overlap guess.
     const distinctGroups: string[] = Array.from(new Set(rows.map((r) => r.groupName).filter(Boolean)));
     const priorMappings = distinctGroups.length
-      ? await ProductCatalogReference.find(
-          { groupName: { $in: distinctGroups }, category: { $ne: "" } },
-          { groupName: 1, category: 1 }
-        ).lean()
+      ? // Through the read:stock switch (lib/repo/stock/shadow-read.ts).
+        await readStock<any[]>("productCatalogReferences.groupMappings", { groups: distinctGroups })
       : [];
     const priorByGroup = new Map<string, string>();
     priorMappings.forEach((m: any) => {

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import BankAccount from "@/models/BankAccount";
 import { NOT_LEGACY_CASH_REGISTER } from "@/lib/legacy-rows";
+import { readStock } from "@/lib/repo/stock/shadow-read";
 
 const DEFAULT_ACCOUNTS = [
   {
@@ -48,10 +49,19 @@ const DEFAULT_ACCOUNTS = [
 
 export async function GET() {
   try {
-    await connectToDatabase();
-
     // Old cash-register rows are left out of the list. This used to delete them on every open (a database write
     // each time someone opened Bank Accounts); scripts/cleanup-legacy-bank-warehouse.ts now removes them once.
+    // The list goes through the read:stock switch (lib/repo/stock/shadow-read.ts). When it needs a WRITE (no accounts
+    // yet: the defaults are created; or an old account without an IFSC: it is filled in), the work below needs
+    // mongoose documents, so that rare case reads MongoDB again and runs exactly as before. (A stored account without
+    // an IFSC shows the schema's default IFSC on MongoDB's documents but none in D1's copy: that case also takes the
+    // MongoDB path, so the answer is the same in every mode.)
+    const listed: any[] = await readStock("bankAccounts.list", {});
+    if (listed.length > 0 && listed.every((acc) => acc.ifsc)) {
+      return NextResponse.json({ success: true, data: listed });
+    }
+
+    await connectToDatabase();
     let accounts = await BankAccount.find(NOT_LEGACY_CASH_REGISTER).sort({ createdAt: -1 });
 
     if (!accounts || accounts.length === 0) {

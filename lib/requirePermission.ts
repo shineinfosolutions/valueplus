@@ -2,9 +2,8 @@ import { deferredContext } from "@/lib/deferred-context";
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import authOptions from "@/lib/authOptions";
-import connectToDatabase from "@/lib/db";
-import RolePermission from "@/models/RolePermission";
 import { Permission, permissionsForRole, roleHasPermission } from "@/lib/permissions";
+import { readStaff } from "@/lib/repo/staff/shadow-read";
 
 export interface SessionActor {
   id: string;
@@ -23,8 +22,9 @@ export async function loadPermissionOverrides(): Promise<Record<string, Permissi
     return overrideCache.data;
   }
   try {
-    await connectToDatabase();
-    const rows = await RolePermission.find({}).lean();
+    // Through the read:staff switch (lib/repo/staff/shadow-read.ts): every override row, as RolePermission.find({}).
+    // In d1 mode a D1 error is answered from MongoDB by the framework; if MongoDB fails too, the catch below applies.
+    const rows: any[] = await readStaff("rolePermissions.all");
     const data: Record<string, Permission[]> = {};
     for (const row of rows as any[]) {
       data[String(row.role).toLowerCase()] = (row.permissions || []) as Permission[];

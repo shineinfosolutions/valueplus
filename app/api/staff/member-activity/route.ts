@@ -1,11 +1,8 @@
 import { NextResponse } from "next/server";
 import mongoose from "mongoose";
-import connectToDatabase from "@/lib/db";
-import User from "@/models/User";
-import Attendance from "@/models/Attendance";
-import LeaveRequest from "@/models/LeaveRequest";
 import { getActor } from "@/lib/requirePermission";
 import { normName } from "@/lib/staff-incentive";
+import { readStaff } from "@/lib/repo/staff/shadow-read";
 
 export const dynamic = "force-dynamic";
 
@@ -24,14 +21,15 @@ export async function GET(req: Request) {
     const id = url.searchParams.get("id") || "";
     const month = /^\d{4}-\d{2}$/.test(url.searchParams.get("month") || "") ? String(url.searchParams.get("month")) : new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date()).slice(0, 7);
     if (!mongoose.isValidObjectId(id)) return NextResponse.json({ success: false, error: "Staff member not found." }, { status: 400 });
-    await connectToDatabase();
-    const user: any = await User.findById(id).select("name email role mobile designation status joiningDate assignedBrand address").lean();
+    // The user, the month's attendance and the time off go through the read:staff switch
+    // (lib/repo/staff/shadow-read.ts): the same queries as before.
+    const user: any = await readStaff("users.findById", id, "name email role mobile designation status joiningDate assignedBrand address");
     if (!user) return NextResponse.json({ success: false, error: "Staff member not found." }, { status: 404 });
 
     const from = `${month}-01`;
     const to = `${month}-31`;
     const key = normName(user.name);
-    const attAll: any[] = await Attendance.find({ date: { $gte: from, $lte: to } }).sort({ date: -1 }).lean();
+    const attAll: any[] = await readStaff("attendance.between", from, to);
     const attendance = attAll
       .filter((a) => String(a.userId || a.staffId || "") === String(user._id) || normName(a.staffName) === key)
       .map((a) => ({
@@ -52,7 +50,7 @@ export async function GET(req: Request) {
         unknownMinutes: a.unknownMinutes || 0,
       }));
 
-    const reqAll: any[] = await LeaveRequest.find({ fromDate: { $lte: to }, toDate: { $gte: from }, $or: [{ staffId: String(user._id) }, { staffName: user.name }] }).sort({ fromDate: -1 }).lean();
+    const reqAll: any[] = await readStaff("leave.forStaffBetween", from, to, String(user._id), user.name);
     const timeOff = reqAll.filter((r) => r.status !== "cancelled");
 
     const count = (f: (a: any) => boolean) => attendance.filter(f).length;

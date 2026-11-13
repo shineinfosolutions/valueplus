@@ -1,5 +1,5 @@
 import { istToday } from "@/lib/ist";
-import DayClose from "@/models/DayClose";
+import { readStock } from "@/lib/repo/stock/shadow-read";
 
 /**
  * The earliest past business day with no DayClose record yet, or null if everything up to
@@ -23,7 +23,8 @@ export async function getPendingDayCloseDate(): Promise<string | null> {
   const todayStr = istToday();
   const yesterdayStr = addDays(todayStr, -1);
 
-  const latest: any = await DayClose.findOne({}, { date: 1 }).sort({ date: -1 }).lean();
+  // Through the read:stock switch (lib/repo/stock/shadow-read.ts): the latest close's date.
+  const latest: any = await readStock("dayCloses.latestDate", {});
   if (!latest) return yesterdayStr;
   if (latest.date >= yesterdayStr) return null;
   return addDays(latest.date, 1);

@@ -5,6 +5,7 @@ import User from "@/models/User";
 import { getActor } from "@/lib/requirePermission";
 import { hashSecurityPin, verifySecurityPin } from "@/lib/securityPin";
 import AuditLog from "@/models/AuditLog";
+import { readStaff } from "@/lib/repo/staff/shadow-read";
 
 const RESET_MAX_ATTEMPTS = 5;
 const RESET_LOCK_MINUTES = 15;
@@ -17,13 +18,15 @@ export async function GET() {
       return NextResponse.json({ success: false, error: "Not signed in" }, { status: 401 });
     }
 
-    await connectToDatabase();
-    const user = await User.findById(actor.id).select("+securityPin +pinLockedUntil");
+    // Through the read:staff switch (lib/repo/staff/shadow-read.ts). users.securityPinState is this same query (it
+    // carries the PIN hash, as it always did); only booleans and dates leave this route.
+    const user: any = await readStaff("users.securityPinState", actor.id);
     if (!user) {
       return NextResponse.json({ success: false, error: "User not found" }, { status: 404 });
     }
 
-    const locked = Boolean(user.pinLockedUntil && user.pinLockedUntil > new Date());
+    // D1 gives dates as ISO text, MongoDB as Date: new Date() reads both the same way.
+    const locked = Boolean(user.pinLockedUntil && new Date(user.pinLockedUntil) > new Date());
 
     return NextResponse.json({
       success: true,

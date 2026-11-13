@@ -7,7 +7,15 @@ price_unlock_settings, scheduled_runs, audit_logs) in the routes and libs of thi
 - `mongo`: `lib/repo/staff/mongo.ts`, the current query, verbatim.
 - `d1`: `lib/repo/staff/d1.ts`, the same JSON from D1. Rows are rebuilt into documents by `lib/repo/staff/rebuild.ts`.
 - Registry: `STAFF_READS` in `lib/repo/staff/index.ts` (46 entries). Test: `tests/d1-staff-reads.test.ts`.
-- No route uses them yet.
+- Wired: the routes call them through `readStaff(name, ...args)` (`lib/repo/staff/shadow-read.ts`: the `read:staff`
+  switch, with the comparison rules per read). Sign-in goes through `lib/repo/staff/login-lookup.ts` (in d1 mode
+  MongoDB confirms D1's candidate by primary key and answers every miss). Test: `tests/d1-wiring-stock-staff.test.ts`.
+- Left on MongoDB on purpose (they decide a write, or change the document they read): `users.active` (bulk
+  attendance POST), `users.idByExactName` and `tasks.findById` (task POST / PUT), `users.findById` in users PUT,
+  incentive-payout POST and fix-name POST, `attendance.findByStaffDate` / `autoCheckoutCandidates` / `openAway`,
+  `leave.breakOverCandidates`, `leave.runningBreak` (decides what is saved in the attendance record), `push.idsForUser`
+  (decides which devices are deleted), and verifyUnlockPin's `priceUnlock.setting` (a PIN check with lockout writes).
+  The notifications reads and the staff-incentive reads are wired by their own owner.
 
 ## How a D1 row becomes the Mongo document
 

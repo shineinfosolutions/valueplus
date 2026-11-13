@@ -1,4 +1,6 @@
 import ShiftSetting from "@/models/ShiftSetting";
+import { readStaff } from "@/lib/repo/staff/shadow-read";
+import connectToDatabase from "@/lib/db";
 
 export const SHIFT_NAME = "Showroom Shift (10:00 AM - 09:00 PM)";
 export const DEFAULT_SHIFT = {
@@ -21,6 +23,12 @@ const OLD_SHIFT_NAME = "Showroom Shift (10:00 AM - 06:00 PM)";
  * 10:00 AM - 06:00 PM one is moved to the new hours; a shift someone set up by hand is left alone.
  */
 export async function getShift(): Promise<any> {
+  // The newest shift through the read:staff switch (lib/repo/staff/shadow-read.ts). Only when something must be
+  // WRITTEN (no shift yet, or the old built-in one to move) does it read MongoDB again and work on that document.
+  const current: any = await readStaff("shift.latest");
+  if (current && !(current.endTime === "18:00" && current.shiftName === OLD_SHIFT_NAME)) return current;
+
+  await connectToDatabase();
   let shift: any = await ShiftSetting.findOne().sort({ updatedAt: -1 });
   if (!shift) return ShiftSetting.create(DEFAULT_SHIFT);
   if (shift.endTime === "18:00" && shift.shiftName === OLD_SHIFT_NAME) {

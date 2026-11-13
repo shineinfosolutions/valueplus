@@ -5,6 +5,7 @@ import Item from "@/models/Item";
 import PurchaseEntry from "@/models/PurchaseEntry";
 import Invoice from "@/models/Invoice";
 import StockTransfer from "@/models/StockTransfer";
+import { readStock } from "@/lib/repo/stock/shadow-read";
 
 export async function GET(req: Request) {
   try {
@@ -60,11 +61,13 @@ export async function GET(req: Request) {
     const items = await Item.find(filter).sort({ currentStock: -1, name: 1 }).lean();
 
     // 2. Fetch all related transactions concurrently
+    //    Purchase bills and transfers go through the read:stock switch (lib/repo/stock/shadow-read.ts); items and
+    //    invoices belong to other areas and still read MongoDB.
     const [purchaseEntries, invoices, stockTransfers] = await Promise.all([
-      PurchaseEntry.find({}).sort({ billDate: -1, createdAt: -1 }).lean(),
+      readStock<any[]>("purchaseEntries.byBillDateDesc", {}),
       // Estimates never take stock out, so they are not a stock movement.
       Invoice.find({ type: { $ne: "proforma" } }).sort({ date: -1, createdAt: -1 }).lean(),
-      StockTransfer.find({}).sort({ date: -1, createdAt: -1 }).lean(),
+      readStock<any[]>("stockTransfers.byDateDesc", {}),
     ]);
 
     // Build lookup maps for fast matching

@@ -20,6 +20,7 @@ import StaffTask from "@/models/StaffTask";
 import { authoriseDestructiveAction } from "@/lib/destructiveAction";
 import { entityOf, entityLabel, isBillingEntity } from "@/lib/billing-entity";
 import { purchasePaymentState } from "@/lib/purchase-payments";
+import { readStock } from "@/lib/repo/stock/shadow-read";
 
 const escapeRegex = (text: string) => String(text).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -93,11 +94,9 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const type = searchParams.get("type");
 
-    await connectToDatabase();
-    
-    const query = type ? { type } : { type: { $ne: "debit-note" } }; // Default to entries if no type specified
-    
-    const entries = await PurchaseEntry.find(query).sort({ createdAt: -1 }).lean();
+    // Read through the read:stock switch (lib/repo/stock/shadow-read.ts): MongoDB, MongoDB compared with D1, or D1.
+    // Entries (type != debit-note) unless a type is asked for.
+    const entries = await readStock("purchaseEntries.list", { type });
     return NextResponse.json({ success: true, data: entries });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

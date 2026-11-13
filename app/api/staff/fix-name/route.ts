@@ -4,6 +4,7 @@ import connectToDatabase from "@/lib/db";
 import User from "@/models/User";
 import { getActor } from "@/lib/requirePermission";
 import { renameStaffEverywhere } from "@/lib/staff-rename";
+import { readStaff } from "@/lib/repo/staff/shadow-read";
 
 export const dynamic = "force-dynamic";
 
@@ -14,8 +15,11 @@ export const dynamic = "force-dynamic";
  * GET  ?wrongName=…&userId=…  -> how many records would change (Admin / Store Manager)
  * POST { wrongName, userId }  -> changes them (Admin only)
  */
-async function target(userId: any) {
+async function target(userId: any, viaSwitch = false) {
   if (!mongoose.isValidObjectId(userId)) return null;
+  // The preview (GET) reads the user through the read:staff switch (lib/repo/staff/shadow-read.ts); the rename (POST)
+  // is about to WRITE that name everywhere, so it reads MongoDB, the source of truth.
+  if (viaSwitch) return (await readStaff("users.findById", String(userId), "name")) as any;
   return (await User.findById(userId, { name: 1 }).lean()) as any;
 }
 
@@ -27,7 +31,7 @@ export async function GET(req: Request) {
     }
     const url = new URL(req.url);
     await connectToDatabase();
-    const user = await target(url.searchParams.get("userId"));
+    const user = await target(url.searchParams.get("userId"), true);
     if (!user) return NextResponse.json({ success: false, error: "Staff member not found." }, { status: 404 });
     const counts = await renameStaffEverywhere(String(url.searchParams.get("wrongName") || ""), user.name, true);
     return NextResponse.json({ success: true, data: { to: user.name, counts } });

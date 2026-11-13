@@ -5,27 +5,21 @@ import Vendor from "@/models/Vendor";
 import VendorBill from "@/models/VendorBill";
 import VendorPayment from "@/models/VendorPayment";
 import { requirePermission } from "@/lib/requirePermission";
+import { readStock } from "@/lib/repo/stock/shadow-read";
 
 export async function GET(req: Request) {
   const gate = await requirePermission("ledger.vendor.view");
   if (!gate.ok) return gate.response;
 
   try {
-    await connectToDatabase();
     const { searchParams } = new URL(req.url);
     const vendorId = searchParams.get("vendorId");
     const from = searchParams.get("from");
     const to = searchParams.get("to");
 
-    const filter: any = {};
-    if (vendorId) filter.vendorId = vendorId;
-    if (from || to) {
-      filter.date = {};
-      if (from) filter.date.$gte = from;
-      if (to) filter.date.$lte = to;
-    }
-
-    const payments = await VendorPayment.find(filter).sort({ date: -1, createdAt: -1 }).lean();
+    // Through the read:stock switch (lib/repo/stock/shadow-read.ts): MongoDB, MongoDB compared with D1, or D1.
+    // One vendor if asked, payment date within from..to if given; newest first.
+    const payments = await readStock("vendorPayments.list", { vendorId, from, to });
     return NextResponse.json({ success: true, data: payments });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
