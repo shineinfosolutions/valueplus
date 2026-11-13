@@ -234,7 +234,7 @@ export async function POST(req: Request) {
         estimateNumber: estimate.estimateNumber,
         estimateId: String(estimate._id),
         items: itemsList,
-        notes: `Official Estimate generated: ${estimate.estimateNumber} for ₹${estimate.total}. Valid until ${estimate.expiryDate ? new Date(estimate.expiryDate).toLocaleDateString("en-IN") : "15 days"}.`,
+        notes: `Official Estimate generated: ${estimate.estimateNumber} for ₹${estimate.total}. Valid until ${estimate.expiryDate ? new Date(estimate.expiryDate).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" }) : "15 days"}.`,
         timeline: [
           {
             date: new Date(),

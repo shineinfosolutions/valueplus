@@ -1,3 +1,4 @@
+import { istYear } from "@/lib/ist";
 import { NextResponse } from "next/server";
 import mongoose from "mongoose";
 import connectToDatabase from "@/lib/db";
@@ -93,7 +94,7 @@ export async function POST(req: Request) {
     const lines = built.lines;
 
     const totalQuantity = lines.reduce((t, l) => t + l.quantity, 0);
-    const year = new Date().getFullYear();
+    const year = istYear();
     let created: any = null;
     for (let attempt = 0; attempt < 5 && !created; attempt++) {
       const count = await lastRequestSerial(year);
@@ -181,7 +182,7 @@ export async function PATCH(req: Request) {
       const built = await buildLines(wanted);
       if (built.error) return NextResponse.json({ success: false, error: built.error }, { status: 400 });
 
-      const year = new Date().getFullYear();
+      const year = istYear();
       const names = [...new Set(sources.map((s) => s.salesperson))];
       let created: any = null;
       for (let attempt = 0; attempt < 5 && !created; attempt++) {

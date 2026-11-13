@@ -8,6 +8,8 @@
  * with no purchase bill at all falls back to the day it was added to the catalog.
  */
 
+import { istDateOf } from "./ist";
+
 export const SIX_MONTHS_DAYS = 180;
 export const ONE_YEAR_DAYS = 365;
 
@@ -30,16 +32,18 @@ export interface AgedStockRow {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+// Days are India days: a bill entered (or "today" read) between midnight and 05:30 IST still has the previous
+// UTC date, which made a product's age one day short around midnight.
 function toDay(value: any): string {
   if (!value) return "";
   const d = new Date(value);
-  return isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 10);
+  return isNaN(d.getTime()) ? "" : istDateOf(d);
 }
 
 export function ageInDays(dateStr: string, today: Date): number {
   const d = new Date(`${dateStr}T00:00:00.000Z`);
   if (isNaN(d.getTime())) return 0;
-  const t = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+  const t = new Date(`${istDateOf(today)}T00:00:00.000Z`).getTime();
   return Math.max(0, Math.floor((t - d.getTime()) / DAY_MS));
 }
 

@@ -1,3 +1,4 @@
+import { istYear, istDateOf, addDaysIst, istToday } from "@/lib/ist";
 import { NextResponse } from "next/server";
 import mongoose from "mongoose";
 import connectToDatabase from "@/lib/db";
@@ -16,8 +17,8 @@ import StaffTask from "@/models/StaffTask";
 async function createEntryReminderTask(po: any) {
   try {
     const dueDate = po.expectedDate
-      ? new Date(po.expectedDate).toISOString().split("T")[0]
-      : new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+      ? istDateOf(po.expectedDate)
+      : addDaysIst(istToday(), 10); // 10 India days ahead
     await StaffTask.create({
       taskTitle: `Record Purchase Entry for PO ${po.poNo}`,
       assignedStaff: "All Staff",
@@ -124,7 +125,7 @@ export async function POST(req: Request) {
     let targetPoNo = body.poNo?.trim();
     if (!targetPoNo) {
       const count = await PurchaseOrder.countDocuments();
-      targetPoNo = `PO-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`;
+      targetPoNo = `PO-${istYear()}-${String(count + 1).padStart(4, "0")}`;
     }
 
     // Check if poNo already exists in DB
@@ -133,7 +134,7 @@ export async function POST(req: Request) {
       // Auto-increment to next available number
       const count = await PurchaseOrder.countDocuments();
       const randomSuffix = Math.floor(1000 + Math.random() * 9000);
-      targetPoNo = `PO-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}-${randomSuffix}`;
+      targetPoNo = `PO-${istYear()}-${String(count + 1).padStart(4, "0")}-${randomSuffix}`;
     }
 
     const payload = {
@@ -150,7 +151,7 @@ export async function POST(req: Request) {
       // Fallback in case of race condition
       try {
         const randomSuffix = Math.floor(1000 + Math.random() * 9000);
-        const fallbackPoNo = `PO-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}-${randomSuffix}`;
+        const fallbackPoNo = `PO-${istYear()}-${Date.now().toString().slice(-4)}-${randomSuffix}`;
         const fallbackPayload = { ...body, poNo: fallbackPoNo };
         const po = await PurchaseOrder.create(fallbackPayload);
         await syncPurchasePricesFromOrder(body.items);

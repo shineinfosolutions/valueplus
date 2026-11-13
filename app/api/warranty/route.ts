@@ -1,3 +1,4 @@
+import { istToday } from "@/lib/ist";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import ExtendedWarranty from "@/models/ExtendedWarranty";
@@ -57,7 +58,7 @@ export async function GET(req: Request) {
     totalRevenue = Math.max(totalRevenue, invoiceWarrantyRevenue);
     totalCount = Math.max(totalCount, invoiceWarrantyCount);
 
-    const todayStr = new Date().toISOString().split("T")[0];
+    const todayStr = istToday(); // India day: the server clock is UTC
     const todayCount = await ExtendedWarranty.countDocuments({ startDate: { $gte: todayStr } });
     const thisMonthStr = todayStr.substring(0, 7);
     const thisMonthCount = await ExtendedWarranty.countDocuments({ startDate: { $regex: `^${thisMonthStr}` } });

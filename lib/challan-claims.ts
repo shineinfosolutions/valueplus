@@ -1,3 +1,4 @@
+import { istYear } from "@/lib/ist";
 import mongoose from "mongoose";
 import DeliveryChallan from "@/models/DeliveryChallan";
 import Item from "@/models/Item";
@@ -120,7 +121,7 @@ async function markSerials(
 }
 
 async function nextDebitNoteNo(): Promise<string> {
-  const year = new Date().getFullYear();
+  const year = istYear();
   let n = (await PurchaseEntry.countDocuments({ type: "debit-note" })) + 1;
   for (;;) {
     const billNo = `DN-${year}-${String(n).padStart(4, "0")}`;

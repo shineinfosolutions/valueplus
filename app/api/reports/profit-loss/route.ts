@@ -1,3 +1,4 @@
+import { istDateOf } from "@/lib/ist";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import Invoice from "@/models/Invoice";
@@ -89,7 +90,7 @@ export async function GET(req: Request) {
 
     // Process every invoice and line item
     for (const inv of invoices) {
-      const invDate = inv.date || (inv.createdAt ? new Date(inv.createdAt).toISOString().split("T")[0] : "2026-08-24");
+      const invDate = inv.date || (inv.createdAt ? istDateOf(inv.createdAt) : "2026-08-24");
       
       let invRevenue = 0;
       let invCost = 0;
@@ -194,7 +195,7 @@ export async function GET(req: Request) {
       const expCat = exp.category || "General Store Expenses";
       expenseCategoryMap.set(expCat, (expenseCategoryMap.get(expCat) || 0) + expAmt);
 
-      const expDate = exp.date || (exp.createdAt ? new Date(exp.createdAt).toISOString().split("T")[0] : "2026-08-24");
+      const expDate = exp.date || (exp.createdAt ? istDateOf(exp.createdAt) : "2026-08-24");
       if (!dailyMap.has(expDate)) {
         dailyMap.set(expDate, { date: expDate, revenue: 0, cost: 0, profit: 0, expense: 0 });
       }

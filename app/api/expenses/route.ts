@@ -1,3 +1,4 @@
+import { istYear } from "@/lib/ist";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import Expense from "@/models/Expense";
@@ -19,7 +20,7 @@ export async function POST(req: Request) {
 
     const payload = {
       ...body,
-      expenseNo: body.expenseNo || `EXP-${new Date().getFullYear()}-${Math.floor(Math.random() * 10000).toString().padStart(4, "0")}`,
+      expenseNo: body.expenseNo || `EXP-${istYear()}-${Math.floor(Math.random() * 10000).toString().padStart(4, "0")}`,
     };
 
     const expense = await Expense.create(payload);

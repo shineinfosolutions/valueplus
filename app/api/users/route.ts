@@ -1,3 +1,4 @@
+import { istToday } from "@/lib/ist";
 import { getActor } from "@/lib/requirePermission";
 import { renameStaffEverywhere } from "@/lib/staff-rename";
 import { NextResponse } from "next/server";
@@ -97,7 +98,7 @@ export async function POST(req: Request) {
       designation: designation || "Staff",
       monthlySalary: Number(monthlySalary || 0),
       salaryType: salaryType || "Fixed",
-      joiningDate: joiningDate || new Date().toISOString().split("T")[0],
+      joiningDate: joiningDate || istToday(),
       advanceBalance: Number(advanceBalance || 0),
       monthlyAdvanceDeduction: Number(monthlyAdvanceDeduction || 0),
       bankName: bankName || "",

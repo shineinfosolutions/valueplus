@@ -1,3 +1,4 @@
+import { istDateOf } from "@/lib/ist";
 import { costWithGst, hasStoredCost } from "@/lib/sale-cost";
 import { NextResponse } from "next/server";
 import mongoose from "mongoose";
@@ -149,7 +150,7 @@ export async function GET(req: Request) {
 
           transactions.push({
             id: `PUR-${pur._id}-${lineIdx}`,
-            date: pur.billDate || (pur.createdAt ? new Date(pur.createdAt).toISOString().split("T")[0] : "2026-08-24"),
+            date: pur.billDate || (pur.createdAt ? istDateOf(pur.createdAt) : "2026-08-24"),
             type: pur.type === "debit-note" ? "PURCHASE_RETURN" : "PURCHASE_INWARD",
             refNo: pur.billNo || "BILL",
             party: pur.supplierName || "Authorized Supplier",
@@ -195,7 +196,7 @@ export async function GET(req: Request) {
 
           transactions.push({
             id: `INV-${inv._id}-${lineIdx}`,
-            date: inv.date || (inv.createdAt ? new Date(inv.createdAt).toISOString().split("T")[0] : "2026-08-24"),
+            date: inv.date || (inv.createdAt ? istDateOf(inv.createdAt) : "2026-08-24"),
             type: "SALE_INVOICE",
             refNo: inv.invoiceNumber || "INV",
             party: inv.customerName || "Retail Walk-in Customer",
@@ -245,7 +246,7 @@ export async function GET(req: Request) {
           const qty = Math.abs(Number(line.quantity ?? line.qty ?? 0)) || 0;
           if (qty === 0) continue;
 
-          const movementDate = String(doc.date || doc.billDate || (doc.createdAt ? new Date(doc.createdAt).toISOString().split("T")[0] : "")).slice(0, 10);
+          const movementDate = String(doc.date || doc.billDate || (doc.createdAt ? istDateOf(doc.createdAt) : "")).slice(0, 10);
           const fingerprint = `${movementDate}|${qty}`;
           // Same day, same quantity as a purchase already in the ledger.
           if (purchaseFingerprints.has(fingerprint)) { duplicatesSkipped++; continue; }

@@ -1,3 +1,4 @@
+import { istToday } from "@/lib/ist";
 import mongoose from "mongoose";
 import Invoice from "@/models/Invoice";
 import Customer from "@/models/Customer";
@@ -85,7 +86,7 @@ export async function recordFinancePayout(input: FinancePayoutInput) {
     Number(financeRecord?.actualReceivedAmount) ||
     Number(financeRecord?.netDisbursement) ||
     outstanding;
-  const date = input.date || new Date().toISOString().split("T")[0];
+  const date = input.date || istToday();
   const utr = String(input.utr || "").trim();
   const partyName = invoice?.customerName || financeRecord?.customerName || "Finance Customer";
 

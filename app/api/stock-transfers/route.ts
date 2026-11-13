@@ -1,3 +1,4 @@
+import { istYear } from "@/lib/ist";
 import { deferIfManager } from "@/lib/deferred-actions";
 import { NextResponse } from "next/server";
 import mongoose from "mongoose";
@@ -84,7 +85,7 @@ export async function POST(req: Request) {
       totalValue,
       fromWarehouseId: fromWarehouseId || undefined,
       toWarehouseId: toWarehouseId || undefined,
-      transferNo: body.transferNo || `STR-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}-${Math.floor(Math.random() * 1000).toString().padStart(3, "0")}`,
+      transferNo: body.transferNo || `STR-${istYear()}-${Date.now().toString().slice(-4)}-${Math.floor(Math.random() * 1000).toString().padStart(3, "0")}`,
       status: body.status || "in-transit",
     };
 

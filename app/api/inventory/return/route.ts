@@ -1,3 +1,4 @@
+import { istYear } from "@/lib/ist";
 import { NextResponse } from "next/server";
 import mongoose from "mongoose";
 import connectToDatabase from "@/lib/db";
@@ -21,7 +22,7 @@ export async function POST(req: Request) {
     
     if (!body.returnNumber) {
       const count = await StockReturn.countDocuments();
-      body.returnNumber = `SRT-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}`;
+      body.returnNumber = `SRT-${istYear()}-${String(count + 1).padStart(4, '0')}`;
     }
     
     const stockReturn = await StockReturn.create(body);

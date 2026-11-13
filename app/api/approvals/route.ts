@@ -1,3 +1,4 @@
+import { istToday } from "@/lib/ist";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import StoreActivityApproval from "@/models/StoreActivityApproval";
@@ -151,7 +152,7 @@ export async function PUT(req: Request) {
           title: existing.title,
           category: existing.payload.category || "Store Operations",
           amount: existing.amount || existing.payload.amount,
-          date: new Date().toISOString().split("T")[0],
+          date: istToday(),
           paymentMode: existing.payload.paymentMode || "Cash",
           paidTo: existing.payload.paidTo || "Vendor",
           notes: `Super Admin Approved Activity #${existing.activityId}`,

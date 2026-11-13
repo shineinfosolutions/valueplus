@@ -1,3 +1,4 @@
+import { istToday } from "@/lib/ist";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import StaffTask from "@/models/StaffTask";
@@ -93,7 +94,7 @@ export async function POST(req: Request) {
         try {
           return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date());
         } catch (e) {
-          return new Date().toISOString().split("T")[0];
+          return istToday();
         }
       })(),
       currentQty: Number(body.currentQty) || 0,

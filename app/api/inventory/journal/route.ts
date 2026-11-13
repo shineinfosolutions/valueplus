@@ -1,3 +1,4 @@
+import { istYear } from "@/lib/ist";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import StockJournal from "@/models/StockJournal";
@@ -20,7 +21,7 @@ export async function POST(req: Request) {
     
     if (!body.journalNumber) {
       const count = await StockJournal.countDocuments();
-      body.journalNumber = `SJ-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}`;
+      body.journalNumber = `SJ-${istYear()}-${String(count + 1).padStart(4, '0')}`;
     }
     
     const journal = await StockJournal.create(body);

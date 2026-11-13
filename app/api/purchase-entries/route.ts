@@ -1,3 +1,4 @@
+import { istYear } from "@/lib/ist";
 import { needsBrand, proposeBrand } from "@/lib/brand-names";
 import { NextResponse } from "next/server";
 import mongoose from "mongoose";
@@ -48,7 +49,7 @@ async function findProductForLine(line: any) {
 async function mirrorEntryAsPurchaseOrder(entry: any) {
   try {
     const count = await PurchaseOrder.countDocuments();
-    const poNo = `PO-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}-E`;
+    const poNo = `PO-${istYear()}-${String(count + 1).padStart(4, "0")}-E`;
     await PurchaseOrder.create({
       poNo,
       supplierName: entry.supplierName,

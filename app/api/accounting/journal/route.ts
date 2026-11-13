@@ -1,3 +1,4 @@
+import { istYear } from "@/lib/ist";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import JournalEntry from "@/models/JournalEntry";
@@ -36,7 +37,7 @@ export async function POST(req: Request) {
     // Auto-generate entry number if not provided
     if (!body.entryNumber) {
       const count = await JournalEntry.countDocuments();
-      body.entryNumber = `JE-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}`;
+      body.entryNumber = `JE-${istYear()}-${String(count + 1).padStart(4, '0')}`;
     }
     
     body.totalDebit = totalDebit;

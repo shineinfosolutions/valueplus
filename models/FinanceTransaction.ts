@@ -1,3 +1,4 @@
+import { istToday } from "@/lib/ist";
 import mongoose, { Schema, Document, Model } from "mongoose";
 
 export interface IEmiInstallment {
@@ -116,7 +117,7 @@ const FinanceTransactionSchema = new Schema<IFinanceTransaction>(
     invoiceNumber: { type: String, required: true, index: true },
     atosDealId: { type: String, default: "" },
     doId: { type: String, required: true, unique: true, index: true },
-    date: { type: String, required: true, default: () => new Date().toISOString().split("T")[0] },
+    date: { type: String, required: true, default: () => istToday() },
 
     assetCategory: { type: String, default: "LED" },
     oemCategory: { type: String, default: "LLOYD - LED" },

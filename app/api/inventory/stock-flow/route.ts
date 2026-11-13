@@ -1,3 +1,4 @@
+import { istDayStart, istDayEnd } from "@/lib/ist";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import Item from "@/models/Item";
@@ -24,10 +25,9 @@ export async function GET(req: Request) {
     // `currentStock` stays live — on-hand quantity is a present-day fact, not a
     // period one — which is why it is deliberately left out of this filter.
     const hasDateFilter = Boolean(startDate && endDate);
-    const rangeStart = hasDateFilter ? new Date(startDate) : null;
-    const rangeEnd = hasDateFilter ? new Date(endDate) : null;
-    if (rangeStart) rangeStart.setHours(0, 0, 0, 0);
-    if (rangeEnd) rangeEnd.setHours(23, 59, 59, 999);
+    // Whole India days: `setHours` on the UTC server put a movement made at 01:00 IST in the previous day.
+    const rangeStart = hasDateFilter ? istDayStart(startDate) : null;
+    const rangeEnd = hasDateFilter ? istDayEnd(endDate) : null;
 
     const inRange = (value: any): boolean => {
       if (!hasDateFilter) return true;

@@ -75,7 +75,7 @@ const InventoryAuditSchema = new Schema<IInventoryAudit>(
     completedAt: { type: Date },
     warehouse: { type: String, default: "" },
     kind: { type: String, default: "all", index: true },
-    completionTime: { type: String, default: () => new Date().toLocaleTimeString("en-IN") },
+    completionTime: { type: String, default: () => new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" }) },
     notes: { type: String, default: "" },
   },
   { timestamps: true, collection: "inventory_audits" }

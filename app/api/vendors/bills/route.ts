@@ -1,3 +1,4 @@
+import { istToday, istYear } from "@/lib/ist";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import Vendor from "@/models/Vendor";
@@ -5,7 +6,7 @@ import VendorBill from "@/models/VendorBill";
 import { requirePermission } from "@/lib/requirePermission";
 
 async function nextBillNo(): Promise<string> {
-  const year = new Date().getFullYear();
+  const year = istYear();
   const prefix = `VB-${year}-`;
   const bills = await VendorBill.find({ billNo: { $regex: `^${prefix}` } }, { billNo: 1 }).lean();
   let max = 0;
@@ -61,11 +62,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: "Bill total must be greater than zero" }, { status: 400 });
     }
 
-    const date = body.date || new Date().toISOString().split("T")[0];
+    const date = body.date || istToday();
     let dueDate = body.dueDate;
     if (!dueDate) {
+      // UTC fields: `date` is a plain calendar day, so the machine's zone must not shift it.
       const d = new Date(date);
-      d.setDate(d.getDate() + (Number(vendor.creditDays) || 30));
+      d.setUTCDate(d.getUTCDate() + (Number(vendor.creditDays) || 30));
       dueDate = d.toISOString().split("T")[0];
     }
 

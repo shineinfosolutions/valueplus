@@ -1,3 +1,4 @@
+import { istYear } from "@/lib/ist";
 import FinanceTransaction from "@/models/FinanceTransaction";
 import { classifyPaymentMode } from "@/lib/payment-modes";
 import { doRecordOverrides } from "@/lib/do-parser";
@@ -151,7 +152,7 @@ export async function createFinanceDO(
   const financeSplitAmount = splitRows
     .filter((p) => classifyPaymentMode(p.mode) === "finance")
     .reduce((s, p) => s + (Number(p.amount) || 0), 0);
-  const doId = typed || `DO-${new Date().getFullYear()}-${Math.floor(100000000 + Math.random() * 900000000)}`;
+  const doId = typed || `DO-${istYear()}-${Math.floor(100000000 + Math.random() * 900000000)}`;
   // DO 1 carries what is left of the loan after the bill's other DOs.
   const extraSum = extraDosOf(body).reduce((t, r) => t + r.amount, 0);
   const grossLoan = Math.max(0, (financeSplitAmount > 0 ? financeSplitAmount : Number(body.financeGrossLoan || bill.total || 0)) - extraSum);

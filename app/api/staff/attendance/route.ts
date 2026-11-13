@@ -1,3 +1,4 @@
+import { istDateOf, istTimeLabel } from "@/lib/ist";
 import { NextResponse } from "next/server";
 import { checkInStatus, checkoutIsHalfDay, lateMeansHalfDay } from "@/lib/attendance-rules";
 import connectToDatabase from "@/lib/db";
@@ -20,7 +21,7 @@ function getISTDate(d = new Date()): string {
       day: "2-digit",
     }).format(d);
   } catch (e) {
-    return d.toISOString().split("T")[0];
+    return istDateOf(d); // still the India date, never the UTC one
   }
 }
 
@@ -34,7 +35,7 @@ function getISTTime(d = new Date()): string {
       hour12: true,
     }).format(d);
   } catch (e) {
-    return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
+    return istTimeLabel(d); // still India time, never UTC
   }
 }
 

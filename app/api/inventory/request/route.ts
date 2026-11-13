@@ -1,3 +1,4 @@
+import { istYear } from "@/lib/ist";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import StockRequest from "@/models/StockRequest";
@@ -19,7 +20,7 @@ export async function POST(req: Request) {
     
     if (!body.requestNumber) {
       const count = await StockRequest.countDocuments();
-      body.requestNumber = `SRQ-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}`;
+      body.requestNumber = `SRQ-${istYear()}-${String(count + 1).padStart(4, '0')}`;
     }
     
     // Fix Cast to ObjectId error for empty strings

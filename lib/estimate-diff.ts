@@ -4,11 +4,13 @@
  * re-derives, like a line's amount) is never written again.
  */
 
+import { istDateOf } from "./ist";
+
 const txt = (v: any) => String(v ?? "").trim();
 const num = (v: any) => (Number.isFinite(Number(v)) ? Math.round(Number(v) * 100) / 100 : 0);
 const day = (v: any) => {
   if (!v) return "";
-  const s = typeof v === "string" ? v : new Date(v).toISOString();
+  const s = typeof v === "string" ? v : istDateOf(v); // a Date is read as its India day, not its UTC day
   return s.slice(0, 10);
 };
 
