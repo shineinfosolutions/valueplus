@@ -1,6 +1,6 @@
 # IST vs UTC audit — 13 Nov 2026
 
-Read-only check of the whole code. **Nothing was changed.**
+Check of the whole code. **Fixed and live on 13 Nov 2026 (version d7fa9c2a):** 29 fixed, #30 partly (the tracking timestamp is a correct UTC moment and never shown), #31 left (no full timestamp can reach it). All fixes use `lib/ist.ts`. Tests: `tests/ist.test.ts`, `tests/ist-routes.test.ts`, `tests/dashboard-stats-utc.test.ts` (run with the server clock in UTC).
 
 The server (Cloudflare) runs on **UTC**; Value Plus works in **IST (UTC+5:30)**. Code that takes "today" or "this hour" from the server clock is wrong:
 - between **00:00 and 05:30 IST**, when "today" in UTC is still yesterday;
