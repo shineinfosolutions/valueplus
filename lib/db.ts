@@ -3,6 +3,12 @@ import type { MongoClient } from "mongodb";
 import dns from "dns";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { PER_REQUEST_CLIENT_OPTIONS } from "./db-options";
+import { installWriteThrough } from "./d1/write-through";
+
+// Every MongoDB write on a collection the D1 copy holds is also written to D1 in the same request (stage B1 of
+// docs/D1_MIGRATION_PLAN.md, lib/d1/write-through.ts). It hooks the driver's Collection class, so model writes and
+// raw collection writes are all covered. Inert where there is no D1 binding (local dev, scripts).
+installWriteThrough();
 
 // mongodb+srv:// needs a DNS SRV lookup to find the cluster's real hosts before it
 // can connect at all. Some local/ISP/router DNS servers are flaky or refuse SRV-type

@@ -23,8 +23,9 @@
  */
 import mongoose from "mongoose";
 import { istHour } from "@/lib/ist";
-import type { D1DatabaseLike, D1PreparedStatementLike } from "./types";
-import { MasterSpec, MappedDoc, idText, mapDoc, tableColumns } from "./masters-map";
+import type { D1DatabaseLike } from "./types";
+import { MasterSpec, MappedDoc, idText, mapDoc } from "./masters-map";
+import { chunk, statementsFor, deleteStatements, existingHashes } from "./upsert";
 import { ALL_SPECS } from "./registry";
 
 /** Re-read this much before the watermark, so a write that landed just before it is not missed. */
@@ -34,8 +35,6 @@ export const DEFAULT_BUDGET_MS = 18_000;
 const DEFAULT_PAGE_SIZE = 200;
 /** Documents written per D1 batch (an item is 1 upsert + 2 deletes + its child inserts). */
 const DEFAULT_BATCH_DOCS = 20;
-/** D1 allows 100 bound parameters per statement. */
-const MAX_PARAMS = 100;
 const KEEP_ERRORS = 2000;
 /** A nightly reconciliation is not started again within this long of the last one. */
 const RECONCILE_EVERY_MS = 20 * 3600 * 1000;
@@ -123,12 +122,6 @@ function errText(e: unknown): string {
   return msg.slice(0, 1000);
 }
 
-function chunk<T>(list: T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size));
-  return out;
-}
-
 const outOfTime = (ctx: Ctx) => ctx.clock() >= ctx.deadline;
 
 /** Records a failure in sync_errors. Never throws: if D1 itself is down, the console is the last resort. */
@@ -144,64 +137,6 @@ async function logError(ctx: Ctx, collection: string | null, docId: string | nul
   } catch (e2) {
     console.warn(`d1-sync ${phase} ${collection ?? ""} ${docId ?? ""}: ${message} (and logging it failed: ${errText(e2)})`);
   }
-}
-
-// ---------------------------------------------------------------------------
-// SQL
-// ---------------------------------------------------------------------------
-
-const upsertSqlCache = new Map<string, string>();
-
-function upsertSql(spec: MasterSpec): string {
-  let sql = upsertSqlCache.get(spec.table);
-  if (!sql) {
-    const cols = tableColumns(spec);
-    const updates = cols.filter((c) => c !== "id").map((c) => `${c} = excluded.${c}`);
-    sql = `INSERT INTO ${spec.table} (${cols.join(", ")}) VALUES (${cols.map(() => "?").join(", ")}) ON CONFLICT(id) DO UPDATE SET ${updates.join(", ")}`;
-    upsertSqlCache.set(spec.table, sql);
-  }
-  return sql;
-}
-
-/** The statements that make D1 match one document: upsert the parent, then replace its child rows. */
-function statementsFor(db: D1DatabaseLike, spec: MasterSpec, m: MappedDoc): D1PreparedStatementLike[] {
-  const cols = tableColumns(spec);
-  const stmts = [db.prepare(upsertSql(spec)).bind(...cols.map((c) => (m.row[c] === undefined ? null : m.row[c])))];
-  for (const child of m.children) {
-    stmts.push(db.prepare(`DELETE FROM ${child.table} WHERE ${child.parentCol} = ?`).bind(m.id));
-    const perStmt = Math.max(1, Math.floor(MAX_PARAMS / child.columns.length));
-    for (const rows of chunk(child.rows, perStmt)) {
-      const values = rows.map(() => `(${child.columns.map(() => "?").join(", ")})`).join(", ");
-      stmts.push(db.prepare(`INSERT INTO ${child.table} (${child.columns.join(", ")}) VALUES ${values}`).bind(...rows.flat()));
-    }
-  }
-  return stmts;
-}
-
-/** Statements that delete rows (and their child rows) by id, ≤ 100 ids per statement. */
-function deleteStatements(db: D1DatabaseLike, spec: MasterSpec, ids: string[]): D1PreparedStatementLike[] {
-  const stmts: D1PreparedStatementLike[] = [];
-  for (const part of chunk(ids, MAX_PARAMS)) {
-    const marks = part.map(() => "?").join(", ");
-    // Children first and explicitly, so the delete does not depend on foreign-key enforcement being on.
-    for (const child of spec.children || []) {
-      stmts.push(db.prepare(`DELETE FROM ${child.table} WHERE ${child.parentCol} IN (${marks})`).bind(...part));
-    }
-    stmts.push(db.prepare(`DELETE FROM ${spec.table} WHERE id IN (${marks})`).bind(...part));
-  }
-  return stmts;
-}
-
-async function existingHashes(db: D1DatabaseLike, table: string, ids: string[]): Promise<Map<string, string>> {
-  const out = new Map<string, string>();
-  for (const part of chunk(ids, MAX_PARAMS)) {
-    const res = await db
-      .prepare(`SELECT id, docHash FROM ${table} WHERE id IN (${part.map(() => "?").join(", ")})`)
-      .bind(...part)
-      .all<{ id: string; docHash: string }>();
-    for (const r of res.results || []) out.set(String(r.id), String(r.docHash));
-  }
-  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -550,13 +485,15 @@ export interface D1SyncStatus {
   collections: CollectionStatus[];
   lastErrors: { at: string; collection: string | null; docId: string | null; phase: string; message: string }[];
   errorCount: number | null;
+  /** Write-through (lib/d1/write-through.ts): the feature_flags value and per-collection freshness. */
+  writeThrough: { flag: string | null; collections: Record<string, unknown>[] } | null;
 }
 
 /** Counts, cursors and a hash comparison of a random sample of documents per collection. Never throws. */
 export async function getD1SyncStatus(db: D1DatabaseLike, opts: { mongo?: any; sampleSize?: number } = {}): Promise<D1SyncStatus> {
   const mongo = opts.mongo || mongoose.connection.db;
   const sampleSize = opts.sampleSize ?? 25;
-  const status: D1SyncStatus = { generatedAt: nowIso(), collections: [], lastErrors: [], errorCount: null };
+  const status: D1SyncStatus = { generatedAt: nowIso(), collections: [], lastErrors: [], errorCount: null, writeThrough: null };
 
   let states = new Map<string, SyncState>();
   try {
@@ -613,6 +550,13 @@ export async function getD1SyncStatus(db: D1DatabaseLike, opts: { mongo?: any; s
     status.errorCount = Number((await db.prepare("SELECT COUNT(*) AS n FROM sync_errors").first<{ n: number }>())?.n ?? 0);
   } catch {
     // leave empty
+  }
+  try {
+    const flag = await db.prepare("SELECT value FROM feature_flags WHERE key = 'writeThrough'").first<{ value: string }>();
+    const rows = await db.prepare("SELECT * FROM write_through_state ORDER BY lastWriteAt DESC").all<Record<string, unknown>>();
+    status.writeThrough = { flag: flag?.value ?? null, collections: rows.results || [] };
+  } catch {
+    // migration 0006 not applied yet
   }
   return status;
 }
