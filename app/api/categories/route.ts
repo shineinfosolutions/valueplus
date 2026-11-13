@@ -2,18 +2,30 @@ import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import Category from "@/models/Category";
 import Item from "@/models/Item";
+import { readWithShadow } from "@/lib/d1/shadow";
+import { listCategoriesWithCounts } from "@/lib/repo/masters/lists";
+import { MASTER_COMPARE } from "@/lib/repo/masters/compare";
 
 export async function GET() {
   try {
-    await connectToDatabase();
-    const categories = await Category.find({}).sort({ createdAt: -1 }).lean();
-    
-    // Add item count to each category
-    const categoriesWithItemCount = await Promise.all(
-      categories.map(async (cat: any) => {
-        const itemCount = await Item.countDocuments({ category: cat.name });
-        return { ...cat, items: itemCount };
-      })
+    // Master-data read through the D1 switch (lib/d1/shadow.ts): MongoDB, MongoDB compared with D1, or D1.
+    const categoriesWithItemCount = await readWithShadow(
+      "masters",
+      "categories.list",
+      async () => {
+        await connectToDatabase();
+        const categories = await Category.find({}).sort({ createdAt: -1 }).lean();
+
+        // Add item count to each category
+        return Promise.all(
+          categories.map(async (cat: any) => {
+            const itemCount = await Item.countDocuments({ category: cat.name });
+            return { ...cat, items: itemCount };
+          })
+        );
+      },
+      (db) => listCategoriesWithCounts(db),
+      { compare: MASTER_COMPARE["categories.list"] }
     );
 
     return NextResponse.json({ success: true, data: categoriesWithItemCount });

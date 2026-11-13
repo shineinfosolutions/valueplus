@@ -3,6 +3,9 @@ import connectToDatabase from "@/lib/db";
 import Item from "@/models/Item";
 import AuditLog from "@/models/AuditLog";
 import { getActor } from "@/lib/requirePermission";
+import { readWithShadow } from "@/lib/d1/shadow";
+import { PURCHASE_GST_FIELDS, itemsByVpCodes } from "@/lib/repo/masters/items";
+import { MASTER_COMPARE } from "@/lib/repo/masters/compare";
 
 export const dynamic = "force-dynamic";
 
@@ -35,12 +38,22 @@ export async function GET() {
   try {
     const g = await guard();
     if (g.error) return g.error;
-    await connectToDatabase();
-    const rows: any[] = await Item.find({ vpCode: { $in: INCLUDES_GST_CODES } }).select("name vpCode purchasePrice purchaseIncludesGst").lean();
-    return NextResponse.json({
-      success: true,
-      data: { count: rows.length, items: rows.map((r) => ({ id: String(r._id), name: r.name, vpCode: r.vpCode, purchasePrice: r.purchasePrice, marked: !!r.purchaseIncludesGst })) },
+    const shape = (rows: any[]) => ({
+      count: rows.length,
+      items: rows.map((r) => ({ id: String(r._id), name: r.name, vpCode: r.vpCode, purchasePrice: r.purchasePrice, marked: !!r.purchaseIncludesGst })),
     });
+    // Master-data read through the D1 switch (lib/d1/shadow.ts); both sides build the answer the same way.
+    const data = await readWithShadow(
+      "masters",
+      "items.purchaseGstFlag",
+      async () => {
+        await connectToDatabase();
+        return shape(await Item.find({ vpCode: { $in: INCLUDES_GST_CODES } }).select(PURCHASE_GST_FIELDS.join(" ")).lean());
+      },
+      async (db) => shape(await itemsByVpCodes(db, INCLUDES_GST_CODES)),
+      { compare: MASTER_COMPARE["items.purchaseGstFlag"] }
+    );
+    return NextResponse.json({ success: true, data });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }

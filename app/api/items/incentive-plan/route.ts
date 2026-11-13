@@ -3,6 +3,9 @@ import connectToDatabase from "@/lib/db";
 import Item from "@/models/Item";
 import { getActor } from "@/lib/requirePermission";
 import { lineIncentive, liveRulesOf, todayIST } from "@/lib/incentive-rules";
+import { readWithShadow } from "@/lib/d1/shadow";
+import { INCENTIVE_PLAN_FIELDS, incentivePlanItems } from "@/lib/repo/masters/items";
+import { MASTER_COMPARE } from "@/lib/repo/masters/compare";
 
 export const dynamic = "force-dynamic";
 
@@ -14,51 +17,60 @@ export async function GET() {
   try {
     const actor = await getActor();
     if (!actor) return NextResponse.json({ success: false, error: "You must be signed in to do this." }, { status: 401 });
-    await connectToDatabase();
-
-    const items: any[] = await Item.find(
-      {
-        status: { $ne: "inactive" },
-        $or: [{ "incentives.0": { $exists: true } }, { incentiveType: { $in: ["fixed", "percentage"] } }],
+    // Master-data read through the D1 switch (lib/d1/shadow.ts); both sides build the plan the same way.
+    const data = await readWithShadow(
+      "masters",
+      "items.incentivePlan",
+      async () => {
+        await connectToDatabase();
+        const items: any[] = await Item.find(
+          {
+            status: { $ne: "inactive" },
+            $or: [{ "incentives.0": { $exists: true } }, { incentiveType: { $in: ["fixed", "percentage"] } }],
+          },
+          Object.fromEntries(INCENTIVE_PLAN_FIELDS.map((f) => [f, 1]))
+        ).lean();
+        return planOf(items);
       },
-      {
-        name: 1, code: 1, vpCode: 1, brand: 1, category: 1, sellingPrice: 1, gstRate: 1, currentStock: 1,
-        incentives: 1, incentiveType: 1, incentiveValue: 1, incentiveAmount: 1, incentiveTargetAmount: 1,
-      }
-    ).lean();
-
-    const today = todayIST();
-    const data = items
-      .map((it) => {
-        const rules = liveRulesOf(it, today);
-        if (rules.length === 0) return null;
-        const sellingPrice = Number(it.sellingPrice) || 0;
-        const gstRate = Number(it.gstRate) || 0;
-        const atSellingPrice = sellingPrice > 0 ? lineIncentive(rules, { rate: sellingPrice, qty: 1, gstRate }, today) : 0;
-        // A rule with a minimum price above the selling price pays only when sold at that price: show what one piece
-        // earns at the best price the rules ask for, so such a product does not read as ₹0.
-        const bestPrice = Math.max(sellingPrice, ...rules.map((r) => r.minPrice || 0));
-        const atBestPrice = bestPrice > 0 ? lineIncentive(rules, { rate: bestPrice, qty: 1, gstRate }, today) : 0;
-        return {
-          _id: String(it._id),
-          name: it.name,
-          code: it.vpCode || it.code || "",
-          brand: it.brand || "",
-          category: it.category || "",
-          sellingPrice,
-          inStock: (Number(it.currentStock) || 0) > 0,
-          rules,
-          atSellingPrice,
-          bestPrice,
-          atBestPrice,
-          percentOfPrice: bestPrice > 0 ? Math.round((atBestPrice / bestPrice) * 10000) / 100 : 0,
-        };
-      })
-      .filter(Boolean)
-      .sort((a: any, b: any) => b.atBestPrice - a.atBestPrice);
+      async (db) => planOf(await incentivePlanItems(db)),
+      { compare: MASTER_COMPARE["items.incentivePlan"] }
+    );
 
     return NextResponse.json({ success: true, data });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
+}
+
+/** Each product with an incentive running today, what one piece earns, best first. */
+function planOf(items: any[]) {
+  const today = todayIST();
+  return items
+    .map((it) => {
+      const rules = liveRulesOf(it, today);
+      if (rules.length === 0) return null;
+      const sellingPrice = Number(it.sellingPrice) || 0;
+      const gstRate = Number(it.gstRate) || 0;
+      const atSellingPrice = sellingPrice > 0 ? lineIncentive(rules, { rate: sellingPrice, qty: 1, gstRate }, today) : 0;
+      // A rule with a minimum price above the selling price pays only when sold at that price: show what one piece
+      // earns at the best price the rules ask for, so such a product does not read as ₹0.
+      const bestPrice = Math.max(sellingPrice, ...rules.map((r) => r.minPrice || 0));
+      const atBestPrice = bestPrice > 0 ? lineIncentive(rules, { rate: bestPrice, qty: 1, gstRate }, today) : 0;
+      return {
+        _id: String(it._id),
+        name: it.name,
+        code: it.vpCode || it.code || "",
+        brand: it.brand || "",
+        category: it.category || "",
+        sellingPrice,
+        inStock: (Number(it.currentStock) || 0) > 0,
+        rules,
+        atSellingPrice,
+        bestPrice,
+        atBestPrice,
+        percentOfPrice: bestPrice > 0 ? Math.round((atBestPrice / bestPrice) * 10000) / 100 : 0,
+      };
+    })
+    .filter(Boolean)
+    .sort((a: any, b: any) => b.atBestPrice - a.atBestPrice);
 }

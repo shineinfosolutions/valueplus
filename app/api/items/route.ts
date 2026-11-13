@@ -6,6 +6,9 @@ import Item from "@/models/Item";
 import Invoice from "@/models/Invoice";
 import { getActor } from "@/lib/requirePermission";
 import { cleanRules, flatFieldsFor } from "@/lib/incentive-rules";
+import { readWithShadow } from "@/lib/d1/shadow";
+import { listItems } from "@/lib/repo/masters/items";
+import { MASTER_COMPARE } from "@/lib/repo/masters/compare";
 
 export async function GET(req: Request) {
   try {
@@ -13,8 +16,6 @@ export async function GET(req: Request) {
     const brand = searchParams.get("brand");
     const category = searchParams.get("category");
     const warehouse = searchParams.get("warehouse") || searchParams.get("location");
-
-    await connectToDatabase();
 
     const filter: any = {};
     if (brand && brand !== "all") {
@@ -50,7 +51,19 @@ export async function GET(req: Request) {
       }
     }
 
-    const items = await Item.find(filter).sort({ currentStock: -1, name: 1 }).lean();
+    // Master-data read through the D1 switch (lib/d1/shadow.ts): MongoDB, MongoDB compared with D1, or D1.
+    const items = await readWithShadow(
+      "masters",
+      "items.list",
+      async () => {
+        await connectToDatabase();
+        return Item.find(filter).sort({ currentStock: -1, name: 1 }).lean();
+      },
+      (db) => listItems(db, { brand, category, warehouse }),
+      { compare: MASTER_COMPARE["items.list"] }
+    );
+    // The pending-delivery totals below (sales area) and the role check still read MongoDB.
+    await connectToDatabase();
 
     // When filtered to one real warehouse, also surface how much of each
     // item sits specifically there — callers that only read `currentStock`

@@ -3,6 +3,9 @@ import connectToDatabase from "@/lib/db";
 import Item from "@/models/Item";
 import { getActor } from "@/lib/requirePermission";
 import { isRealVpCode, realCodeFromSupplierCodes } from "@/lib/vp-code";
+import { readWithShadow } from "@/lib/d1/shadow";
+import { vpBackfillSources } from "@/lib/repo/masters/items";
+import { MASTER_COMPARE } from "@/lib/repo/masters/compare";
 
 export const dynamic = "force-dynamic";
 
@@ -13,13 +16,19 @@ export const dynamic = "force-dynamic";
  * GET  -> the preview: every product that would change, the code it shows now and the one it would get.
  * POST -> applies it (Admin only). A VP code already shown by another product is skipped and reported.
  */
-async function plan() {
+async function mongoSources(): Promise<{ items: any[]; withVp: any[] }> {
   const items: any[] = await Item.find(
     { supplierCodes: { $exists: true, $ne: [] } },
     { name: 1, code: 1, vpCode: 1, supplierCodes: 1 }
   ).lean();
-  const taken = new Map<string, string>();
   const withVp: any[] = await Item.find({ vpCode: { $exists: true, $ne: "" } }, { vpCode: 1 }).lean();
+  return { items, withVp };
+}
+
+/** The preview rows, from the products with supplier codes and every product's shown VP code. */
+async function plan(load: () => Promise<{ items: any[]; withVp: any[] }> = mongoSources) {
+  const { items, withVp } = await load();
+  const taken = new Map<string, string>();
   for (const i of withVp) if (i.vpCode) taken.set(String(i.vpCode).toUpperCase(), String(i._id));
 
   const rows: any[] = [];
@@ -46,8 +55,18 @@ export async function GET() {
     if (!actor || !["admin", "superadmin", "manager"].includes(actor.role)) {
       return NextResponse.json({ success: false, error: "Only the Admin or Store Manager can see this." }, { status: 403 });
     }
-    await connectToDatabase();
-    const rows = await plan();
+    // Master-data read through the D1 switch (lib/d1/shadow.ts); both sides build the preview the same way.
+    // (POST still plans from MongoDB only: it writes.)
+    const rows = await readWithShadow(
+      "masters",
+      "items.vpBackfill",
+      async () => {
+        await connectToDatabase();
+        return plan();
+      },
+      (db) => plan(() => vpBackfillSources(db)),
+      { compare: MASTER_COMPARE["items.vpBackfill"] }
+    );
     return NextResponse.json({ success: true, data: rows });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

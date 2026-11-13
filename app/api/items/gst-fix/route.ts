@@ -3,6 +3,9 @@ import connectToDatabase from "@/lib/db";
 import Item from "@/models/Item";
 import AuditLog from "@/models/AuditLog";
 import { getActor } from "@/lib/requirePermission";
+import { readWithShadow } from "@/lib/d1/shadow";
+import { GST_FIX_FIELDS, itemsMissingGst } from "@/lib/repo/masters/items";
+import { MASTER_COMPARE } from "@/lib/repo/masters/compare";
 
 export const dynamic = "force-dynamic";
 
@@ -22,16 +25,23 @@ export async function GET() {
     const actor = await getActor();
     if (!actor) return NextResponse.json({ success: false, error: "You must be signed in to do this." }, { status: 401 });
     if (!["admin", "superadmin"].includes(actor.role)) return NextResponse.json({ success: false, error: "Only the Admin can do this." }, { status: 403 });
-    await connectToDatabase();
-    const rows: any[] = await Item.find({ status: { $ne: "inactive" }, ...MISSING }).select("name vpCode code category brand hsnCode gstRate currentStock").sort({ name: 1 }).lean();
-    return NextResponse.json({
-      success: true,
-      data: {
-        count: rows.length,
-        newRate: NEW_RATE,
-        items: rows.map((r) => ({ id: String(r._id), name: r.name, vpCode: r.vpCode || r.code || "", category: r.category || "", brand: r.brand || "", hsn: r.hsnCode || "", was: r.gstRate ?? null, stock: Number(r.currentStock) || 0 })),
-      },
+    const shape = (rows: any[]) => ({
+      count: rows.length,
+      newRate: NEW_RATE,
+      items: rows.map((r) => ({ id: String(r._id), name: r.name, vpCode: r.vpCode || r.code || "", category: r.category || "", brand: r.brand || "", hsn: r.hsnCode || "", was: r.gstRate ?? null, stock: Number(r.currentStock) || 0 })),
     });
+    // Master-data read through the D1 switch (lib/d1/shadow.ts); both sides build the answer the same way.
+    const data = await readWithShadow(
+      "masters",
+      "items.gstFix",
+      async () => {
+        await connectToDatabase();
+        return shape(await Item.find({ status: { $ne: "inactive" }, ...MISSING }).select(GST_FIX_FIELDS.join(" ")).sort({ name: 1 }).lean());
+      },
+      async (db) => shape(await itemsMissingGst(db)),
+      { compare: MASTER_COMPARE["items.gstFix"] }
+    );
+    return NextResponse.json({ success: true, data });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }

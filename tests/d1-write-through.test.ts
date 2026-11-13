@@ -232,7 +232,8 @@ async function main() {
 
     // ── 1. migration ──
     const files = await applyMigrations(realDb);
-    check(files.includes("0006_flags.sql") && files[files.length - 1] === "0006_flags.sql", `migrations applied in order: ${files.join(", ")}`);
+    // Later stages add migrations after 0006 (0007_shadow.sql ...): only its place after the copy tables matters.
+    check(files.includes("0006_flags.sql") && files.indexOf("0006_flags.sql") > files.indexOf("0005_crm_docs.sql"), `migrations applied in order: ${files.join(", ")}`);
     const flagRow = await one(realDb, "SELECT value FROM feature_flags WHERE key = 'writeThrough'");
     check(flagRow?.value === "on", "feature_flags.writeThrough is 'on' after the migration");
     check(!!(await one(realDb, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'write_through_state'")), "write_through_state table exists");

@@ -2,20 +2,32 @@ import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import Brand from "@/models/Brand";
 import Item from "@/models/Item";
+import { readWithShadow } from "@/lib/d1/shadow";
+import { listBrandsWithCounts } from "@/lib/repo/masters/lists";
+import { MASTER_COMPARE } from "@/lib/repo/masters/compare";
 
 export async function GET() {
   try {
-    await connectToDatabase();
-    const brands = await Brand.find({}).collation({ locale: "en", strength: 2 }).sort({ name: 1 }).lean();
-    
-    // Add item count to each brand
-    const brandsWithItemCount = await Promise.all(
-      brands.map(async (brand: any) => {
-        const itemCount = await Item.countDocuments({ brand: brand.name });
-        return { ...brand, items: itemCount };
-      })
+    // Master-data read through the D1 switch (lib/d1/shadow.ts): MongoDB, MongoDB compared with D1, or D1.
+    const brandsWithItemCount = await readWithShadow(
+      "masters",
+      "brands.list",
+      async () => {
+        await connectToDatabase();
+        const brands = await Brand.find({}).collation({ locale: "en", strength: 2 }).sort({ name: 1 }).lean();
+
+        // Add item count to each brand
+        return Promise.all(
+          brands.map(async (brand: any) => {
+            const itemCount = await Item.countDocuments({ brand: brand.name });
+            return { ...brand, items: itemCount };
+          })
+        );
+      },
+      (db) => listBrandsWithCounts(db),
+      { compare: MASTER_COMPARE["brands.list"] }
     );
-    
+
     return NextResponse.json({ success: true, data: brandsWithItemCount });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

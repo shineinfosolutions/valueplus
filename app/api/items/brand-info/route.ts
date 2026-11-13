@@ -4,6 +4,9 @@ import connectToDatabase from "@/lib/db";
 import Item from "@/models/Item";
 import PurchaseEntry from "@/models/PurchaseEntry";
 import { getActor } from "@/lib/requirePermission";
+import { readWithShadow } from "@/lib/d1/shadow";
+import { getItemById } from "@/lib/repo/masters/items";
+import { MASTER_COMPARE } from "@/lib/repo/masters/compare";
 
 export const dynamic = "force-dynamic";
 
@@ -17,9 +20,19 @@ export async function GET(req: Request) {
     if (!actor) return NextResponse.json({ success: false, error: "You must be signed in to do this." }, { status: 401 });
     const id = new URL(req.url).searchParams.get("id") || "";
     if (!mongoose.isValidObjectId(id)) return NextResponse.json({ success: false, error: "Product not found." }, { status: 400 });
-    await connectToDatabase();
-    const it: any = await Item.findById(id).lean();
+    // Master-data read through the D1 switch (lib/d1/shadow.ts); the purchase bills below still read MongoDB.
+    const it: any = await readWithShadow(
+      "masters",
+      "items.byId",
+      async () => {
+        await connectToDatabase();
+        return Item.findById(id).lean();
+      },
+      (db) => getItemById(db, id),
+      { compare: MASTER_COMPARE["items.byId"] }
+    );
     if (!it) return NextResponse.json({ success: false, error: "Product not found." }, { status: 404 });
+    await connectToDatabase();
 
     const bills: any[] = await PurchaseEntry.find(
       { type: { $ne: "debit-note" }, status: { $ne: "cancelled" }, $or: [{ "items.itemId": id }, { "items.name": it.name }] },

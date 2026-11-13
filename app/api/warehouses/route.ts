@@ -2,15 +2,33 @@ import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import Warehouse from "@/models/Warehouse";
 import Item from "@/models/Item";
-import { NOT_LEGACY_WAREHOUSE } from "@/lib/legacy-rows";
+import { LEGACY_WAREHOUSE_NAMES, NOT_LEGACY_WAREHOUSE } from "@/lib/legacy-rows";
+import { readWithShadow } from "@/lib/d1/shadow";
+import { listWarehouses } from "@/lib/repo/masters/lists";
+import { MASTER_COMPARE } from "@/lib/repo/masters/compare";
 
 export async function GET() {
   try {
-    await connectToDatabase();
     // Old generic placeholder warehouses are left out of the list. This used to delete them on every open (a
     // database write each time); scripts/cleanup-legacy-bank-warehouse.ts now removes them once.
-    let warehouses = await Warehouse.find(NOT_LEGACY_WAREHOUSE).sort({ createdAt: 1 }).lean();
-    
+    // Master-data read through the D1 switch (lib/d1/shadow.ts): MongoDB, MongoDB compared with D1, or D1.
+    let warehouses = await readWithShadow(
+      "masters",
+      "warehouses.list",
+      async () => {
+        await connectToDatabase();
+        return Warehouse.find(NOT_LEGACY_WAREHOUSE).sort({ createdAt: 1 }).lean();
+      },
+      (db) => listWarehouses(db, LEGACY_WAREHOUSE_NAMES),
+      { compare: MASTER_COMPARE["warehouses.list"] }
+    );
+
+    // An empty list from D1 may only mean D1 is behind: MongoDB decides whether the defaults are created.
+    if (!warehouses || warehouses.length === 0) {
+      await connectToDatabase();
+      warehouses = await Warehouse.find(NOT_LEGACY_WAREHOUSE).sort({ createdAt: 1 }).lean();
+    }
+
     if (!warehouses || warehouses.length === 0) {
       const defaultWarehouses = [
         {

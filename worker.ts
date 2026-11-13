@@ -18,6 +18,29 @@ function closeRequestDb(ctx: ExecutionContext) {
   return entry.client.close().catch(() => {});
 }
 
+// Work a route asked to do only once its response is ready (lib/d1/shadow.ts: the D1 side of a shadow read).
+// Same symbol as AFTER_RESPONSE there; kept by name so this file does not import app code.
+const AFTER_RESPONSE = Symbol.for("valueplus.afterResponse");
+
+function takeAfterResponse(ctx: ExecutionContext): Array<() => Promise<void>> {
+  const queues: WeakMap<object, Array<() => Promise<void>>> | undefined = (globalThis as any)[AFTER_RESPONSE];
+  const list = queues?.get(ctx);
+  if (!list) return [];
+  queues!.delete(ctx);
+  return list;
+}
+
+function runAfterResponse(ctx: ExecutionContext) {
+  const tasks = takeAfterResponse(ctx);
+  if (tasks.length === 0) return;
+  // Each task catches its own errors; the extra catch only makes sure nothing here can reach the response.
+  ctx.waitUntil(Promise.allSettled(tasks.map((t) => Promise.resolve().then(t))).then(() => {}, () => {}));
+}
+
+function dropAfterResponse(ctx: ExecutionContext) {
+  takeAfterResponse(ctx);
+}
+
 // Local-only maintenance/debug routes. None of them check who is calling
 // (/api/seed wipes and re-seeds the whole database, import-stock deletes every
 // item), several read files from the developer's disk, and the UI never calls
@@ -152,8 +175,12 @@ export default {
       response = await handler.fetch(request, env, ctx);
     } catch (e) {
       ctx.waitUntil(closeRequestDb(ctx));
+      dropAfterResponse(ctx);
       throw e;
     }
+
+    // D1 shadow reads (lib/d1/shadow.ts) queued during the request: the response is ready, run them now.
+    runAfterResponse(ctx);
 
     // A write went through: tell the open apps what changed.
     // A route can say nothing changed (header x-realtime-skip: 1), e.g. a phone's position that moved no one in or out.

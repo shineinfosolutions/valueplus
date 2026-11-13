@@ -2,11 +2,23 @@ import { deferIfManager, diffFields } from "@/lib/deferred-actions";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import Customer from "@/models/Customer";
+import { readWithShadow } from "@/lib/d1/shadow";
+import { listCustomers } from "@/lib/repo/masters/lists";
+import { MASTER_COMPARE } from "@/lib/repo/masters/compare";
 
 export async function GET() {
   try {
-    await connectToDatabase();
-    const customers = await Customer.find({}).sort({ createdAt: -1 }).lean();
+    // Master-data read through the D1 switch (lib/d1/shadow.ts): MongoDB, MongoDB compared with D1, or D1.
+    const customers = await readWithShadow(
+      "masters",
+      "customers.list",
+      async () => {
+        await connectToDatabase();
+        return Customer.find({}).sort({ createdAt: -1 }).lean();
+      },
+      (db) => listCustomers(db),
+      { compare: MASTER_COMPARE["customers.list"] }
+    );
     return NextResponse.json({ success: true, data: customers });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
