@@ -24,7 +24,8 @@
 import mongoose from "mongoose";
 import { istHour } from "@/lib/ist";
 import type { D1DatabaseLike, D1PreparedStatementLike } from "./types";
-import { MASTER_SPECS, MasterSpec, MappedDoc, idText, mapDoc, tableColumns } from "./masters-map";
+import { MasterSpec, MappedDoc, idText, mapDoc, tableColumns } from "./masters-map";
+import { ALL_SPECS } from "./registry";
 
 /** Re-read this much before the watermark, so a write that landed just before it is not missed. */
 export const OVERLAP_MS = 2 * 60 * 1000;
@@ -466,7 +467,7 @@ export async function runD1Sync(db: D1DatabaseLike, opts: SyncOptions = {}): Pro
     batchDocs: opts.batchDocs ?? DEFAULT_BATCH_DOCS,
     result,
   };
-  const specs = opts.collections ? MASTER_SPECS.filter((s) => opts.collections!.includes(s.collection)) : MASTER_SPECS;
+  const specs = opts.collections ? ALL_SPECS.filter((s) => opts.collections!.includes(s.collection)) : ALL_SPECS;
 
   try {
     ctx.mongo = opts.mongo || mongoose.connection.db;
@@ -565,7 +566,7 @@ export async function getD1SyncStatus(db: D1DatabaseLike, opts: { mongo?: any; s
     // reported per collection as state: null
   }
 
-  for (const spec of MASTER_SPECS) {
+  for (const spec of ALL_SPECS) {
     const cs: CollectionStatus = { collection: spec.collection, table: spec.table, mongoCount: null, d1Count: null, state: states.get(spec.collection) ?? null, sample: null };
     status.collections.push(cs);
     const problems: string[] = [];

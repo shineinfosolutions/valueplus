@@ -18,6 +18,7 @@ import { startMemoryMongo, stopMemoryMongo } from "./helpers/memory-mongo";
 import { check, summary } from "./helpers/assert";
 import { startLocalD1, applyMigrations } from "./helpers/local-d1";
 import type { D1DatabaseLike, D1PreparedStatementLike } from "@/lib/d1/types";
+import { ALL_SPECS } from "@/lib/d1/registry";
 import { MASTER_SPECS, SPEC_BY_COLLECTION, tableColumns, mapDoc, docHash, canonicalJson, toReal, toDate } from "@/lib/d1/masters-map";
 import { runD1Sync, getD1SyncStatus } from "@/lib/d1/sync";
 import Item from "@/models/Item";
@@ -281,7 +282,7 @@ async function main() {
     }
     check(!threw2 && downRes && !downRes.ok && downRes.errors >= 1, "D1 completely down: no throw, reported");
     const downStatus = await getD1SyncStatus(broken, { sampleSize: 5 });
-    check(downStatus.collections.length === MASTER_SPECS.length && downStatus.collections.every((c) => !!c.error), "status report survives D1 being down");
+    check(downStatus.collections.length === ALL_SPECS.length && downStatus.collections.every((c) => !!c.error), "status report survives D1 being down");
     // The failed document is caught up by the nightly repair.
     await runD1Sync(db, { reconcile: "force" });
     check((await one(db, "SELECT outstandingBalance FROM customers WHERE code = 'C1005'")).outstandingBalance === 5001.25 + 1, "failed document repaired later");
@@ -301,7 +302,7 @@ async function main() {
         check((await count(db, "items")) > 0 && (await count(db, "items")) < (await mongo.collection("items").countDocuments()), "and copied only part of the items");
       }
       const done = await all(db, "SELECT fullCopyDoneAt FROM sync_state");
-      if (done.length === MASTER_SPECS.length && done.every((d) => d.fullCopyDoneAt)) break;
+      if (done.length === ALL_SPECS.length && done.every((d) => d.fullCopyDoneAt)) break;
     }
     check(timedOutRuns > 1 && runs < 100, `full copy finished over ${runs + 1} short runs (${timedOutRuns} cut by the time box)`);
     const final = await getD1SyncStatus(db, { sampleSize: 200 });
