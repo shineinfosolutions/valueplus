@@ -1,3 +1,4 @@
+import { crmRead } from "@/lib/repo/crm/shadow";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import CustomerComplaint from "@/models/CustomerComplaint";
@@ -13,45 +14,9 @@ export async function GET(req: Request) {
     const staff = searchParams.get("staff");
     const search = searchParams.get("search");
 
-    await connectToDatabase();
-
-    const filter: any = {};
-
-    if (type && type !== "all") {
-      filter.complaintType = type;
-    }
-
-    if (status && status !== "all") {
-      filter.status = status;
-    }
-
-    if (priority && priority !== "all") {
-      filter.priority = priority;
-    }
-
-    if (staff && staff !== "all") {
-      filter.$or = [
-        { accusedStaffName: { $regex: new RegExp(staff, "i") } },
-        { assignedTo: { $regex: new RegExp(staff, "i") } },
-      ];
-    }
-
-    if (search && search.trim()) {
-      const s = search.trim();
-      filter.$or = [
-        { ticketNumber: { $regex: s, $options: "i" } },
-        { customerName: { $regex: s, $options: "i" } },
-        { customerPhone: { $regex: s, $options: "i" } },
-        { accusedStaffName: { $regex: s, $options: "i" } },
-        { productName: { $regex: s, $options: "i" } },
-        { serialNumber: { $regex: s, $options: "i" } },
-        { invoiceNumber: { $regex: s, $options: "i" } },
-      ];
-    }
-
-    const complaints = await CustomerComplaint.find(filter)
-      .sort({ createdAt: -1 })
-      .lean();
+    // By type, status, priority, staff (accused or assigned) and a search over 7 fields (a search replaces the
+    // staff filter, as before), newest first (lib/repo/crm/crm.ts complaintsListMongo), through the crm read switch (MongoDB, MongoDB compared with D1, or D1).
+    const complaints = await crmRead("complaints.list", { type, status, priority, staff, search });
 
     return NextResponse.json({ success: true, data: complaints });
   } catch (error: any) {

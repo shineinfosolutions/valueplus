@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import mongoose from "mongoose";
 import connectToDatabase from "@/lib/db";
 import User from "@/models/User";
-import Lead from "@/models/Lead";
+import { crmRead } from "@/lib/repo/crm/shadow";
 import StaffTask from "@/models/StaffTask";
 import IncentivePayout from "@/models/IncentivePayout";
 import Attendance from "@/models/Attendance";
@@ -83,7 +83,8 @@ export async function GET(req: Request) {
     const month = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }).slice(0, 7);
     const monthBills = allBills.filter((b) => b.date.slice(0, 7) === month);
 
-    const leads: any[] = await Lead.find({}, { customerName: 1, status: 1, assignedStaff: 1, estimatedValue: 1 }).lean();
+    // Every lead's name, status, salesman and value, through the crm read switch (MongoDB, MongoDB compared with D1, or D1).
+    const leads: any[] = await crmRead("leads.staffOverview");
     const myLeads = leads.filter((l) => normName(l.assignedStaff) === k);
     const tasks: any[] = await StaffTask.find({}, { assignedStaff: 1, assignedStaffId: 1, status: 1 }).lean();
     const myTasks = tasks.filter((t) => String(t.assignedStaffId || "") === String(user._id) || normName(t.assignedStaff) === k);

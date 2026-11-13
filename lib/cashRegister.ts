@@ -1,9 +1,5 @@
-import CashTransaction from "@/models/CashTransaction";
-import Invoice from "@/models/Invoice";
-import Expense from "@/models/Expense";
-import FinanceTransaction from "@/models/FinanceTransaction";
-import PaymentTransaction from "@/models/PaymentTransaction";
-import CashRegisterSetting from "@/models/CashRegisterSetting";
+import { salesRead } from "@/lib/repo/sales/shadow";
+import { stockRead } from "@/lib/d1/area-reads";
 
 /**
  * Builds the same consolidated cash ledger + running balance the Cash Register
@@ -29,37 +25,28 @@ function momentOf(date?: string, time?: string, createdAt?: any): number {
 export async function getCashRegisterSummary(asOfDate?: string) {
   const todayStr = istDay(new Date());
 
-  const recordedTxns = await CashTransaction.find({}).sort({ createdAt: -1 });
+  // Every read below goes through its area's read switch (stock: cash transactions, expenses, the drawer setting;
+  // sales: bills, finance records, receipts): MongoDB, MongoDB compared with D1, or D1. The queries are unchanged
+  // (lib/repo/stock/*.ts, lib/repo/sales/*.ts); D1 gives plain objects where MongoDB gave documents, and only fields
+  // are read from them here.
+  const recordedTxns: any[] = await stockRead("cashTransactions.all");
 
   // Only real completed sales count as cash in hand — see the matching note in
   // the cash-register route for why `type: "tax-invoice"` is required here.
-  const cashInvoices = await Invoice.find({
-    type: "tax-invoice",
-    $or: [
-      { paymentMode: "Cash" },
-      { paymentMode: "cash" },
-      { "payments.mode": { $regex: /cash/i } },
-    ],
-    status: { $ne: "cancelled" },
-  }).sort({ createdAt: -1 });
+  // (Tax invoices paid in cash, or with a cash part in `payments`, not cancelled; newest first.)
+  const cashInvoices: any[] = await salesRead("cashRegister.cashInvoices");
 
-  const cashExpenses = await Expense.find({
-    $or: [{ paymentMode: "Cash" }, { paymentMode: "cash" }],
-  }).sort({ createdAt: -1 });
+  const cashExpenses: any[] = await stockRead("expenses.cash");
 
-  const financeRecords = await FinanceTransaction.find({}).sort({ createdAt: -1 });
+  const financeRecords: any[] = await salesRead("cashRegister.financeRecords");
 
   // FinanceTransaction itself never recorded how the down payment was actually
   // collected — only the Invoice it came from does (financeDownPaymentMode).
   // Without this join, every finance down payment got labelled "Cash" here
   // regardless of whether it was really UPI/card/online.
   const financeInvoiceNumbers = financeRecords.map((f: any) => f.invoiceNumber).filter(Boolean);
-  const linkedInvoices = financeInvoiceNumbers.length
-    ? await Invoice.find(
-        { invoiceNumber: { $in: financeInvoiceNumbers } },
-        { invoiceNumber: 1, financeDownPaymentMode: 1 }
-      ).lean()
-    : [];
+  // (No finance records: no read at all, as before.)
+  const linkedInvoices: any[] = await salesRead("cashRegister.financeLinkedInvoices", financeInvoiceNumbers);
   const downPaymentModeByInvoice = new Map(
     linkedInvoices.map((i: any) => [i.invoiceNumber, i.financeDownPaymentMode])
   );
@@ -145,16 +132,8 @@ export async function getCashRegisterSummary(asOfDate?: string) {
   });
 
   // A Due / Credit bill where part of the amount was taken in cash at the counter.
-  const dueCashBills = await Invoice.find(
-    {
-      type: "tax-invoice",
-      status: { $ne: "cancelled" },
-      paymentMode: { $regex: /due|credit/i },
-      dueAdvanceMode: { $regex: /cash/i },
-      paidAmount: { $gt: 0 },
-    },
-    { invoiceNumber: 1, customerName: 1, paidAmount: 1, dueAdvanceAmount: 1, date: 1, createdAt: 1 }
-  ).lean();
+  // (Tax invoices not cancelled, paid "due / credit" with a cash advance taken: number, customer, amounts, dates.)
+  const dueCashBills: any[] = await salesRead("cashRegister.dueCashBills");
   (dueCashBills as any[]).forEach((inv) => {
     const ref = `DUEADV-${inv.invoiceNumber}`;
     if (seenRefs.has(ref) || seenRefs.has(inv.invoiceNumber)) return;
@@ -179,10 +158,8 @@ export async function getCashRegisterSummary(asOfDate?: string) {
 
   // Cash collected later against a bill — a due cleared, a payment received at
   // the counter. A bill's own first payment is already counted with the bill.
-  const cashReceipts = await PaymentTransaction.find(
-    { partyType: "Customer", type: "received", paymentMode: { $regex: /^cash/i } },
-    { transactionId: 1, amount: 1, date: 1, referenceId: 1, partyName: 1, notes: 1, createdAt: 1 }
-  ).lean();
+  // (Customer receipts whose mode starts with "cash".)
+  const cashReceipts: any[] = await salesRead("cashRegister.cashReceipts");
   (cashReceipts as any[]).forEach((p) => {
     if (/^initial payment/i.test(String(p.notes || "")) || String(p.transactionId || "").startsWith("TXN-LEGACY")) return;
     const ref = String(p.transactionId);
@@ -322,7 +299,7 @@ export async function getCashRegisterSummary(asOfDate?: string) {
 
   // The starting figure is the one the Admin set from a real drawer count; until then 0.
   // (It used to be a fixed 2,00,000 that was never real cash.)
-  const setting: any = await CashRegisterSetting.findOne({ key: "cash-register" }).lean();
+  const setting: any = await stockRead("cashRegisterSetting.get");
   const baseOpening = Number(setting?.openingCash) || 0;
   const currentBalance = Math.max(0, baseOpening + totalInflow - totalOutflow);
 

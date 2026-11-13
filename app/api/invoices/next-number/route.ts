@@ -1,8 +1,5 @@
 import { NextResponse } from "next/server";
-import connectToDatabase from "@/lib/db";
-import Invoice from "@/models/Invoice";
-import Estimate from "@/models/Estimate";
-import DeletedInvoice from "@/models/DeletedInvoice";
+import { salesRead } from "@/lib/repo/sales/shadow";
 import { BILLING_ENTITIES, entityOf } from "@/lib/billing-entity";
 
 /**
@@ -51,13 +48,13 @@ export async function GET(req: Request) {
         ? { prefix: entity.invoicePrefix, pad: entity.invoicePad }
         : PREFIXES[type];
 
-    await connectToDatabase();
-
+    // The number lists below go through the sales read switch (MongoDB, MongoDB compared with D1, or D1); the
+    // queries are unchanged (lib/repo/sales/*.ts). The invoice POST still checks its number against MongoDB.
     let existing: string[] = [];
     if (type === "estimate") {
       const [ests, protos] = await Promise.all([
-        Estimate.find({}, { estimateNumber: 1 }).lean(),
-        Invoice.find({ type: "proforma" }, { invoiceNumber: 1 }).lean(),
+        salesRead<any[]>("nextNumber.estimateNumbers"),
+        salesRead<any[]>("nextNumber.proformaNumbers"),
       ]);
       existing = [
         ...ests.map((e: any) => e.estimateNumber || ""),
@@ -70,8 +67,8 @@ export async function GET(req: Request) {
       // number on two different bills is a far worse problem than a gap in the
       // sequence.
       const [all, deleted] = await Promise.all([
-        Invoice.find({}, { invoiceNumber: 1 }).lean(),
-        DeletedInvoice.find({}, { invoiceNumber: 1 }).lean(),
+        salesRead<any[]>("nextNumber.invoiceNumbers"),
+        salesRead<any[]>("nextNumber.deletedNumbers"),
       ]);
       existing = [
         ...all.map((i: any) => i.invoiceNumber || ""),

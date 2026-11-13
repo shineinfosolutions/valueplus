@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import connectToDatabase from "@/lib/db";
-import Invoice from "@/models/Invoice";
+import { salesRead } from "@/lib/repo/sales/shadow";
 
 export async function GET(req: Request) {
   try {
@@ -13,49 +12,9 @@ export async function GET(req: Request) {
     const staff = searchParams.get("staff");
     const customer = searchParams.get("customer");
     
-    await connectToDatabase();
-    
-    // Sales only: neither a booking (sales order) nor a quotation (estimate).
-    const filter: any = {
-      type: { $nin: ["sales-order", "proforma"] },
-    };
-    
-    if (startDate && endDate) {
-      filter.date = { $gte: startDate, $lte: endDate };
-    } else if (startDate) {
-      filter.date = { $gte: startDate };
-    } else if (endDate) {
-      filter.date = { $lte: endDate };
-    }
-    
-    if (bank && bank !== "all") {
-      if (["Cash", "UPI", "Online", "Card"].includes(bank)) {
-        filter.paymentMode = bank;
-      } else if (bank === "Finance") {
-        filter.paymentMode = "Finance";
-      } else {
-        filter.$or = [
-          { financeProvider: { $regex: bank, $options: "i" } },
-          { paymentMode: { $regex: bank, $options: "i" } }
-        ];
-      }
-    } else if (paymentMode && paymentMode !== "all") {
-      filter.paymentMode = paymentMode;
-    }
-    
-    if (dueOnly === "true") {
-      filter.balanceAmount = { $gt: 0 };
-    }
-    
-    if (staff && staff !== "all") {
-      filter.salesExecutive = staff;
-    }
-    
-    if (customer) {
-      filter.customerName = { $regex: customer, $options: "i" };
-    }
-    
-    const invoices = await Invoice.find(filter).sort({ date: -1, createdAt: -1 }).lean();
+    // Sales only: neither a booking (sales order) nor a quotation (estimate). The query (lib/repo/sales/invoices.ts
+    // mongoSalesOut) runs through the sales read switch: MongoDB, MongoDB compared with D1, or D1.
+    const invoices: any[] = await salesRead("salesOut.invoices", { startDate, endDate, paymentMode, bank, dueOnly, staff, customer });
     
     // Map strictly to required columns: Due, Date, Amount, Bill Number, Customer Name, plus enhanced columns
     const reportData = invoices.map((inv) => ({

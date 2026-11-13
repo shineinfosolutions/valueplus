@@ -1,3 +1,4 @@
+import { crmRead } from "@/lib/repo/crm/shadow";
 import connectToDatabase from "@/lib/db";
 import WhatsAppSetting from "@/models/WhatsAppSetting";
 import WhatsAppMessage from "@/models/WhatsAppMessage";
@@ -39,9 +40,14 @@ export interface NotifyOptions {
 
 /** Load the settings document, creating the default one on first use. */
 export async function getWhatsAppSettings() {
-  await connectToDatabase();
-  let settings = await WhatsAppSetting.findOne({});
+  // The settings document (access token deselected), through the crm read switch (MongoDB, MongoDB compared with D1, or D1).
+  let settings = await crmRead("whatsapp.settings");
 
+  if (!settings) {
+    // Not there (or not copied to D1 yet): MongoDB decides, and creates the default one on first use.
+    await connectToDatabase();
+    settings = await WhatsAppSetting.findOne({});
+  }
   if (!settings) {
     settings = await WhatsAppSetting.create({
       provider: "manual",
@@ -131,7 +137,8 @@ async function queueMessage(params: {
   };
 
   if (provider === "cloud-api") {
-    const withToken = await WhatsAppSetting.findById(settings._id).select("+cloudApi.accessToken");
+    // The only read that carries the access token, through the crm read switch (MongoDB, MongoDB compared with D1, or D1).
+    const withToken = await crmRead("whatsapp.settingsWithToken", { id: String(settings._id) });
     const result = await sendViaCloudApi(withToken, rest.toNumber, rest.message);
     row.attempts = 1;
     if (result.ok) {

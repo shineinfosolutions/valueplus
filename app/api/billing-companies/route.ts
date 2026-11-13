@@ -1,3 +1,4 @@
+import { salesRead } from "@/lib/repo/sales/shadow";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import BillingCompany from "@/models/BillingCompany";
@@ -7,8 +8,8 @@ import { derivePanFromGstin } from "@/lib/gst";
  *  "pick an existing company" dropdown. */
 export async function GET() {
   try {
-    await connectToDatabase();
-    const companies = await BillingCompany.find({}).sort({ usageCount: -1, companyName: 1 }).lean();
+    // Most used first, then by name, through the sales read switch (MongoDB, MongoDB compared with D1, or D1).
+    const companies = await salesRead("billingCompanies.list");
     return NextResponse.json({ success: true, data: companies });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

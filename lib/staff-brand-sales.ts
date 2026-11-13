@@ -1,4 +1,4 @@
-import Invoice from "@/models/Invoice";
+import { salesRead } from "@/lib/repo/sales/shadow";
 import Item from "@/models/Item";
 import mongoose from "mongoose";
 import { normName } from "@/lib/staff-incentive";
@@ -30,12 +30,10 @@ const isSameBrand = (assigned: string, line: string) => {
  * The brand of a line is the product catalog's brand, because the brand saved on old bill lines is often generic.
  */
 export async function brandSalesFor(name: string, assignedBrand: string, from?: string, to?: string): Promise<BrandSales> {
-  const dateQuery: any = {};
-  if (from) dateQuery.$gte = from;
-  if (to) dateQuery.$lte = to;
-  const query: any = { type: { $nin: ["proforma", "sales-order", "credit-note"] }, status: { $ne: "cancelled" } };
-  if (from || to) query.date = dateQuery;
-  const all: any[] = await Invoice.find(query, { salesExecutive: 1, items: 1, date: 1 }).lean();
+  // Sales that are not cancelled (no estimate, booking or credit note) in the date range, with the salesman, lines
+  // and date only (lib/repo/sales/invoices.ts mongoBrandSalesBills), through the sales read switch (MongoDB, MongoDB
+  // compared with D1, or D1).
+  const all: any[] = await salesRead("staffBrandSales.bills", from, to);
   const k = normName(name);
   const mine = all.filter((b) => normName(b.salesExecutive) === k);
 

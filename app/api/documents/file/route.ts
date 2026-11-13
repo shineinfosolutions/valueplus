@@ -1,8 +1,7 @@
+import { crmRead } from "@/lib/repo/crm/shadow";
 import mongoose from "mongoose";
 import { NextResponse } from "next/server";
-import connectToDatabase from "@/lib/db";
 import cloudinary from "@/lib/cloudinary";
-import StoredDocument from "@/models/StoredDocument";
 import { getActor } from "@/lib/requirePermission";
 import { ONSITEGO_ONLY_ROLES, getOnsitegoFolder } from "@/lib/onsitego-server";
 
@@ -39,8 +38,8 @@ export async function GET(req: Request) {
       return NextResponse.json({ success: false, error: "Document id is required." }, { status: 400 });
     }
 
-    await connectToDatabase();
-    const record: any = await StoredDocument.findById(id).lean();
+    // Through the crm read switch (MongoDB, MongoDB compared with D1, or D1).
+    const record: any = await crmRead("documents.byId", { id });
     if (!record || !record.filePublicId) {
       return NextResponse.json({ success: false, error: "Document not found." }, { status: 404 });
     }

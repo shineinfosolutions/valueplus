@@ -1,10 +1,9 @@
 import { istDateOf } from "@/lib/ist";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
-import Invoice from "@/models/Invoice";
 import Item from "@/models/Item";
-import Expense from "@/models/Expense";
-import PurchaseEntry from "@/models/PurchaseEntry";
+import { salesRead } from "@/lib/repo/sales/shadow";
+import { stockRead } from "@/lib/d1/area-reads";
 import { buildCatalogLookup, costWithGst, lineUnitCost } from "@/lib/sale-cost";
 import { getActor } from "@/lib/requirePermission";
 
@@ -21,55 +20,17 @@ export async function GET(req: Request) {
     const endDate = searchParams.get("endDate");
     const branch = searchParams.get("branch");
 
-    // Build Invoice filter
-    const invoiceQuery: any = {
-      status: { $nin: ["cancelled", "draft"] },
-      // An estimate is a quotation — it is neither revenue nor cost of goods sold.
-      type: { $ne: "proforma" },
-    };
-
-    if (startDate && endDate) {
-      invoiceQuery.date = { $gte: startDate, $lte: endDate };
-    } else if (startDate) {
-      invoiceQuery.date = { $gte: startDate };
-    } else if (endDate) {
-      invoiceQuery.date = { $lte: endDate };
-    }
-
-    if (branch && branch !== "ALL") {
-      invoiceQuery["branch.name"] = branch;
-    }
-
-    // Build Expense filter
-    const expenseQuery: any = {};
-    if (startDate && endDate) {
-      expenseQuery.date = { $gte: startDate, $lte: endDate };
-    } else if (startDate) {
-      expenseQuery.date = { $gte: startDate };
-    } else if (endDate) {
-      expenseQuery.date = { $lte: endDate };
-    }
-
-    // Build Purchase Entry filter — the actual stock-in bills raised this
-    // period, not the same thing as COGS below (which is the purchase cost
-    // of whatever got SOLD this period, drawn from the Item master's current
-    // rate). A cancelled entry never happened as far as the books are
-    // concerned, so it's excluded the same way a cancelled/draft invoice is.
-    const purchaseQuery: any = { status: { $ne: "cancelled" } };
-    if (startDate && endDate) {
-      purchaseQuery.billDate = { $gte: startDate, $lte: endDate };
-    } else if (startDate) {
-      purchaseQuery.billDate = { $gte: startDate };
-    } else if (endDate) {
-      purchaseQuery.billDate = { $lte: endDate };
-    }
-
-    // Fetch data in parallel
+    // Fetch data in parallel. The bills (sales), expenses and purchase entries (stock) run through their areas' read
+    // switches: MongoDB, MongoDB compared with D1, or D1. Their filters are unchanged (lib/repo/sales/invoices.ts
+    // mongoProfitLossInvoices, lib/repo/stock/purchases.ts): an estimate is a quotation, neither revenue nor cost;
+    // a cancelled purchase entry never happened as far as the books are concerned. The purchase entries are the
+    // stock-in bills raised this period, not the same thing as COGS below (the purchase cost of what got SOLD).
+    // The item catalogue is still read from MongoDB.
     const [invoices, catalogItems, expenses, purchaseEntries] = await Promise.all([
-      Invoice.find(invoiceQuery).lean(),
+      salesRead<any[]>("profitLoss.invoices", { startDate, endDate, branch }),
       Item.find({}).lean(),
-      Expense.find(expenseQuery).lean(),
-      PurchaseEntry.find(purchaseQuery).lean(),
+      stockRead<any[]>("expenses.profitLoss", { startDate, endDate }),
+      stockRead<any[]>("purchaseEntries.profitLoss", { startDate, endDate }),
     ]);
 
     const findCatalogItem = buildCatalogLookup(catalogItems as any[]);

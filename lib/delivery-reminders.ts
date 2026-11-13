@@ -1,4 +1,5 @@
 import Invoice from "@/models/Invoice";
+import { salesRead } from "@/lib/repo/sales/shadow";
 import { notifyAdmins, notifyAssignee, notifyRoles } from "@/lib/notify";
 
 /**
@@ -23,17 +24,10 @@ export async function sendDueDeliveryReminders(): Promise<number> {
   try {
     const today = new Date();
     const until = istDate(new Date(today.getTime() + REMIND_DAYS * 86_400_000));
-    const due: any[] = await Invoice.find(
-      {
-        expectedDeliveryDate: { $nin: ["", null], $lte: until },
-        deliveryStatus: { $ne: "delivered" },
-        status: { $ne: "cancelled" },
-        deliveryReminderSentAt: { $exists: false },
-      },
-      { invoiceNumber: 1, customerName: 1, customerPhone: 1, expectedDeliveryDate: 1, salesExecutive: 1, deliveryNote: 1, items: 1 }
-    )
-      .limit(50)
-      .lean();
+    // Up to 50 bills due by `until`, not delivered, not cancelled, not reminded yet (lib/repo/sales/invoices.ts
+    // mongoDueDeliveryInvoices), through the sales read switch. The claim below is always made on MongoDB, so a
+    // D1 copy a moment behind can at worst offer a bill that was just reminded: the claim then fails and it is skipped.
+    const due: any[] = await salesRead("deliveryReminders.dueInvoices", until);
 
     let sent = 0;
     for (const inv of due) {

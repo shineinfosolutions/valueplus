@@ -1,3 +1,4 @@
+import { crmRead } from "@/lib/repo/crm/shadow";
 import { NextResponse } from "next/server";
 import mongoose from "mongoose";
 import connectToDatabase from "@/lib/db";
@@ -30,16 +31,16 @@ export async function GET() {
   try {
     const g = await gate([...VIEW_ROLES, ...ONSITEGO_ONLY_ROLES], "Only the admin, manager and accounts can open the documents section.");
     if (g.error) return g.error;
-    await connectToDatabase();
-    // The On Site Go folder always exists; salesmen and cashiers see only it.
+    // The On Site Go folder always exists; salesmen and cashiers see only it. The folder list and the counts are
+    // read through the crm read switch (MongoDB, MongoDB compared with D1, or D1).
     const onsitego = await getOnsitegoFolder(g.actor!.name);
     if (ONSITEGO_ONLY_ROLES.includes(g.actor!.role)) {
-      const count = await StoredDocument.countDocuments({ folderId: String(onsitego._id) });
+      const count = await crmRead<number>("documents.countInFolder", { folderId: String(onsitego._id) });
       return NextResponse.json({ success: true, data: [{ ...onsitego, count, fixed: true }], unfiled: 0, onsitegoOnly: true });
     }
     const [folders, counts] = await Promise.all([
-      DocumentFolder.find({}).sort({ nameKey: 1 }).lean(),
-      StoredDocument.aggregate([{ $group: { _id: "$folderId", count: { $sum: 1 } } }]),
+      crmRead<any[]>("documentFolders.list"),
+      crmRead<any[]>("documents.folderCounts"),
     ]);
     const byId = new Map<string, number>(counts.map((c: any) => [String(c._id || ""), c.count]));
     return NextResponse.json({

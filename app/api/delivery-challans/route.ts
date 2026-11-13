@@ -1,3 +1,4 @@
+import { salesRead } from "@/lib/repo/sales/shadow";
 import { istYear } from "@/lib/ist";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
@@ -13,26 +14,10 @@ export async function GET(req: Request) {
     const approvalStatus = searchParams.get("approvalStatus");
     const search = searchParams.get("search");
 
-    await connectToDatabase();
-
-    const query: any = {};
-    if (flowType && flowType !== "all") query.flowType = flowType === "CR" ? { $in: ["CR", "CNR"] } : flowType;
     const claimStatus = searchParams.get("claimStatus");
-    if (claimStatus && claimStatus !== "all") query.claimStatus = claimStatus;
-    if (approvalStatus && approvalStatus !== "all") query.approvalStatus = approvalStatus;
-    if (search) {
-      query.$or = [
-        { challanNo: { $regex: search, $options: "i" } },
-        { invoiceNumber: { $regex: search, $options: "i" } },
-        { destinationParty: { $regex: search, $options: "i" } },
-        { sourceParty: { $regex: search, $options: "i" } },
-        { itemName: { $regex: search, $options: "i" } },
-        { serialImei: { $regex: search, $options: "i" } },
-        { vehicleNo: { $regex: search, $options: "i" } },
-      ];
-    }
-
-    const challans = await DeliveryChallan.find(query).sort({ createdAt: -1 }).lean();
+    // By flow (CR also lists CNR), claim and approval status, and a search over 7 fields, newest first
+    // (lib/repo/sales/documents.ts mongoChallanList), through the sales read switch (MongoDB, MongoDB compared with D1, or D1).
+    const challans: any[] = await salesRead("challans.list", { flowType, claimStatus, approvalStatus, search });
     return NextResponse.json({ success: true, data: challans || [] });
   } catch (error: any) {
     console.error("DeliveryChallan GET Error:", error);

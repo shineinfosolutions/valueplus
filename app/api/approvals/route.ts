@@ -1,3 +1,4 @@
+import { salesRead } from "@/lib/repo/sales/shadow";
 import { istToday } from "@/lib/ist";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
@@ -25,17 +26,15 @@ export async function GET(req: Request) {
     const status = searchParams.get("status");
     const storeName = searchParams.get("storeName");
 
-    await connectToDatabase();
-
-    const query: any = {};
-    if (status && status !== "all") query.status = status;
-    if (storeName && storeName !== "all") query.storeName = storeName;
-    if (!isAdmin) {
-      query.$or = [{ "payload.requestedBy.id": actor.id }, { storeInchargeEmail: actor.email }];
-    }
-
-    const approvals = await StoreActivityApproval.find(query).sort({ createdAt: -1 }).lean();
-    const pendingCount = await StoreActivityApproval.countDocuments({ ...query, status: "pending" });
+    // By status and store; a Manager sees only what he asked for or what is addressed to him. The list (newest
+    // first) and the pending count come together (lib/repo/sales/approvals.ts mongoStoreApprovals), through the sales read switch (MongoDB, MongoDB compared with D1, or D1).
+    const { approvals, pendingCount } = await salesRead<{ approvals: any[]; pendingCount: number }>("approvals.list", {
+      status,
+      storeName,
+      isAdmin,
+      actorId: actor.id,
+      actorEmail: actor.email,
+    });
 
     return NextResponse.json({
       success: true,

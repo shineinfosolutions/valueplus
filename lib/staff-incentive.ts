@@ -1,6 +1,5 @@
-import Invoice from "@/models/Invoice";
-import Salary from "@/models/Salary";
-import IncentivePayout from "@/models/IncentivePayout";
+import { salesRead } from "@/lib/repo/sales/shadow";
+import { staffRead } from "@/lib/d1/area-reads";
 import { incentiveShares } from "@/lib/incentive-split";
 
 /**
@@ -35,16 +34,10 @@ export interface IncentiveBook {
 }
 
 export async function loadIncentiveBook(): Promise<IncentiveBook> {
-  const bills: any[] = await Invoice.find(
-    { type: { $nin: ["proforma", "sales-order", "credit-note"] }, status: { $ne: "cancelled" } },
-    {
-      invoiceNumber: 1, date: 1, customerName: 1, total: 1, salesExecutive: 1, salesExecutiveIncentive: 1, onsitegoIncentive: 1,
-      "items.salesExecutive": 1, "items.incentiveEarned": 1, "items.extendedWarrantyProvider": 1, "items.extendedWarrantyAmount": 1,
-      "items.amount": 1, "items.quantity": 1,
-    }
-  )
-    .sort({ date: -1, createdAt: -1 })
-    .lean();
+  // Every sale that is not cancelled (no estimate, booking or credit note), newest first, with just the fields the
+  // incentive needs (lib/repo/sales/invoices.ts mongoIncentiveBills). This and the two reads below go through their
+  // areas' read switches (sales; staff): MongoDB, MongoDB compared with D1, or D1.
+  const bills: any[] = await salesRead("staffIncentive.bills");
   const earned = new Map<string, number>();
   const billCount = new Map<string, number>();
   const byName = new Map<string, any[]>();
@@ -70,14 +63,14 @@ export async function loadIncentiveBook(): Promise<IncentiveBook> {
     }
   }
 
-  const salaries: any[] = await Salary.find({ paymentStatus: "Paid" }, { employeeName: 1, incentives: 1 }).lean();
+  const salaries: any[] = await staffRead("salaries.paidIncentives");
   const salary = new Map<string, number>();
   for (const s of salaries) {
     const k = normName(s.employeeName);
     salary.set(k, (salary.get(k) || 0) + (Number(s.incentives) || 0));
   }
 
-  const paid: any[] = await IncentivePayout.find({}, { userId: 1, amount: 1 }).lean();
+  const paid: any[] = await staffRead("payouts.amounts");
   const payouts = new Map<string, number>();
   for (const p of paid) payouts.set(String(p.userId), (payouts.get(String(p.userId)) || 0) + (Number(p.amount) || 0));
 

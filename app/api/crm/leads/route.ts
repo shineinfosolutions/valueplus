@@ -2,6 +2,7 @@ import { outcomeOf } from "@/lib/lead-outcomes";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import Lead from "@/models/Lead";
+import { crmRead } from "@/lib/repo/crm/shadow";
 import { notifyWhatsApp } from "@/lib/whatsapp/notify";
 import { getActor } from "@/lib/requirePermission";
 import { notifyAssignee } from "@/lib/notify";
@@ -40,37 +41,27 @@ export async function GET(req: Request) {
     }
     // Share requests waiting for this person to accept or reject.
     if (searchParams.get("shareInbox") === "1") {
-      const inbox = await Lead.find({ sharedWith: { $elemMatch: { staffId: actor.id, status: "pending" } } }).sort({ updatedAt: -1 }).lean();
+      // Newest change first, through the crm read switch (MongoDB, MongoDB compared with D1, or D1).
+      const inbox = await crmRead("leads.shareInbox", { actorId: actor.id });
       return NextResponse.json({ success: true, data: inbox });
     }
 
-    const filter: any = {};
     // A salesperson sees only the leads assigned to them (and the unassigned
     // "Sales Team" pool); Admin, Store Manager and Accounts see every lead.
     // Looking a lead up by the customer's mobile (the billing form does, to put
     // the lead's salesperson on the bill) works for anyone signed in.
-    if (!ALL_LEADS_ROLES.includes(actor.role) && !mobile) {
-      const isSales = ["salesman", "sales"].includes(actor.role);
-      // "Amit Singh (Sales Executive)" also matches leads assigned to "Amit Singh".
-      const names = [...new Set([actor.name.trim(), actor.name.replace(/\s*\(.*\)\s*$/, "").trim()])].filter(Boolean);
-      filter.$or = [
-        ...names.map((n) => ({ assignedStaff: { $regex: new RegExp(`^\\s*${escapeRegex(n)}\\s*$`, "i") } })),
-        ...(isSales ? [{ assignedStaff: { $regex: /^sales team$/i } }, { assignedStaff: { $in: ["", null] } }] : []),
-        // A lead another salesman shared with them, once they accepted it.
-        { sharedWith: { $elemMatch: { staffId: actor.id, status: "accepted" } } },
-      ];
-    }
-    if (status && status !== "all") filter.status = status;
-    if (staff) filter.assignedStaff = staff;
-    if (priority) filter.priority = priority;
+    // "Amit Singh (Sales Executive)" also matches leads assigned to "Amit Singh",
+    // and a lead another salesman shared with them counts once they accepted it.
     // Matched on the last 10 digits so "+91 98765 43210" and "9876543210" are the
     // same customer — the billing form looks a lead up by the typed mobile number.
-    if (mobile) {
-      const digits = mobile.replace(/\D/g, "").slice(-10);
-      filter.mobile = digits.length === 10 ? { $regex: `${digits}$` } : mobile;
-    }
-    
-    const leads = await Lead.find(filter).sort({ createdAt: -1 });
+    // (lib/repo/crm/leads.ts leadsListMongo holds that filter), newest first, through the crm read switch (MongoDB, MongoDB compared with D1, or D1).
+    const leads = await crmRead("leads.list", {
+      actor: { id: actor.id, name: actor.name, role: actor.role },
+      status,
+      staff,
+      priority,
+      mobile,
+    });
     return NextResponse.json({ success: true, data: leads });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

@@ -1,3 +1,4 @@
+import { salesRead } from "@/lib/repo/sales/shadow";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import Estimate from "@/models/Estimate";
@@ -118,23 +119,14 @@ export async function GET(req: Request) {
   try {
     const actor = await getActor();
     if (!actor) return NextResponse.json({ success: false, error: "You must be signed in to do this." }, { status: 401 });
-    await connectToDatabase();
     const { searchParams } = new URL(req.url);
     const phone = searchParams.get("phone") || searchParams.get("customerPhone");
     const status = searchParams.get("status");
     const approval = searchParams.get("approval");
 
-    const query: any = {};
-    if (phone) {
-      const clean = phone.replace(/\D/g, "");
-      query.customerPhone = { $regex: clean, $options: "i" };
-    }
-    if (status) {
-      query.status = status;
-    }
-
-    if (approval) query.approvalStatus = approval;
-    let estimates: any[] = await Estimate.find(query).sort({ createdAt: -1 });
+    // By the phone's digits, status and approval, newest first (lib/repo/sales/documents.ts mongoEstimateList),
+    // through the sales read switch (MongoDB, MongoDB compared with D1, or D1).
+    let estimates: any[] = await salesRead("estimates.list", phone, status, approval);
     // A salesman sees only the estimates made under their own name.
     if (SALES_ONLY_ROLES.includes(actor.role)) {
       estimates = estimates.filter((e) => sameName(e.salesperson, actor.name) || sameName(e.salesExecutive, actor.name));

@@ -5,6 +5,7 @@ import mongoose from "mongoose";
 import { getServerSession } from "next-auth";
 import connectToDatabase from "@/lib/db";
 import Invoice from "@/models/Invoice";
+import { salesRead } from "@/lib/repo/sales/shadow";
 import Customer from "@/models/Customer";
 import Warehouse from "@/models/Warehouse";
 import Estimate from "@/models/Estimate";
@@ -90,13 +91,14 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const type = searchParams.get("type");
     const warehouse = searchParams.get("warehouse") || searchParams.get("location");
-    
-    await connectToDatabase();
-    
+
+    // Both reads below go through the sales read switch (MongoDB, MongoDB compared with D1, or D1); the queries are
+    // unchanged in lib/repo/sales/invoices.ts. In D1 mode this GET needs no MongoDB connection.
+
     // One bill by its number (opened from a product's history).
     const oneNumber = searchParams.get("invoiceNumber");
     if (oneNumber) {
-      const one = await Invoice.findOne({ invoiceNumber: oneNumber }).lean();
+      const one = await salesRead("invoices.byNumber", oneNumber);
       if (!one) return NextResponse.json({ success: false, error: "Invoice not found" }, { status: 404 });
       return NextResponse.json({ success: true, data: one });
     }
@@ -106,39 +108,17 @@ export async function GET(req: Request) {
     // estimates are left out unless they are asked for by name: they used to show
     // up as bills in the invoice list, in the reports and in salesman incentives.
     const includeEstimates = searchParams.get("includeEstimates") === "true";
-    const query: any = type
-      ? { type }
-      : { type: { $nin: includeEstimates ? ["sales-order"] : ["sales-order", "proforma"] } };
 
     // Invoices are not tagged with a warehouse anywhere in the billing flow, so a
     // strict location filter matched nothing and returned an empty list — the branch
     // selector defaults to "Main Central Warehouse", which hid every bill in the app.
-    // Filter only when it actually selects something; otherwise show the full ledger.
-    const SHOWROOM_PATTERN = /showroom|ashoka|kunraghat|vp-?kun|main\s*store/i;
-    let warehouseScoped = false;
-
-    if (warehouse && warehouse !== "all") {
-      const escaped = warehouse.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const locationClause = SHOWROOM_PATTERN.test(warehouse)
-        ? [
-            { warehouse: { $exists: false } },
-            { warehouse: "" },
-            { warehouse: null },
-            { warehouse: { $regex: SHOWROOM_PATTERN } },
-          ]
-        : [
-            { warehouse: { $regex: new RegExp(`^${escaped}$`, "i") } },
-            { branchName: { $regex: new RegExp(`^${escaped}$`, "i") } },
-          ];
-
-      const scopedCount = await Invoice.countDocuments({ ...query, $or: locationClause });
-      if (scopedCount > 0) {
-        query.$or = locationClause;
-        warehouseScoped = true;
-      }
-    }
-
-    const invoices = await Invoice.find(query).sort({ createdAt: -1 }).lean();
+    // Filter only when it actually selects something (the showroom names, or an exact
+    // warehouse / branch name); otherwise show the full ledger (mongoInvoiceList).
+    const { invoices, warehouseScoped } = await salesRead<{ invoices: any[]; warehouseScoped: boolean }>("invoices.list", {
+      type,
+      includeEstimates,
+      warehouse,
+    });
     return NextResponse.json({
       success: true,
       data: invoices,

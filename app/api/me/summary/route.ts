@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import { getActor } from "@/lib/requirePermission";
 import { ADMIN_ROLES } from "@/lib/change-requests";
-import StoreActivityApproval from "@/models/StoreActivityApproval";
+import { salesRead } from "@/lib/repo/sales/shadow";
 import { getPendingDayCloseDate } from "@/lib/day-close-pending";
 import { shapeMeSummary, summarySectionsForRole, type RawSummaryParts, type SummarySection } from "@/lib/me-summary";
 import { GET as getNotifications } from "@/app/api/notifications/route";
@@ -44,7 +44,8 @@ export async function GET(req: Request) {
       approvals: async () => {
         // /api/approvals?status=pending for an Admin: { status: "pending" } over every request.
         if (!ADMIN_ROLES.includes(actor.role)) return null;
-        return StoreActivityApproval.countDocuments({ status: "pending" });
+        // Through the sales read switch (MongoDB, MongoDB compared with D1, or D1).
+        return salesRead<number>("meSummary.pendingApprovals");
       },
       estimates: async () => body(await getEstimates(sub("/api/estimates?approval=pending"))),
       leaves: async () => body(await getLeaveRequests(sub("/api/staff/leave-requests?status=pending&decidable=1"))),

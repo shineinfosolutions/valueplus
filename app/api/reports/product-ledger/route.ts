@@ -1,12 +1,10 @@
 import { istDateOf } from "@/lib/ist";
 import { costWithGst, hasStoredCost } from "@/lib/sale-cost";
 import { NextResponse } from "next/server";
-import mongoose from "mongoose";
 import connectToDatabase from "@/lib/db";
 import Invoice from "@/models/Invoice";
 import Item from "@/models/Item";
-import PurchaseEntry from "@/models/PurchaseEntry";
-import SerialNumber from "@/models/SerialNumber";
+import { stockRead } from "@/lib/d1/area-reads";
 
 export async function GET(req: Request) {
   try {
@@ -90,33 +88,25 @@ export async function GET(req: Request) {
     const invoices = await Invoice.find(invoiceQuery).sort({ date: -1, createdAt: -1 }).lean();
 
     // 3. Fetch Purchase Entries containing this product
-    const purchaseQuery: any = {};
-    if (startDate && endDate) {
-      purchaseQuery.billDate = { $gte: startDate, $lte: endDate };
-    }
-    const purchases = await PurchaseEntry.find(purchaseQuery).sort({ billDate: -1, createdAt: -1 }).lean();
+    //    (The bill-date range applies only when both dates are given.) Through the stock read switch.
+    const purchases: any[] = await stockRead("purchaseEntries.byBillDateDesc", { startDate, endDate });
 
     // 4. Fetch Serial Numbers for this product
-    const serials = await SerialNumber.find({
-      $or: [
-        { vpCode: itemVpCode },
-        { vpCode: itemCode },
-        { itemId: item?._id ? String(item._id) : "NO_MATCH" },
-        { itemName: { $regex: new RegExp(`^${escapeRegex(itemName.trim())}$`, "i") } }
-      ]
-    }).lean();
+    //    By VP code, code, item id or exact name (escaped), through the stock read switch
+    //    (lib/repo/stock/inventory.ts "serialNumbers.productLedger" holds the same $or).
+    const serials: any[] = await stockRead("serialNumbers.productLedger", {
+      itemVpCode,
+      itemCode,
+      itemId: item?._id ? String(item._id) : undefined,
+      itemName,
+    });
 
     // 5. Other stock movements. Without these the ledger can never reconcile to
     //    the on-hand figure, because an adjustment or a transfer changes stock
     //    without any purchase or invoice existing.
-    const db = mongoose.connection.db;
-    const fetchMovements = async (collection: string) => {
-      try {
-        return db ? await db.collection(collection).find({}).toArray() : [];
-      } catch {
-        return [];
-      }
-    };
+    //    Each whole collection in stored order (a collection that cannot be read gives []), through the stock
+    //    read switch.
+    const fetchMovements = (collection: string): Promise<any[]> => stockRead("productLedger.movements", { collection });
     const [adjustments, stockReturns, journals, transfers] = await Promise.all([
       fetchMovements("stock_adjustments"),
       fetchMovements("stock_returns"),

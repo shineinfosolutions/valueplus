@@ -2,6 +2,7 @@ import { istToday, istYear } from "@/lib/ist";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import CustomerAdvance from "@/models/CustomerAdvance";
+import { salesRead } from "@/lib/repo/sales/shadow";
 import Customer from "@/models/Customer";
 import { getActor } from "@/lib/requirePermission";
 import { requirePinAndPermission } from "@/lib/securityPin";
@@ -9,33 +10,14 @@ import AuditLog from "@/models/AuditLog";
 
 export async function GET(req: Request) {
   try {
-    await connectToDatabase();
     const { searchParams } = new URL(req.url);
     const phone = searchParams.get("phone");
     const status = searchParams.get("status");
     const search = searchParams.get("search");
 
-    const query: any = {};
-    if (phone) {
-      query.customerPhone = phone.trim();
-    }
-    if (status && status !== "all") {
-      query.status = status;
-    }
-    if (search) {
-      const regex = new RegExp(search.trim(), "i");
-      query.$or = [
-        { customerName: regex },
-        { customerPhone: regex },
-        { receiptNumber: regex },
-        { productBooked: regex },
-        { targetBrand: regex },
-      ];
-    }
-
-    const advances = await CustomerAdvance.find(query)
-      .sort({ createdAt: -1 })
-      .lean();
+    // By phone, status and a search over name / phone / receipt / product / brand, newest first
+    // (lib/repo/sales/money.ts mongoAdvanceList), through the sales read switch.
+    const advances = await salesRead("advances.list", phone, status, search);
 
     return NextResponse.json({ success: true, data: advances });
   } catch (error: any) {

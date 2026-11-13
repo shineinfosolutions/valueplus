@@ -7,13 +7,24 @@ import { describeEdit } from "@/lib/bill-edit-diff";
 import Item from "@/models/Item";
 import Customer from "@/models/Customer";
 import Supplier from "@/models/Supplier";
-import Expense from "@/models/Expense";
-import PurchaseEntry from "@/models/PurchaseEntry";
-import PurchaseOrder from "@/models/PurchaseOrder";
-import PaymentTransaction from "@/models/PaymentTransaction";
-import FinanceTransaction from "@/models/FinanceTransaction";
 import { resolveInvoicePayments, classifyPaymentMode, isFinanceInvoice, isFinanceSettlementReceipt } from "@/lib/payment-modes";
-import { loadComplete, newestFirst, notEqual, groupRows } from "@/lib/mongo-read-helpers";
+import { loadCompleteVia, newestFirst, notEqual, groupRows } from "@/lib/mongo-read-helpers";
+import mongoose from "mongoose";
+import { salesRead } from "@/lib/repo/sales/shadow";
+import { stockRead } from "@/lib/d1/area-reads";
+
+/**
+ * The _ids for a "complete documents by id" read, plus the ObjectId of every 24-hex text id. Rows read from MongoDB
+ * hold ObjectIds and are passed unchanged (nothing is added). Rows read from D1 hold their _id as text, which
+ * MongoDB's aggregate $match does not cast: if the D1 read of the complete documents fails and MongoDB answers
+ * instead, the added ObjectIds still find the documents. (D1 compares ids as text, so a twin changes nothing there.)
+ */
+function withObjectIdTwins(ids: any[]): any[] {
+  const twins = ids
+    .filter((id) => typeof id === "string" && /^[0-9a-f]{24}$/i.test(id))
+    .map((id) => new mongoose.Types.ObjectId(id));
+  return twins.length ? [...ids, ...twins] : ids;
+}
 
 const BUCKET_LABELS: Record<string, string> = {
   cash: "Cash",
@@ -67,22 +78,12 @@ function groupTxnsByInvoice(rows: any[]): any[] {
 // purchaseBills, allItems, allSuppliers …) must be in that read's field list below, or it will be undefined.
 // The period's bills (filteredInvoices) and expenses are complete documents, so anything can be read from them.
 
-/** Every invoice: what the all-time checks need (finance bills, warehouse tags, reprints, back-dates, pending). */
-const INVOICE_SUMMARY_FIELDS = {
-  invoiceNumber: 1, type: 1, status: 1, date: 1, createdAt: 1, total: 1, customerName: 1,
-  warehouse: 1, branchName: 1, paymentMode: 1, payments: 1, financeProvider: 1, financeDoId: 1,
-  printLogs: 1, lastPrintedAt: 1, reprintCount: 1,
-};
-/** Every receipt / payment: what the revenue buckets, the khata and finance figures and the breakdown read. */
-const PAYMENT_SUMMARY_FIELDS = {
-  type: 1, partyType: 1, partyName: 1, referenceId: 1, transactionId: 1, paymentMode: 1, amount: 1,
-  date: 1, createdAt: 1, notes: 1, bankTxnRef: 1, bankAccountRef: 1,
-};
-/** Purchase bills: the Average Purchase KPI and the supplier ledgers. */
-const PURCHASE_FIELDS = {
-  billNo: 1, supplierName: 1, supplierId: 1, billDate: 1, date: 1, dueDate: 1, total: 1, paid: 1,
-  paymentMode: 1, type: 1, status: 1, createdAt: 1,
-};
+// The summary projections live with their reads now (same fields as before):
+//  - every invoice: what the all-time checks need (finance bills, warehouse tags, reprints, back-dates, pending):
+//    INVOICE_SUMMARY_FIELDS in lib/repo/sales/invoices.ts;
+//  - every receipt / payment: what the revenue buckets, the khata and finance figures and the breakdown read:
+//    PAYMENT_SUMMARY_FIELDS in lib/repo/sales/money.ts;
+//  - purchase bills: the Average Purchase KPI and the supplier ledgers: PURCHASE_FIELDS in lib/repo/stock/purchases.ts.
 
 export async function GET(request: Request) {
   try {
@@ -130,47 +131,39 @@ export async function GET(request: Request) {
         .sort({ createdAt: -1 })
         .lean())();
     editLogsRead.catch(() => {});
-    const deletedRowsRead = (async () => {
-      const DeletedInvoice = (await import("@/models/DeletedInvoice")).default;
-      return DeletedInvoice.find({ deletedAt: { $gte: rangeStart, $lte: rangeEnd } })
-        .sort({ deletedAt: -1 })
-        .lean();
-    })();
+    // Bills deleted in the period, newest first (sales read switch: MongoDB, MongoDB compared with D1, or D1).
+    const deletedRowsRead = salesRead<any[]>("dashboard.deletedInRange", rangeStart, rangeEnd);
     deletedRowsRead.catch(() => {});
-    const ledgerReads = (async () => {
-      const Vendor = (await import("@/models/Vendor")).default;
-      const VendorBill = (await import("@/models/VendorBill")).default;
-      const VendorPayment = (await import("@/models/VendorPayment")).default;
-      return Promise.all([
-        Vendor.find({}, { name: 1, code: 1, phone: 1, openingBalance: 1, openingBalanceDate: 1 }).lean(),
-        // A cancelled vendor bill is never part of a vendor's balance.
-        VendorBill.find({ status: { $ne: "cancelled" } }, { vendorId: 1, date: 1, billNo: 1, total: 1, dueDate: 1 }).lean(),
-        // Whole documents: the recent collections are sent back as they are.
-        VendorPayment.find({}).lean(),
-        // Supplier payments in stored order, as the supplier ledgers have always read them.
-        PaymentTransaction.find(
-          { partyType: "Supplier" },
-          { partyId: 1, referenceId: 1, date: 1, transactionId: 1, paymentMode: 1, amount: 1, type: 1 }
-        ).lean(),
-      ]);
-    })();
+    // The vendor and supplier ledgers' reads (stock and sales read switches; the queries are unchanged in
+    // lib/repo/stock/vendors.ts and lib/repo/sales/money.ts).
+    const ledgerReads = Promise.all([
+      stockRead<any[]>("vendors.dashboard"),
+      // A cancelled vendor bill is never part of a vendor's balance.
+      stockRead<any[]>("vendorBills.dashboard"),
+      // Whole documents: the recent collections are sent back as they are.
+      stockRead<any[]>("vendorPayments.dashboard"),
+      // Supplier payments in stored order, as the supplier ledgers have always read them.
+      salesRead<any[]>("dashboard.supplierPayments"),
+    ]);
     ledgerReads.catch(() => {});
 
     const [allInvoicesRaw, customersCount, allItemsRaw, allSuppliersRaw, allExpensesRaw, allPaymentsRaw, allFinanceTxnsRaw, purchaseBills, allPurchaseOrdersRaw] = await Promise.all([
-      Invoice.find({}, INVOICE_SUMMARY_FIELDS).sort({ createdAt: -1 }).lean(),
+      // The bills (sales), expenses, purchase entries and orders (stock), payments and finance records (sales) go
+      // through their areas' read switches; customers, items and suppliers (master data) are read as before.
+      salesRead<any[]>("dashboard.invoiceSummary"),
       // Only the number of customers is shown.
       Customer.countDocuments({}),
       // Only the low-stock count and the warehouse filter read items.
       Item.find({}, { currentStock: 1, reorderLevel: 1, warehouse: 1 }).lean(),
       Supplier.find({}, { name: 1, code: 1, phone: 1 }).sort({ createdAt: -1 }).lean(),
       // Just enough to pick the period's expenses; those are then read in full.
-      Expense.find({}, { warehouse: 1, branchName: 1, date: 1, createdAt: 1 }).sort({ createdAt: -1 }).lean(),
-      PaymentTransaction.find({}, PAYMENT_SUMMARY_FIELDS).sort({ createdAt: -1 }).lean(),
-      FinanceTransaction.find({}, { invoiceNumber: 1, approvalStatus: 1, financeProvider: 1, doId: 1, bankAccountRef: 1, transactionRef: 1, paymentReceivedDate: 1, actualReceivedAmount: 1 }).lean(),
+      stockRead<any[]>("expenses.dashboard"),
+      salesRead<any[]>("dashboard.paymentSummary"),
+      salesRead<any[]>("dashboard.financeSummary"),
       // Every purchase bill, once, in stored order: the supplier ledgers need all of them (debit notes and — a known
       // quirk, kept as it was — cancelled bills too); the Average Purchase KPI takes its subset below.
-      PurchaseEntry.find({}, PURCHASE_FIELDS).lean(),
-      PurchaseOrder.find({}, { status: 1, date: 1, createdAt: 1, totalAmount: 1 }).sort({ createdAt: -1 }).lean(),
+      stockRead<any[]>("purchaseEntries.dashboard"),
+      stockRead<any[]>("purchaseOrders.dashboard"),
     ]);
     // What `PurchaseEntry.find({ type: { $ne: "debit-note" }, status: { $ne: "cancelled" } }).sort({ createdAt: -1 })`
     // returned when it was a read of its own.
@@ -369,14 +362,17 @@ export async function GET(request: Request) {
     // lists, and every per-bill figure below), back-dated / reprinted / edited bills from any date, the period's
     // expenses and the latest receipts. Everything else was settled from the summary rows above.
     const [completeInvoice, completeExpense, completePayment] = await Promise.all([
-      loadComplete(Invoice, [
-        ...filteredInvoices,
-        ...backDatedInvoices,
-        ...reprintedInvoices.slice(0, 10),
-        ...Array.from(editsByBill.keys()).map((no) => invoiceByNumber.get(no)),
-      ]),
-      loadComplete(Expense, filteredExpenses),
-      loadComplete(PaymentTransaction, paymentsInRange.slice(0, 15)),
+      loadCompleteVia(
+        [
+          ...filteredInvoices,
+          ...backDatedInvoices,
+          ...reprintedInvoices.slice(0, 10),
+          ...Array.from(editsByBill.keys()).map((no) => invoiceByNumber.get(no)),
+        ],
+        (ids) => salesRead("dashboard.invoicesByIds", withObjectIdTwins(ids))
+      ),
+      loadCompleteVia(filteredExpenses, (ids) => stockRead("expenses.byIds", { ids })),
+      loadCompleteVia(paymentsInRange.slice(0, 15), (ids) => salesRead("dashboard.paymentsByIds", withObjectIdTwins(ids))),
     ]);
     filteredInvoices = filteredInvoices.map(completeInvoice);
     backDatedInvoices = backDatedInvoices.map(completeInvoice);

@@ -1,3 +1,4 @@
+import { salesRead } from "@/lib/repo/sales/shadow";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import DiscountApproval from "@/models/DiscountApproval";
@@ -18,19 +19,18 @@ export async function GET(req: Request) {
     const actor = await getActor();
     if (!actor) return NextResponse.json({ success: false, error: "You must be signed in to do this." }, { status: 401 });
     const url = new URL(req.url);
-    await connectToDatabase();
+    // Both reads go through the sales read switch (MongoDB, MongoDB compared with D1, or D1); the queries are unchanged (lib/repo/sales/approvals.ts).
     const ids = (url.searchParams.get("ids") || "").split(",").filter(Boolean);
     if (ids.length > 0) {
-      const rows = await DiscountApproval.find({ _id: { $in: ids }, requestedById: actor.id }).lean();
+      // This person's own requests by id (an id that is not an ObjectId fails, as before).
+      const rows = await salesRead("discountApprovals.byIds", ids, actor.id);
       return NextResponse.json({ success: true, data: rows });
     }
-    const q: any = {};
     const status = url.searchParams.get("status");
-    if (status) q.status = status;
     const tiers = tiersDecidableBy(actor.role);
     if (tiers.length === 0) return NextResponse.json({ success: true, data: [] });
-    if (tiers.length < 3) q.tier = { $in: tiers };
-    const rows = await DiscountApproval.find(q).sort({ createdAt: -1 }).limit(200).lean();
+    // The tiers this person may decide (all three: no tier filter), newest 200.
+    const rows = await salesRead("discountApprovals.list", status, tiers);
     return NextResponse.json({ success: true, data: rows });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

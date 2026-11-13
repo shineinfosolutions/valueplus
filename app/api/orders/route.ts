@@ -2,30 +2,17 @@ import { istToday } from "@/lib/ist";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import Invoice from "@/models/Invoice";
+import { salesRead } from "@/lib/repo/sales/shadow";
 
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const staff = searchParams.get("staff") || searchParams.get("salesExecutive");
 
-    await connectToDatabase();
-
     const type = searchParams.get("type");
-    const filter: any = type ? { type } : { type: { $in: ["sales-order", "tax-invoice"] } };
-
-    if (staff && staff !== "all") {
-      const firstName = staff.trim().split(" ")[0];
-      filter.$or = [
-        { salesExecutive: { $regex: new RegExp(staff, "i") } },
-        { salesExecutive: { $regex: new RegExp(firstName, "i") } },
-        { createdBy: { $regex: new RegExp(staff, "i") } },
-        { createdBy: { $regex: new RegExp(firstName, "i") } },
-        { salesperson: { $regex: new RegExp(staff, "i") } },
-        { salesperson: { $regex: new RegExp(firstName, "i") } },
-      ];
-    }
-
-    const orders = await Invoice.find(filter).sort({ createdAt: -1 }).lean();
+    // Bookings and invoices (or one type), optionally of one salesman by his full or first name, newest first
+    // (lib/repo/sales/invoices.ts mongoOrderList), through the sales read switch.
+    const orders = await salesRead("orders.list", type, staff);
     return NextResponse.json({ success: true, data: orders });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

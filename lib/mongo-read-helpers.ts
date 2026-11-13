@@ -13,6 +13,17 @@ export const idKey = (id: any) => `${id?._bsontype === "ObjectId" ? "o" : typeof
  * meantime is returned as it is.
  */
 export async function loadComplete(model: any, rows: any[]): Promise<(row: any) => any> {
+  return loadCompleteVia(rows, (ids) => model.aggregate([{ $match: { _id: { $in: ids } } }]));
+}
+
+/**
+ * loadComplete with the read of the complete documents supplied by the caller (the dashboard reads them through the
+ * D1 read switch). `readByIds` gets the distinct _id values exactly as the rows hold them. A document whose _id is
+ * the 24-hex TEXT of a row's ObjectId (or the other way round: D1 gives every _id as text) also completes that
+ * row, so a summary read and a complete read answered by different databases (one fell back to MongoDB) still pair
+ * up; documents read from MongoDB for MongoDB rows always pair up on their exact key first, as before.
+ */
+export async function loadCompleteVia(rows: any[], readByIds: (ids: any[]) => Promise<any[]>): Promise<(row: any) => any> {
   const ids: any[] = [];
   const seen = new Set<string>();
   for (const r of rows) {
@@ -23,9 +34,11 @@ export async function loadComplete(model: any, rows: any[]): Promise<(row: any) 
     }
   }
   if (ids.length === 0) return (row) => row;
-  const docs: any[] = await model.aggregate([{ $match: { _id: { $in: ids } } }]);
+  const docs: any[] = await readByIds(ids);
   const byId = new Map<string, any>(docs.map((d) => [idKey(d._id), d]));
-  return (row) => byId.get(idKey(row._id)) ?? row;
+  const byText = new Map<string, any>();
+  for (const d of docs) if (!byText.has(String(d._id))) byText.set(String(d._id), d);
+  return (row) => byId.get(idKey(row._id)) ?? byText.get(String(row._id)) ?? row;
 }
 
 /** MongoDB's sort order across value types (missing/null first, then numbers, strings, objects, arrays … dates). */

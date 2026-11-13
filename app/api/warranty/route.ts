@@ -1,8 +1,8 @@
+import { salesRead } from "@/lib/repo/sales/shadow";
 import { istToday } from "@/lib/ist";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import ExtendedWarranty from "@/models/ExtendedWarranty";
-import Invoice from "@/models/Invoice";
 
 export async function GET(req: Request) {
   try {
@@ -12,25 +12,17 @@ export async function GET(req: Request) {
     const vpCode = searchParams.get("vpCode");
     const status = searchParams.get("status");
     
-    await connectToDatabase();
-    
-    const filter: any = {};
-    if (invoiceNumber) filter.invoiceNumber = invoiceNumber;
-    if (customerPhone) filter.customerPhone = customerPhone;
-    if (vpCode) filter.vpCode = vpCode;
-    if (status) filter.status = status;
-    
-    const warranties = await ExtendedWarranty.find(filter).sort({ createdAt: -1 });
-    
+    // Every read of this GET goes through the sales read switch (MongoDB, MongoDB compared with D1, or D1); the
+    // queries are unchanged (lib/repo/sales/documents.ts, invoices.ts). In D1 mode it needs no MongoDB connection.
+    const warranties = await salesRead("warranty.list", { invoiceNumber, customerPhone, vpCode, status });
+
     // Aggregated stats from ExtendedWarranty collection
-    let totalCount = await ExtendedWarranty.countDocuments();
-    const totalRevenueResult = await ExtendedWarranty.aggregate([
-      { $group: { _id: null, total: { $sum: "$warrantyAmount" } } }
-    ]);
+    let totalCount: number = await salesRead("warranty.count");
+    const totalRevenueResult: any[] = await salesRead("warranty.revenue");
     let totalRevenue = totalRevenueResult[0]?.total || 0;
     
     // Also check Invoices for any extended warranty sold directly on invoices
-    const allInvoices = await Invoice.find({ type: { $ne: "proforma" } }).lean();
+    const allInvoices: any[] = await salesRead("warranty.invoices");
     let invoiceWarrantyRevenue = 0;
     let invoiceWarrantyCount = 0;
 
@@ -59,9 +51,9 @@ export async function GET(req: Request) {
     totalCount = Math.max(totalCount, invoiceWarrantyCount);
 
     const todayStr = istToday(); // India day: the server clock is UTC
-    const todayCount = await ExtendedWarranty.countDocuments({ startDate: { $gte: todayStr } });
+    const todayCount: number = await salesRead("warranty.todayCount", todayStr);
     const thisMonthStr = todayStr.substring(0, 7);
-    const thisMonthCount = await ExtendedWarranty.countDocuments({ startDate: { $regex: `^${thisMonthStr}` } });
+    const thisMonthCount: number = await salesRead("warranty.monthCount", thisMonthStr);
 
     const totalBills = allInvoices.length || 1;
     const conversionRate = Math.round((totalCount / totalBills) * 100);

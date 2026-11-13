@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import PaymentTransaction from "@/models/PaymentTransaction";
 import { purchasePaymentState, round2 } from "@/lib/purchase-payments";
+import { salesRead } from "@/lib/repo/sales/shadow";
 
 import mongoose from "mongoose";
 import { requirePermission } from "@/lib/requirePermission";
@@ -10,16 +11,13 @@ import { checkPaymentEdit, editPayment, removePayment, summarisePayment, purchas
 
 export async function GET(request: Request) {
   try {
-    await connectToDatabase();
-    
     const { searchParams } = new URL(request.url);
     const partyId = searchParams.get("partyId");
     const partyType = searchParams.get("partyType"); // "Customer" | "Supplier"
 
-    const filter: any = {};
-    if (partyId) filter.partyId = partyId;
-    if (partyType) filter.partyType = partyType;
-    let payments: any[] = await PaymentTransaction.find(filter).sort({ date: -1 }).lean();
+    // This party's (or every) payment, newest date first, through the sales read switch (MongoDB, MongoDB compared
+    // with D1, or D1). The array is not changed in place below: the backfill builds a new one.
+    let payments: any[] = await salesRead("payments.list", partyId, partyType);
 
     // The legacy-invoice backfill below only ever represents a Customer's own
     // initial payment on their own bill — skip it entirely for a Supplier-only
@@ -29,9 +27,8 @@ export async function GET(request: Request) {
     }
 
     // Fetch old invoices that have paidAmount > 0 and include them as transactions if not already there
-    const Invoice = (await import("@/models/Invoice")).default;
-    const invoiceFilter = partyId ? { customerId: partyId, paidAmount: { $gt: 0 } } : { paidAmount: { $gt: 0 } };
-    const paidInvoices = await Invoice.find(invoiceFilter).lean();
+    // (This customer's, or every, bill with paidAmount > 0.)
+    const paidInvoices: any[] = await salesRead("payments.paidInvoices", partyId);
 
     const existingRefs = new Set(payments.map((p: any) => p.referenceId));
 

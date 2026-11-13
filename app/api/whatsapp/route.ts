@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import WhatsAppMessage from "@/models/WhatsAppMessage";
+import { crmRead } from "@/lib/repo/crm/shadow";
 import { getActor } from "@/lib/requirePermission";
 import { getWhatsAppSettings } from "@/lib/whatsapp/notify";
 import { WhatsAppEvent, buildWaLink } from "@/lib/whatsapp/events";
@@ -15,8 +16,6 @@ import { WhatsAppEvent, buildWaLink } from "@/lib/whatsapp/events";
 
 export async function GET(req: Request) {
   try {
-    await connectToDatabase();
-
     const { searchParams } = new URL(req.url);
     const status = searchParams.get("status");
     const audience = searchParams.get("audience");
@@ -24,21 +23,15 @@ export async function GET(req: Request) {
     const q = (searchParams.get("q") || "").trim();
     const limit = Math.min(Number(searchParams.get("limit")) || 200, 1000);
 
-    const filter: any = {};
-    if (status && status !== "all") filter.status = status;
-    if (audience && audience !== "all") filter.audience = audience;
-    if (event && event !== "all") filter.event = event;
-    if (q) {
-      const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
-      filter.$or = [{ entityRef: rx }, { toName: rx }, { toNumber: rx }, { message: rx }];
-    }
-
-    const [rows, pending, sent, failed] = await Promise.all([
-      WhatsAppMessage.find(filter).sort({ createdAt: -1 }).limit(limit).lean(),
-      WhatsAppMessage.countDocuments({ status: "pending" }),
-      WhatsAppMessage.countDocuments({ status: "sent" }),
-      WhatsAppMessage.countDocuments({ status: "failed" }),
-    ]);
+    // The newest `limit` messages by status / audience / event and the escaped text `q` (reference, name, number,
+    // message), and the three tab counts (lib/repo/crm/whatsapp.ts whatsappOutboxMongo), through the crm read switch (MongoDB, MongoDB compared with D1, or D1).
+    const [rows, pending, sent, failed] = await crmRead<[any[], number, number, number]>("whatsapp.outbox", {
+      status,
+      audience,
+      event,
+      q,
+      limit,
+    });
 
     return NextResponse.json({
       success: true,

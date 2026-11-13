@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
-import Invoice from "@/models/Invoice";
-import PurchaseEntry from "@/models/PurchaseEntry";
-import EWayBill from "@/models/EWayBill";
+import { salesRead } from "@/lib/repo/sales/shadow";
+import { stockRead } from "@/lib/d1/area-reads";
 import Item from "@/models/Item";
 
 /**
@@ -100,12 +99,8 @@ export async function GET(req: Request) {
       const monthParam = searchParams.get("month"); // 0-11
       const yearParam = searchParams.get("year");
 
-      let docs = await Invoice.find({
-        type: { $in: ["tax-invoice", "credit-note"] },
-        status: { $ne: "cancelled" },
-      })
-        .sort({ date: 1 })
-        .lean();
+      // Tax invoices and credit notes that are not cancelled, oldest date first, through the sales read switch.
+      let docs: any[] = await salesRead("gstr.hsnInvoices");
 
       if (monthParam !== null && yearParam !== null) {
         const month = parseInt(monthParam, 10);
@@ -244,9 +239,8 @@ export async function GET(req: Request) {
       const monthParam = searchParams.get("month"); // 0-11
       const yearParam = searchParams.get("year");
 
-      let allInvoices = await Invoice.find({ type: "tax-invoice", status: { $ne: "cancelled" } })
-        .sort({ date: 1 })
-        .lean();
+      // Tax invoices that are not cancelled, oldest date first, through the sales read switch.
+      let allInvoices: any[] = await salesRead("gstr.b2bInvoices");
 
       if (monthParam !== null && yearParam !== null) {
         const month = parseInt(monthParam, 10);
@@ -366,18 +360,15 @@ export async function GET(req: Request) {
     }
 
     if (type === "GSTR1") {
-      const invoices = await Invoice.find({ type: "tax-invoice" }).sort({ date: 1 }).lean();
+      // Every tax invoice, oldest date first, through the sales read switch.
+      const invoices: any[] = await salesRead("gstr.gstr1Invoices");
 
       // E-way bills are generated separately from the invoice, but a real
       // one on file is real data worth surfacing — joined here rather than
       // left blank like the fields this ERP genuinely doesn't track.
       const invoiceNumbers = invoices.map((inv: any) => inv.invoiceNumber).filter(Boolean);
-      const ewayBills = invoiceNumbers.length
-        ? await EWayBill.find(
-            { invoiceNumber: { $in: invoiceNumbers } },
-            { invoiceNumber: 1, ewayBillNo: 1, generatedDate: 1 }
-          ).lean()
-        : [];
+      // (No numbers: no read at all, as before; lib/repo/sales/documents.ts mongoGstr1EwayBills.)
+      const ewayBills: any[] = await salesRead("gstr.gstr1EwayBills", invoiceNumbers);
       const ewbByInvoice = new Map(ewayBills.map((e: any) => [e.invoiceNumber, e]));
 
       const mappedGSTR1 = invoices.map((inv: any) => {
@@ -415,7 +406,8 @@ export async function GET(req: Request) {
       });
       return NextResponse.json({ success: true, data: mappedGSTR1 });
     } else if (type === "GSTR2") {
-      const purchases = await PurchaseEntry.find({}).sort({ billDate: 1 }).lean();
+      // Every purchase entry, oldest bill date first, through the stock read switch.
+      const purchases: any[] = await stockRead("purchaseEntries.gstr2");
 
       const mappedGSTR2 = purchases.map((pur: any) => {
         const intra = isIntraState(pur.supplierGST);

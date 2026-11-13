@@ -1,3 +1,4 @@
+import { crmRead } from "@/lib/repo/crm/shadow";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import WalkInQuery from "@/models/WalkInQuery";
@@ -12,14 +13,8 @@ export async function GET(req: Request) {
     const status = searchParams.get("status");
     const mobile = searchParams.get("mobile");
     
-    await connectToDatabase();
-    
-    const filter: any = {};
-    if (date) filter.date = date;
-    if (status) filter.status = status;
-    if (mobile) filter.mobile = mobile;
-    
-    const queries = await WalkInQuery.find(filter).sort({ createdAt: -1 });
+    // By date, status and mobile, newest first, through the crm read switch (MongoDB, MongoDB compared with D1, or D1).
+    const queries = await crmRead("walkIn.list", { date, status, mobile });
     return NextResponse.json({ success: true, data: queries });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

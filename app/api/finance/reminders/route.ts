@@ -1,6 +1,5 @@
+import { salesRead } from "@/lib/repo/sales/shadow";
 import { NextResponse } from "next/server";
-import connectToDatabase from "@/lib/db";
-import FinanceTransaction from "@/models/FinanceTransaction";
 
 /**
  * Finance payouts that are marked as received in the bank but still have no bank
@@ -9,29 +8,9 @@ import FinanceTransaction from "@/models/FinanceTransaction";
  */
 export async function GET() {
   try {
-    await connectToDatabase();
-
-    const missing = { $in: ["", null] };
-    const records = await FinanceTransaction.find(
-      {
-        approvalStatus: { $in: ["Disbursed", "Reconciled"] },
-        $or: [{ bankAccountRef: missing }, { transactionRef: missing }],
-      },
-      {
-        doId: 1,
-        invoiceNumber: 1,
-        customerName: 1,
-        financeProvider: 1,
-        date: 1,
-        paymentReceivedDate: 1,
-        actualReceivedAmount: 1,
-        netDisbursement: 1,
-        bankAccountRef: 1,
-        transactionRef: 1,
-      }
-    )
-      .sort({ paymentReceivedDate: 1 })
-      .lean();
+    // Paid-out (Disbursed / Reconciled) DOs with no bank account or no UTR, oldest payout first
+    // (lib/repo/sales/money.ts mongoFinanceReminders), through the sales read switch (MongoDB, MongoDB compared with D1, or D1).
+    const records: any[] = await salesRead("finance.reminders");
 
     const data = (records as any[]).map((r) => ({
       doId: r.doId,

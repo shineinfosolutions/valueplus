@@ -1,3 +1,4 @@
+import { salesRead } from "@/lib/repo/sales/shadow";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import EWayBill from "@/models/EWayBill";
@@ -9,13 +10,8 @@ export async function GET(req: Request) {
     const invoiceNumber = searchParams.get("invoiceNumber");
     const status = searchParams.get("status");
     
-    await connectToDatabase();
-    
-    const filter: any = {};
-    if (invoiceNumber) filter.invoiceNumber = invoiceNumber;
-    if (status && status !== "all") filter.status = status;
-    
-    const bills = await EWayBill.find(filter).sort({ createdAt: -1 });
+    // By invoice number and status, newest first, through the sales read switch (MongoDB, MongoDB compared with D1, or D1).
+    const bills = await salesRead("ewayBills.list", invoiceNumber, status);
     return NextResponse.json({ success: true, data: bills });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

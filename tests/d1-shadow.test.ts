@@ -89,7 +89,7 @@ async function readSourceTests(db: D1DatabaseLike) {
   configureReadSource({ resolveD1: () => db, envValue: () => envValue, flagTtlMs: 60_000 });
   const seeded = await one(db, "SELECT value FROM feature_flags WHERE key = 'read:masters'");
   check(seeded?.value === "shadow", "migration 0007 seeds read:masters = 'shadow'");
-  check((await getReadMode("sales")) === "mongo", "an area without a row reads MongoDB");
+  check((await getReadMode("no-such-area")) === "mongo", "an area without a row reads MongoDB (sales, crm, stock, staff have rows since 0008)");
   check((await getReadMode("masters")) === "shadow", "read:masters row is honoured");
   await db.prepare("UPDATE feature_flags SET value = 'd1' WHERE key = 'read:masters'").run();
   check((await getReadMode("masters")) === "shadow", "the value is cached (no D1 read per request)");

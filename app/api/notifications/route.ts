@@ -5,6 +5,7 @@ import Notification from "@/models/Notification";
 import { getActor } from "@/lib/requirePermission";
 import { sendDueDeliveryReminders } from "@/lib/delivery-reminders";
 import { sendOfficeStartReminder } from "@/lib/office-reminder";
+import { staffRead } from "@/lib/d1/area-reads";
 import StaffTask from "@/models/StaffTask";
 
 /**
@@ -29,9 +30,11 @@ export async function GET() {
     await sendDueDeliveryReminders();
     // Back-up for the 10:00 cron: goes out once a day, between 10:00 and 12:00, whoever opens the app first.
     await sendOfficeStartReminder();
+    // The latest 30 and the unread count, through the staff read switch (MongoDB, MongoDB compared with D1, or D1).
+    // The reminders above write to MongoDB, so this route keeps its MongoDB connection.
     const [data, unreadCount] = await Promise.all([
-      Notification.find({ recipientId: actor.id }).sort({ createdAt: -1 }).limit(30).lean(),
-      Notification.countDocuments({ recipientId: actor.id, readAt: null }),
+      staffRead<any[]>("notifications.latest", actor.id),
+      staffRead<number>("notifications.unreadCount", actor.id),
     ]);
     return NextResponse.json({ success: true, data, unreadCount });
   } catch (error: any) {
@@ -47,7 +50,9 @@ export async function PATCH(req: Request) {
     await connectToDatabase();
     // Reading a task's notification marks the task as seen by this person (the Admin / Manager see it on the task).
     const markSeen = async (filter: any) => {
-      const unreadTasks: any[] = await Notification.find({ ...filter, recipientId: actor.id, readAt: null, refType: "task" }, { refId: 1 }).lean();
+      // This person's unread task notifications (all, or the one by id), through the staff read switch. The marks
+      // themselves are written to MongoDB, and a task already marked is skipped by the $ne below.
+      const unreadTasks: any[] = await staffRead("notifications.unreadTaskRefs", actor.id, filter._id);
       for (const n of unreadTasks) {
         if (!mongoose.isValidObjectId(n.refId)) continue;
         await StaffTask.updateOne(

@@ -1,14 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import connectDB from "@/lib/db";
-import Invoice from "@/models/Invoice";
-import DeliveryChallan from "@/models/DeliveryChallan";
+import { salesRead } from "@/lib/repo/sales/shadow";
 
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await connectDB();
     const { id } = await params;
 
     if (!id) {
@@ -17,22 +14,13 @@ export async function GET(
 
     const decodedId = decodeURIComponent(id).trim();
 
-    // 1. Search in Invoices
-    const invoice = await Invoice.findOne({
-      $or: [
-        { invoiceNumber: decodedId },
-        { invoiceNumber: { $regex: new RegExp(`^${decodedId}$`, "i") } },
-        { deliveryChallanNo: decodedId },
-      ]
-    }).lean();
+    // Both look-ups go through the sales read switch (MongoDB, MongoDB compared with D1, or D1); the queries are
+    // unchanged (lib/repo/sales/invoices.ts mongoTrackInvoice, documents.ts mongoTrackChallan).
+    // 1. Search in Invoices: by number (exact, or the same letters in any case) or by challan number.
+    const invoice = await salesRead("track.invoice", decodedId);
 
-    // 2. Search in DeliveryChallan
-    const challan = await DeliveryChallan.findOne({
-      $or: [
-        { challanNo: decodedId },
-        { invoiceNumber: decodedId },
-      ]
-    }).lean();
+    // 2. Search in DeliveryChallan: by challan number or invoice number.
+    const challan = await salesRead("track.challan", decodedId);
 
     if (!invoice && !challan) {
       return NextResponse.json({ success: false, error: "Order not found with provided tracking code" }, { status: 404 });

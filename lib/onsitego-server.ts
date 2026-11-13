@@ -3,6 +3,8 @@
 import "@/lib/purchase-import/pdf-env";
 import DocumentFolder from "@/models/DocumentFolder";
 import OnsitegoPlan from "@/models/OnsitegoPlan";
+import connectToDatabase from "@/lib/db";
+import { crmRead } from "@/lib/repo/crm/shadow";
 import { ONSITEGO_FOLDER, OnsitegoPlanRow, parsePlanLines } from "@/lib/onsitego";
 
 /**
@@ -16,8 +18,12 @@ export const ONSITEGO_ONLY_ROLES = ["salesman", "sales", "cashier", "warehouse",
 /** The On Site Go folder, made the first time anyone asks for it. */
 export async function getOnsitegoFolder(createdBy = "System"): Promise<{ _id: any; name: string }> {
   const nameKey = ONSITEGO_FOLDER.toLowerCase();
-  const found: any = await DocumentFolder.findOne({ nameKey }).lean();
+  // Looked up through the crm read switch (MongoDB, MongoDB compared with D1, or D1). Not found (or not copied to D1 yet): MongoDB looks again and creates it if it is missing.
+  const found: any = await crmRead("documentFolders.byNameKey", { nameKey });
   if (found) return found;
+  await connectToDatabase();
+  const again: any = await DocumentFolder.findOne({ nameKey }).lean();
+  if (again) return again;
   try {
     return (await DocumentFolder.create({ name: ONSITEGO_FOLDER, nameKey, createdBy })).toObject();
   } catch {

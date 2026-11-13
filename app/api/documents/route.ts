@@ -1,3 +1,4 @@
+import { crmRead } from "@/lib/repo/crm/shadow";
 import { NextResponse } from "next/server";
 import mongoose from "mongoose";
 import connectToDatabase from "@/lib/db";
@@ -46,10 +47,9 @@ export async function GET() {
     const gate = await requireViewer();
     if (gate.error) return gate.error;
 
-    await connectToDatabase();
-    const filter: any = {};
-    if (gate.onsitegoOnly) filter.folderId = String((await getOnsitegoFolder())._id);
-    const documents = await StoredDocument.find(filter).sort({ date: -1, createdAt: -1 }).lean();
+    // Salesmen and cashiers see only the On Site Go folder. Newest date first, through the crm read switch (MongoDB, MongoDB compared with D1, or D1).
+    const folderId = gate.onsitegoOnly ? String((await getOnsitegoFolder())._id) : null;
+    const documents = await crmRead("documents.list", { folderId });
     return NextResponse.json({ success: true, data: documents });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

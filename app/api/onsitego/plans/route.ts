@@ -1,6 +1,6 @@
+import { crmRead } from "@/lib/repo/crm/shadow";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
-import OnsitegoPlan from "@/models/OnsitegoPlan";
 import { getActor } from "@/lib/requirePermission";
 import cloudinary from "@/lib/cloudinary";
 import StoredDocument from "@/models/StoredDocument";
@@ -100,10 +100,8 @@ export async function GET() {
   try {
     const actor = await getActor();
     if (!actor) return NextResponse.json({ success: false, error: "You must be signed in to do this." }, { status: 401 });
-    await connectToDatabase();
-    const plans: any[] = await OnsitegoPlan.find({}, { category: 1, device: 1, kind: 1, vpCode: 1, minPrice: 1, maxPrice: 1, planName: 1, years: 1, price: 1, sourceFileName: 1, createdAt: 1 })
-      .sort({ minPrice: 1, price: 1 })
-      .lean();
+    // The price list, cheapest band first, through the crm read switch (MongoDB, MongoDB compared with D1, or D1).
+    const plans: any[] = await crmRead("onsitego.plans");
     return NextResponse.json({
       success: true,
       data: plans.map(({ _id, sourceFileName, createdAt, ...p }) => p),

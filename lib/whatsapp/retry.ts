@@ -1,4 +1,4 @@
-import WhatsAppSetting from "@/models/WhatsAppSetting";
+import { crmRead } from "@/lib/repo/crm/shadow";
 
 /**
  * Re-send one message through the Cloud API.
@@ -12,9 +12,8 @@ export async function notifyRetry(
   toNumber: string,
   message: string
 ): Promise<{ ok: boolean; id?: string; error?: string }> {
-  const withToken: any = await WhatsAppSetting.findById(settings._id).select(
-    "+cloudApi.accessToken"
-  );
+  // The settings with the access token, through the crm read switch (MongoDB, MongoDB compared with D1, or D1).
+  const withToken: any = await crmRead("whatsapp.settingsWithToken", { id: String(settings._id) });
   const cfg = withToken?.cloudApi || {};
 
   if (!cfg.phoneNumberId || !cfg.accessToken) {

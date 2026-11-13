@@ -1,3 +1,4 @@
+import { crmRead } from "@/lib/repo/crm/shadow";
 import { istYear } from "@/lib/ist";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
@@ -6,16 +7,11 @@ import Account from "@/models/Account";
 
 export async function GET(req: Request) {
   try {
-    await connectToDatabase();
     const url = new URL(req.url);
     const accountId = url.searchParams.get("accountId");
-    
-    let query = {};
-    if (accountId) {
-      query = { "lines.accountId": accountId };
-    }
-    
-    const entries = await JournalEntry.find(query).sort({ date: -1, createdAt: -1 });
+
+    // Every entry, or those with a line on this account, newest first, through the crm read switch (MongoDB, MongoDB compared with D1, or D1).
+    const entries = await crmRead("journal.list", { accountId });
     return NextResponse.json({ success: true, data: entries });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

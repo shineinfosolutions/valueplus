@@ -5,9 +5,8 @@ import VendorBill from "@/models/VendorBill";
 import VendorPayment from "@/models/VendorPayment";
 import Supplier from "@/models/Supplier";
 import Customer from "@/models/Customer";
-import Invoice from "@/models/Invoice";
 import PurchaseEntry from "@/models/PurchaseEntry";
-import PaymentTransaction from "@/models/PaymentTransaction";
+import { salesRead } from "@/lib/repo/sales/shadow";
 import { requirePermission } from "@/lib/requirePermission";
 import { classifyPaymentMode } from "@/lib/payment-modes";
 import {
@@ -269,7 +268,8 @@ export async function GET(req: Request) {
       const [suppliers, purchases, payments] = await Promise.all([
         id ? Supplier.find({ _id: id }).lean() : Supplier.find({}).lean(),
         PurchaseEntry.find({}).lean(),
-        PaymentTransaction.find({ partyType: "Supplier" }).lean(),
+        // Supplier payments, through the sales read switch (MongoDB, MongoDB compared with D1, or D1).
+        salesRead<any[]>("vendorsLedger.payments", "Supplier"),
       ]);
 
       parties = suppliers as any[];
@@ -299,11 +299,10 @@ export async function GET(req: Request) {
     } else if (party === "customer") {
       const [customers, invoices, payments] = await Promise.all([
         id ? Customer.find({ _id: id }).lean() : Customer.find({}).lean(),
-        // A quotation is not a bill raised on the customer, so it stays out of their ledger.
-        id
-          ? Invoice.find({ customerId: id, type: { $ne: "proforma" } }).lean()
-          : Invoice.find({ type: { $ne: "proforma" } }).lean(),
-        PaymentTransaction.find({ partyType: "Customer" }).lean(),
+        // A quotation is not a bill raised on the customer, so it stays out of their ledger. This customer's (or
+        // every) bill and the customer receipts go through the sales read switch.
+        salesRead<any[]>("vendorsLedger.customerInvoices", id || null),
+        salesRead<any[]>("vendorsLedger.payments", "Customer"),
       ]);
 
       parties = customers as any[];

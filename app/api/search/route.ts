@@ -4,7 +4,7 @@ import Invoice from "@/models/Invoice";
 import Item from "@/models/Item";
 import Customer from "@/models/Customer";
 import SerialNumber from "@/models/SerialNumber";
-import Lead from "@/models/Lead";
+import { crmRead } from "@/lib/repo/crm/shadow";
 import DeliveryChallan from "@/models/DeliveryChallan";
 import FinanceTransaction from "@/models/FinanceTransaction";
 
@@ -53,13 +53,8 @@ export async function GET(req: Request) {
           { itemName: regex },
         ],
       }).limit(5),
-      Lead.find({
-        $or: [
-          { leadId: regex },
-          { customerName: regex },
-          { mobile: regex },
-        ],
-      }).limit(5),
+      // Up to 5 leads by lead id, name or mobile (the same pattern), through the crm read switch (MongoDB, MongoDB compared with D1, or D1).
+      crmRead<any[]>("leads.search", { q }),
       DeliveryChallan.find({
         $or: [
           { challanNo: regex },
