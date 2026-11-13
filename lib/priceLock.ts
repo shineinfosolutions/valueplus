@@ -5,6 +5,7 @@ import User from "@/models/User";
 import Item from "@/models/Item";
 import PriceUnlockSetting from "@/models/PriceUnlockSetting";
 import { SessionActor } from "@/lib/requirePermission";
+import { readStaff } from "@/lib/repo/staff/shadow-read";
 
 /**
  * Estimate approval and the locked minimum price.
@@ -30,8 +31,9 @@ export function effectiveApproval(est: any): "pending" | "approved" | "rejected"
 }
 
 export async function isUnlockPinSet(): Promise<boolean> {
-  await connectToDatabase();
-  const doc = await PriceUnlockSetting.findOne({ key: "price-unlock" }).lean();
+  // Through the read:staff switch (lib/repo/staff/shadow-read.ts): only whether a PIN hash exists leaves here.
+  // verifyUnlockPin below CHECKS a PIN (and writes the lockout counters), so it keeps reading MongoDB.
+  const doc = await readStaff("priceUnlock.setting");
   return Boolean((doc as any)?.pinHash);
 }
 

@@ -4,6 +4,7 @@ import connectToDatabase from "@/lib/db";
 import Vendor from "@/models/Vendor";
 import VendorBill from "@/models/VendorBill";
 import { requirePermission } from "@/lib/requirePermission";
+import { readStock } from "@/lib/repo/stock/shadow-read";
 
 async function nextBillNo(): Promise<string> {
   const year = istYear();
@@ -22,14 +23,12 @@ export async function GET(req: Request) {
   if (!gate.ok) return gate.response;
 
   try {
-    await connectToDatabase();
     const { searchParams } = new URL(req.url);
     const vendorId = searchParams.get("vendorId");
 
-    const filter: any = {};
-    if (vendorId) filter.vendorId = vendorId;
-
-    const bills = await VendorBill.find(filter).sort({ date: -1, createdAt: -1 }).lean();
+    // Through the read:stock switch (lib/repo/stock/shadow-read.ts): MongoDB, MongoDB compared with D1, or D1.
+    // One vendor's bills if asked; newest bill date first.
+    const bills = await readStock("vendorBills.list", { vendorId });
     return NextResponse.json({ success: true, data: bills });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

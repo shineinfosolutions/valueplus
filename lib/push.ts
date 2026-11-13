@@ -1,5 +1,6 @@
 import PushSubscription from "@/models/PushSubscription";
 import { pushConfigured, sendWebPush } from "@/lib/web-push";
+import { readStaff } from "@/lib/repo/staff/shadow-read";
 
 export interface PushMessage {
   title: string;
@@ -30,7 +31,9 @@ export async function pushToUsers(
   const none = { devices: 0, sent: 0, failed: 0, removed: 0 };
   try {
     if (!pushConfigured() || userIds.length === 0) return none;
-    const subs = await PushSubscription.find({ userId: { $in: userIds.map(String) } }).limit(300).lean();
+    // The devices through the read:staff switch (lib/repo/staff/shadow-read.ts): the same query, keys included (they
+    // are needed to send). The clean-up writes below go to MongoDB by endpoint, as before.
+    const subs: any[] = await readStaff("push.subsForUsers", userIds.map(String));
     if (subs.length === 0) return none;
 
     const payload = { title: clip(message.title || "ValuePlus ERP", 120), body: clip(message.body || "", 300), link: safeLink(message.link), nid: message.nid && /^[a-f0-9]{24}$/i.test(message.nid) ? message.nid : "" };

@@ -10,6 +10,7 @@ import LeaveRequest from "@/models/LeaveRequest";
 import { todayInIndia } from "@/lib/today";
 import { getActor } from "@/lib/requirePermission";
 import { loadIncentiveBook, normName, summarise } from "@/lib/staff-incentive";
+import { readStaff } from "@/lib/repo/staff/shadow-read";
 
 export const dynamic = "force-dynamic";
 
@@ -32,15 +33,14 @@ export async function GET(req: Request) {
     const book = await loadIncentiveBook();
 
     if (!id) {
-      const users: any[] = await User.find({ role: { $nin: ["supplier", "vendor"] } })
-        .select("name email role mobile designation status joiningDate assignedBrand")
-        .sort({ name: 1 })
-        .lean();
+      // The staff reads of this route go through the read:staff switch (lib/repo/staff/shadow-read.ts), the same
+      // queries as before; the incentive book (lib/staff-incentive.ts) and the leads are other areas' reads.
+      const users: any[] = await readStaff("users.directory");
       // Today's attendance, for the "present / late / not checked in" cards.
       const today = todayInIndia();
-      const todays: any[] = await Attendance.find({ date: today }, { staffName: 1, checkInTime: 1, checkOutTime: 1, status: 1, lateMinutes: 1, isLate: 1 }).lean();
+      const todays: any[] = await readStaff("attendance.overviewDay", today);
       const byName = new Map<string, any>(todays.map((a) => [normName(a.staffName), a]));
-      const away: any[] = await LeaveRequest.find({ status: "approved", kind: { $ne: "break" }, fromDate: { $lte: today }, toDate: { $gte: today } }, { staffName: 1 }).lean();
+      const away: any[] = await readStaff("leave.approvedAwayOn", today);
       const onLeave = new Set(away.map((l) => normName(l.staffName)));
       const data = users.map((u) => {
         const inc = summarise(book, String(u._id), u.name);
@@ -74,7 +74,7 @@ export async function GET(req: Request) {
     }
 
     if (!mongoose.isValidObjectId(id)) return NextResponse.json({ success: false, error: "Staff member not found." }, { status: 400 });
-    const user: any = await User.findById(id).select("name email role mobile designation status joiningDate assignedBrand address").lean();
+    const user: any = await readStaff("users.findById", id, "name email role mobile designation status joiningDate assignedBrand address");
     if (!user) return NextResponse.json({ success: false, error: "Staff member not found." }, { status: 404 });
 
     const k = normName(user.name);
@@ -85,13 +85,13 @@ export async function GET(req: Request) {
 
     const leads: any[] = await Lead.find({}, { customerName: 1, status: 1, assignedStaff: 1, estimatedValue: 1 }).lean();
     const myLeads = leads.filter((l) => normName(l.assignedStaff) === k);
-    const tasks: any[] = await StaffTask.find({}, { assignedStaff: 1, assignedStaffId: 1, status: 1 }).lean();
+    const tasks: any[] = await readStaff("tasks.ownership");
     const myTasks = tasks.filter((t) => String(t.assignedStaffId || "") === String(user._id) || normName(t.assignedStaff) === k);
 
-    const payouts = await IncentivePayout.find({ userId: String(user._id) }).sort({ date: -1, createdAt: -1 }).limit(200).lean();
+    const payouts: any[] = await readStaff("payouts.forUser", String(user._id), 200);
 
     // Attendance: this month's counts, and the last 20 days with the times.
-    const attRows: any[] = await Attendance.find({ staffName: user.name }).sort({ date: -1 }).limit(60).lean();
+    const attRows: any[] = await readStaff("attendance.recentForStaff", user.name);
     const monthAtt = attRows.filter((a) => String(a.date).slice(0, 7) === month);
     const attendance = {
       month: {

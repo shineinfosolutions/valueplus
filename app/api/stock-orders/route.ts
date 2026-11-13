@@ -10,6 +10,7 @@ import AuditLog from "@/models/AuditLog";
 import { getActor } from "@/lib/requirePermission";
 import { notifyAdmins, notifyAssignee } from "@/lib/notify";
 import { buildOrderMessage, STOCK_APPROVER_ROLES, STOCK_ORDER_ROLES } from "@/lib/supplier-stock";
+import { readStock } from "@/lib/repo/stock/shadow-read";
 
 export const dynamic = "force-dynamic";
 
@@ -58,16 +59,11 @@ export async function GET(req: Request) {
   try {
     const actor = await getActor();
     if (!actor) return NextResponse.json({ success: false, error: "You must be signed in to do this." }, { status: 401 });
-    await connectToDatabase();
     const status = new URL(req.url).searchParams.get("status");
-    const query: any = {};
-    if (status) query.status = status;
-    if (["salesman", "sales"].includes(actor.role)) {
-      // His own requests, and the combined orders his requests were folded into.
-      const mine: any[] = await StockOrderRequest.find({ salespersonId: actor.id }, { requestNumber: 1 }).lean();
-      query.$or = [{ salespersonId: actor.id }, { mergedFrom: { $in: mine.map((m) => m.requestNumber) } }];
-    }
-    const data = await StockOrderRequest.find(query).sort({ createdAt: -1 }).limit(200).lean();
+    // Through the read:stock switch (lib/repo/stock/shadow-read.ts): the newest 200 requests (of one status if
+    // asked). A salesman sees only his own requests and the combined orders his requests were folded into.
+    const salespersonId = ["salesman", "sales"].includes(actor.role) ? actor.id : null;
+    const data = await readStock("stockOrders.list", { status, salespersonId });
     return NextResponse.json({ success: true, data });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

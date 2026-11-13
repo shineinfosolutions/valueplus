@@ -3,6 +3,7 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import connectToDatabase from "@/lib/db";
 import User from "@/models/User";
 import bcrypt from "bcryptjs";
+import { loginLookup } from "@/lib/repo/staff/login-lookup";
 
 const DEFAULT_SEEDED_ACCOUNTS = [
   {
@@ -128,15 +129,11 @@ export const authOptions: NextAuthOptions = {
         const inputIdentifier = credentials.email.trim();
         const inputPassword = credentials.password.trim();
 
-        await connectToDatabase();
-
-        // 1. Search by email (case-insensitive) or mobile number
-        let user = await User.findOne({
-          $or: [
-            { email: { $regex: new RegExp(`^${inputIdentifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, "i") } },
-            { mobile: inputIdentifier },
-          ]
-        }).lean();
+        // 1. Search by email (case-insensitive) or mobile number, through the read:staff switch. The query is the
+        //    same (the whole user, password hash included for the bcrypt check below). With the switch on 'd1',
+        //    MongoDB confirms D1's candidate by primary key and answers every miss, so no user (or password) is
+        //    accepted that MongoDB would not accept: lib/repo/staff/login-lookup.ts.
+        let user: any = await loginLookup(inputIdentifier);
 
         // 2. If user not in DB yet, check predefined seed list & auto-create
         if (!user) {
@@ -149,6 +146,7 @@ export const authOptions: NextAuthOptions = {
           );
 
           if (matchedSeed) {
+            await connectToDatabase();
             const hashedPassword = await bcrypt.hash(matchedSeed.password, 10);
             const created = await User.create({
               ...matchedSeed,

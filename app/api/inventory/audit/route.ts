@@ -8,6 +8,7 @@ import { getActor, SessionActor } from "@/lib/requirePermission";
 import { todayInIndia } from "@/lib/today";
 import { isMobileProduct } from "@/lib/mobile-product";
 import { needsBrand } from "@/lib/brand-names";
+import { readStock } from "@/lib/repo/stock/shadow-read";
 
 /** The product's brand on each audit line (read from the catalog now, so the audit list can be opened brand by brand). */
 async function withBrands(audit: any) {
@@ -58,8 +59,10 @@ export async function GET(req: Request) {
 
     // Dashboard card: today's audit and whether this user can run it.
     if (searchParams.get("checkPending") === "true") {
-      const todayAudit: any = await InventoryAudit.findOne({ auditDate: today, ...kindFilter("all") }).sort({ createdAt: -1 }).lean();
-      const todayMobileAudit: any = await InventoryAudit.findOne({ auditDate: today, ...kindFilter("mobile") }).sort({ createdAt: -1 }).lean();
+      // The audit reads go through the read:stock switch (lib/repo/stock/shadow-read.ts); the user look-ups above
+      // (Live Audit access) still read MongoDB.
+      const todayAudit: any = await readStock("inventoryAudits.forDay", { date: today, kind: "all" });
+      const todayMobileAudit: any = await readStock("inventoryAudits.forDay", { date: today, kind: "mobile" });
       const pending = !todayAudit || todayAudit.status === "In Progress";
       return NextResponse.json({
         success: true,
@@ -96,26 +99,14 @@ export async function GET(req: Request) {
     const id = searchParams.get("id");
     if (id) {
       if (!mongoose.isValidObjectId(id)) return NextResponse.json({ success: false, error: "Bad audit id" }, { status: 400 });
-      const audit = await InventoryAudit.findById(id).lean();
+      // An ObjectId's hex is the same id in any case; D1 keeps it in lower case.
+      const audit = await readStock("inventoryAudits.byId", { id: /^[0-9a-f]{24}$/i.test(id) ? id.toLowerCase() : id });
       if (!audit) return NextResponse.json({ success: false, error: "Audit not found" }, { status: 404 });
       return NextResponse.json({ success: true, data: await withBrands(audit) });
     }
 
-    const filter: any = {};
-    const date = searchParams.get("date");
-    if (date) filter.auditDate = date;
-    const audits = await InventoryAudit.aggregate([
-      { $match: filter },
-      { $sort: { auditDate: -1, createdAt: -1 } },
-      { $limit: 200 },
-      {
-        $addFields: {
-          total: { $size: { $ifNull: ["$items", []] } },
-          counted: { $size: { $filter: { input: { $ifNull: ["$items", []] }, as: "i", cond: { $eq: ["$$i.counted", true] } } } },
-        },
-      },
-      { $project: { items: 0 } },
-    ]);
+    // The history (newest 200, optionally one date): each audit without its lines, with `total` and `counted`.
+    const audits = await readStock("inventoryAudits.list", { date: searchParams.get("date") });
     return NextResponse.json({ success: true, data: audits });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

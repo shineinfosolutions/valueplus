@@ -152,7 +152,12 @@ export const ENSURE_INDEXES_JOB = "ensure-indexes:v3";
  */
 export async function ensureIndexesOnce(claim: (key: string) => Promise<boolean>): Promise<EnsureIndexesResult | null> {
   try {
-    if (await ScheduledRun.exists({ key: ENSURE_INDEXES_JOB })) return null;
+    // Through the read:staff switch (lib/repo/staff/shadow-read.ts). Only a guard: the claim below is MongoDB's
+    // atomic once-only write, so a stale answer can at most cost one more claim attempt.
+    // Loaded here, not at the top: the staff reads import every staff model, and a model that is loaded builds its
+    // own indexes (and creates its collection), which this module must not cause just by being imported.
+    const { readStaff } = await import("@/lib/repo/staff/shadow-read");
+    if (await readStaff("scheduledRuns.exists", ENSURE_INDEXES_JOB)) return null;
     if (!(await claim(`${ENSURE_INDEXES_JOB}:attempt:${new Date().toISOString().slice(0, 13)}`))) return null;
     const result = await ensureIndexes();
     console.log(

@@ -6,6 +6,7 @@ import PurchaseOrder from "@/models/PurchaseOrder";
 import Supplier from "@/models/Supplier";
 import Item from "@/models/Item";
 import StaffTask from "@/models/StaffTask";
+import { readStock } from "@/lib/repo/stock/shadow-read";
 
 /**
  * A Purchase Order alone never updates stock — only a Purchase Entry
@@ -68,8 +69,8 @@ async function syncPurchasePricesFromOrder(items: any[] | undefined) {
 
 export async function GET() {
   try {
-    await connectToDatabase();
-    const pos = await PurchaseOrder.find({}).sort({ createdAt: -1 }).lean();
+    // Read through the read:stock switch (lib/repo/stock/shadow-read.ts): MongoDB, MongoDB compared with D1, or D1.
+    const pos = await readStock("purchaseOrders.list", {});
     return NextResponse.json({ success: true, data: pos });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

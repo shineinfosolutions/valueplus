@@ -2,6 +2,7 @@ import StockOrderRequest from "@/models/StockOrderRequest";
 import ScheduledRun from "@/models/ScheduledRun";
 import { notifyRoles } from "@/lib/notify";
 import { todayInIndia } from "@/lib/today";
+import { readStock } from "@/lib/repo/stock/shadow-read";
 
 /** GIDA warehouse orders are kept for this many days, then deleted (whatever their status). */
 export const STOCK_ORDER_KEEP_DAYS = 7;
@@ -25,9 +26,9 @@ export async function runStockOrderHousekeeping(): Promise<{ ran: boolean; delet
   const cutoff = new Date(Date.now() - STOCK_ORDER_KEEP_DAYS * DAY_MS);
   const del = await StockOrderRequest.deleteMany({ createdAt: { $lt: cutoff } });
 
-  const pending: any[] = await StockOrderRequest.find({ status: "pending" }, { requestNumber: 1, salesperson: 1, createdAt: 1 })
-    .sort({ createdAt: 1 })
-    .lean();
+  // Through the read:stock switch (lib/repo/stock/shadow-read.ts): pending requests, oldest first. The delete
+  // above is copied into D1 by write-through before it returns, so D1 already lacks the deleted orders.
+  const pending: any[] = await readStock("stockOrders.pending", {});
   if (pending.length > 0) {
     const fmt = (d: Date) => d.toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" });
     const list = pending

@@ -7,6 +7,7 @@ import { getActor } from "@/lib/requirePermission";
 import { readWithShadow } from "@/lib/d1/shadow";
 import { getItemById } from "@/lib/repo/masters/items";
 import { MASTER_COMPARE } from "@/lib/repo/masters/compare";
+import { readStock } from "@/lib/repo/stock/shadow-read";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +21,7 @@ export async function GET(req: Request) {
     if (!actor) return NextResponse.json({ success: false, error: "You must be signed in to do this." }, { status: 401 });
     const id = new URL(req.url).searchParams.get("id") || "";
     if (!mongoose.isValidObjectId(id)) return NextResponse.json({ success: false, error: "Product not found." }, { status: 400 });
-    // Master-data read through the D1 switch (lib/d1/shadow.ts); the purchase bills below still read MongoDB.
+    // Master-data read through the D1 switch (lib/d1/shadow.ts); the purchase bills below through the read:stock one.
     const it: any = await readWithShadow(
       "masters",
       "items.byId",
@@ -32,15 +33,9 @@ export async function GET(req: Request) {
       { compare: MASTER_COMPARE["items.byId"] }
     );
     if (!it) return NextResponse.json({ success: false, error: "Product not found." }, { status: 404 });
-    await connectToDatabase();
 
-    const bills: any[] = await PurchaseEntry.find(
-      { type: { $ne: "debit-note" }, status: { $ne: "cancelled" }, $or: [{ "items.itemId": id }, { "items.name": it.name }] },
-      { billNo: 1, supplierName: 1, billDate: 1, items: 1 }
-    )
-      .sort({ billDate: -1 })
-      .limit(5)
-      .lean();
+    // The last 5 bills with this product (by id or by name), newest bill date first.
+    const bills: any[] = await readStock("purchaseEntries.brandInfo", { id, name: it.name });
     const lastPurchases = bills.map((b) => {
       const line = (b.items || []).find((l: any) => String(l.itemId) === id || l.name === it.name) || {};
       return { billNo: b.billNo, supplier: b.supplierName, date: b.billDate, rate: Number(line.rate) || 0, quantity: Number(line.quantity) || 0 };

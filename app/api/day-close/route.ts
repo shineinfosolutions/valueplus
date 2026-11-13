@@ -4,6 +4,7 @@ import connectToDatabase from "@/lib/db";
 import DayClose from "@/models/DayClose";
 import { getCashRegisterSummary } from "@/lib/cashRegister";
 import { CASH_NOTE_VALUES, denominationTotal } from "@/lib/cashDenominations";
+import { readStock } from "@/lib/repo/stock/shadow-read";
 
 function toDateStr(d: Date): string {
   return d.toISOString().split("T")[0];
@@ -18,14 +19,16 @@ function addDays(dateStr: string, days: number): string {
 /** The earliest past business day with no DayClose record yet, or null if
  *  everything up to yesterday is already closed. Skipping more than one
  *  night naturally pushes this back further rather than just nagging about
- *  the latest day — nothing gets forgotten. */
-async function getPendingDate(): Promise<string | null> {
+ *  the latest day — nothing gets forgotten.
+ *  `viaSwitch`: the page (GET) reads the latest close through the read:stock switch; the POST decides which day it
+ *  is about to WRITE, so it reads MongoDB, the source of truth. */
+async function getPendingDate(viaSwitch = false): Promise<string | null> {
   // Today in India: on the UTC server, between midnight and 05:30 IST the UTC date is still yesterday, so the day
   // that just ended could not be closed (and the Sales / Cash lock waited until 05:30).
   const todayStr = istToday();
   const yesterdayStr = addDays(todayStr, -1);
 
-  const latest = await DayClose.findOne({}).sort({ date: -1 });
+  const latest: any = viaSwitch ? await readStock("dayCloses.latest", {}) : await DayClose.findOne({}).sort({ date: -1 });
   if (!latest) return yesterdayStr;
   if (latest.date >= yesterdayStr) return null;
   return addDays(latest.date, 1);
@@ -56,11 +59,13 @@ async function expectedForDay(date: string) {
 
 export async function GET(req: Request) {
   try {
+    // The day-close reads go through the read:stock switch (lib/repo/stock/shadow-read.ts); the pending day's cash
+    // summary below is lib/cashRegister.ts's.
     await connectToDatabase();
-    const pendingDate = await getPendingDate();
+    const pendingDate = await getPendingDate(true);
     // Last 60 days of closed audits — so Admin/Manager can see who actually
     // did each day's cash count, when, and whether it matched the system.
-    const history = await DayClose.find({}).sort({ date: -1 }).limit(60).lean();
+    const history = await readStock("dayCloses.history", {});
     // What the drawer should hold at the end of the pending day (start, cash in, cash out).
     const pendingSummary = pendingDate ? await expectedForDay(pendingDate) : null;
     return NextResponse.json({ success: true, data: { pendingDate, pendingSummary, history } });

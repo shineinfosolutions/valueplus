@@ -1,10 +1,10 @@
 import { istDayStart, istDayEnd } from "@/lib/ist";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
-import AuditLog from "@/models/AuditLog";
 import DeletedInvoice from "@/models/DeletedInvoice";
-import DeletedPurchaseEntry from "@/models/DeletedPurchaseEntry";
 import { requirePermission } from "@/lib/requirePermission";
+import { readStock } from "@/lib/repo/stock/shadow-read";
+import { readStaff } from "@/lib/repo/staff/shadow-read";
 
 function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -24,8 +24,6 @@ export async function GET(req: Request) {
   if (!gate.ok) return gate.response;
 
   try {
-    await connectToDatabase();
-
     const { searchParams } = new URL(req.url);
     const action = searchParams.get("action");
     const from = searchParams.get("from");
@@ -40,6 +38,8 @@ export async function GET(req: Request) {
     if (to) range.$lte = istDayEnd(to);
 
     if (view === "deleted-invoices") {
+      // The invoice archive is the sales area's: still MongoDB here.
+      await connectToDatabase();
       const filter: any = {};
       if (from || to) filter.deletedAt = range;
       if (q) {
@@ -55,13 +55,9 @@ export async function GET(req: Request) {
     }
 
     if (view === "deleted-purchase-entries") {
-      const filter: any = {};
-      if (from || to) filter.deletedAt = range;
-      if (q) {
-        const rx = new RegExp(escapeRegex(q), "i");
-        filter.$or = [{ billNo: rx }, { supplierName: rx }, { deletedBy: rx }];
-      }
-      const rows = await DeletedPurchaseEntry.find(filter).sort({ deletedAt: -1 }).limit(limit).lean();
+      // Through the read:stock switch (lib/repo/stock/shadow-read.ts). Same filter as before: deletedAt within the
+      // India days from..to, q matching the bill number, supplier or who deleted it; newest first, `limit` rows.
+      const rows: any[] = await readStock("deletedPurchaseEntries.audit", { from, to, q, limit });
       const totalAmount = rows.reduce((sum, r: any) => sum + (Number(r.total) || 0), 0);
       return NextResponse.json({
         success: true,
@@ -69,19 +65,11 @@ export async function GET(req: Request) {
       });
     }
 
-    const filter: any = {};
-    if (action) filter.action = action;
-    if (from || to) filter.createdAt = range;
-    // A bill's own history: exact references (e.g. the bill number, and "invoice:<number>"
-    // for the requests sent about it), comma separated.
-    const refs = (searchParams.get("refs") || "").split(",").map((r) => r.trim()).filter(Boolean).slice(0, 10);
-    if (refs.length > 0) filter.entityRef = { $in: refs };
-    if (q) {
-      const rx = new RegExp(escapeRegex(q), "i");
-      filter.$or = [{ entityRef: rx }, { partyName: rx }, { performedBy: rx }, { reason: rx }];
-    }
-
-    const rows = await AuditLog.find(filter).sort({ createdAt: -1 }).limit(limit).lean();
+    // The log itself, through the read:staff switch (lib/repo/staff/shadow-read.ts). audit.list builds the same filter
+    // as this route did: action, createdAt within the India days from..to, exact `refs` (a bill's own history: the
+    // bill number and "invoice:<number>", comma separated, at most 10), q matching the reference, party, person or
+    // reason; newest first, `limit` rows (default 200, at most 1000).
+    const rows: any[] = await readStaff("audit.list", { action, from, to, refs: searchParams.get("refs"), q, limit: searchParams.get("limit") });
     const totalAmount = rows.reduce((sum, r: any) => sum + (Number(r.amount) || 0), 0);
 
     return NextResponse.json({

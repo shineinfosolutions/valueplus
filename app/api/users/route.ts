@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import User from "@/models/User";
 import bcrypt from "bcryptjs";
+import { readStaff } from "@/lib/repo/staff/shadow-read";
 
 /** The Store Manager can see the staff master, but logins, roles and passwords are changed by the Admin only. */
 async function managerBlocked() {
@@ -17,8 +18,9 @@ async function managerBlocked() {
 
 export async function GET() {
   try {
-    await connectToDatabase();
-    const rawUsers = await User.find({}).select("-password").sort({ createdAt: -1 }).lean();
+    // Through the read:staff switch (lib/repo/staff/shadow-read.ts): MongoDB, MongoDB compared with D1, or D1.
+    // Every user without the password hash, newest first.
+    const rawUsers: any[] = await readStaff("users.list");
     const users = rawUsers.map((u: any) => ({
       ...u,
       assignedBrand: u.assignedBrand || (u.email === "salesman@valueplus.in" ? "HAIER" : ""),

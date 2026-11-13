@@ -1,15 +1,12 @@
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
-import Vendor from "@/models/Vendor";
-import VendorBill from "@/models/VendorBill";
-import VendorPayment from "@/models/VendorPayment";
 import Supplier from "@/models/Supplier";
 import Customer from "@/models/Customer";
 import Invoice from "@/models/Invoice";
-import PurchaseEntry from "@/models/PurchaseEntry";
 import PaymentTransaction from "@/models/PaymentTransaction";
 import { requirePermission } from "@/lib/requirePermission";
 import { classifyPaymentMode } from "@/lib/payment-modes";
+import { readStock } from "@/lib/repo/stock/shadow-read";
 import {
   LedgerEntryInput,
   buildLedger,
@@ -251,8 +248,9 @@ export async function GET(req: Request) {
   if (!gate.ok) return gate.response;
 
   try {
-    await connectToDatabase();
-
+    // Purchase bills, vendors, vendor bills and vendor payments go through the read:stock switch
+    // (lib/repo/stock/shadow-read.ts); suppliers, customers, invoices and payment transactions belong to other areas
+    // and still read MongoDB.
     const id = searchParams.get("id");
     const from = searchParams.get("from") || undefined;
     const to = searchParams.get("to") || undefined;
@@ -266,9 +264,10 @@ export async function GET(req: Request) {
     const rawByParty = new Map<string, { bills: any[]; pays: any[] }>();
 
     if (party === "supplier") {
+      await connectToDatabase();
       const [suppliers, purchases, payments] = await Promise.all([
         id ? Supplier.find({ _id: id }).lean() : Supplier.find({}).lean(),
-        PurchaseEntry.find({}).lean(),
+        readStock<any[]>("purchaseEntries.allNatural", {}),
         PaymentTransaction.find({ partyType: "Supplier" }).lean(),
       ]);
 
@@ -297,6 +296,7 @@ export async function GET(req: Request) {
         rawByParty.set(sid, { bills, pays });
       }
     } else if (party === "customer") {
+      await connectToDatabase();
       const [customers, invoices, payments] = await Promise.all([
         id ? Customer.find({ _id: id }).lean() : Customer.find({}).lean(),
         // A quotation is not a bill raised on the customer, so it stays out of their ledger.
@@ -325,10 +325,11 @@ export async function GET(req: Request) {
         entriesByParty.set(cid, customerEntries(theirInvoices, theirPayments));
       }
     } else {
+      // One vendor (and its bills and payments) when `id` is given, else all of them; stored order.
       const [vendors, bills, payments] = await Promise.all([
-        id ? Vendor.find({ _id: id }).lean() : Vendor.find({}).lean(),
-        id ? VendorBill.find({ vendorId: id }).lean() : VendorBill.find({}).lean(),
-        id ? VendorPayment.find({ vendorId: id }).lean() : VendorPayment.find({}).lean(),
+        readStock<any[]>("vendors.ledger", { id }),
+        readStock<any[]>("vendorBills.ledger", { id }),
+        readStock<any[]>("vendorPayments.ledger", { id }),
       ]);
 
       parties = vendors as any[];
@@ -409,9 +410,10 @@ export async function GET(req: Request) {
       const detail: any = results[0];
 
       if (party === "vendor") {
+        // Oldest first (through the read:stock switch).
         const [bills, payments] = await Promise.all([
-          VendorBill.find({ vendorId: id }).sort({ date: 1 }).lean(),
-          VendorPayment.find({ vendorId: id }).sort({ date: 1 }).lean(),
+          readStock<any[]>("vendorBills.detail", { id }),
+          readStock<any[]>("vendorPayments.detail", { id }),
         ]);
 
         // How much of each bill is settled. A payment tagged with a bill number

@@ -5,6 +5,7 @@ import SerialNumber from "@/models/SerialNumber";
 import PurchaseEntry from "@/models/PurchaseEntry";
 import Invoice from "@/models/Invoice";
 import Item from "@/models/Item";
+import { readStock } from "@/lib/repo/stock/shadow-read";
 
 const RECONCILE_EVERY_MS = 5 * 60 * 1000;
 let lastReconcileAt = 0;
@@ -17,14 +18,14 @@ export async function GET(req: Request) {
     const itemName = searchParams.get("name");
     const status = searchParams.get("status") || "AVAILABLE";
     
-    await connectToDatabase();
-    
     // Bills and purchase entries already keep each serial's status up to date;
     // this full re-check is a safety net, so it runs at most every few minutes
     // instead of on every request (it took ~10s and held up the billing form).
     const soldSerialsSet = new Set<string>();
     if (Date.now() - lastReconcileAt > RECONCILE_EVERY_MS) {
       lastReconcileAt = Date.now();
+      // The reconcile WRITES serial records from what it reads, so its reads stay on MongoDB (the source of truth).
+      await connectToDatabase();
       // 1. Reconcile / Sync serial numbers from existing Purchase Entries into SerialNumber collection
       const purchaseEntries = await PurchaseEntry.find({}).lean();
       const items = await Item.find({}).lean();
@@ -113,18 +114,9 @@ export async function GET(req: Request) {
       if (soldOps.length) await SerialNumber.bulkWrite(soldOps);
     }
 
-    // 3. Build Query Filter
-    const filter: any = {};
-    if (status && status !== "ALL") {
-      filter.status = status;
-    }
-    if (vpCode) filter.vpCode = vpCode;
-    if (itemId) filter.itemId = itemId;
-    if (itemName) {
-      filter.itemName = { $regex: new RegExp(itemName.trim(), "i") };
-    }
-    
-    const serials = await SerialNumber.find(filter).sort({ createdAt: -1 }).lean();
+    // 3. The list, through the read:stock switch (lib/repo/stock/shadow-read.ts). serialNumbers.list builds the
+    //    same filter as before: status (unless "ALL"), vpCode, itemId, and the name as a case-insensitive pattern.
+    const serials: any[] = await readStock("serialNumbers.list", { status, vpCode, itemId, name: itemName });
 
     // Final safety filter: ensure sold serials never leak into AVAILABLE response
     const result = status === "AVAILABLE" 

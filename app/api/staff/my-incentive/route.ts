@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import { getActor } from "@/lib/requirePermission";
 import { loadIncentiveBook, normName, summarise } from "@/lib/staff-incentive";
-import IncentivePayout from "@/models/IncentivePayout";
+import { readStaff } from "@/lib/repo/staff/shadow-read";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +22,8 @@ export async function GET(req: Request) {
 
     if (new URL(req.url).searchParams.get("detail") === "1") {
       const bills = (book.bills.get(normName(actor.name)) || []).filter((b) => b.incentive > 0);
-      const payouts: any[] = await IncentivePayout.find({ userId: actor.id }).sort({ date: -1, createdAt: -1 }).lean();
+      // Through the read:staff switch (lib/repo/staff/shadow-read.ts); the book above is lib/staff-incentive.ts's.
+      const payouts: any[] = await readStaff("payouts.forUser", actor.id);
       data.paidByPayout = s.paidByPayout;
       data.paidInSalary = s.paidInSalary;
       data.onsitego = Math.round(bills.reduce((t, b) => t + (b.onsitegoIncentive || 0), 0) * 100) / 100;

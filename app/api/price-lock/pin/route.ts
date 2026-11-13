@@ -6,6 +6,7 @@ import PriceUnlockSetting from "@/models/PriceUnlockSetting";
 import AuditLog from "@/models/AuditLog";
 import { getActor } from "@/lib/requirePermission";
 import { isUnlockPinSet, setUnlockPin } from "@/lib/priceLock";
+import { readStaff } from "@/lib/repo/staff/shadow-read";
 
 /** Whether a price-unlock PIN exists (never the PIN itself). */
 export async function GET() {
@@ -16,7 +17,8 @@ export async function GET() {
     let updatedAt = null;
     let updatedBy = "";
     if (actor.role === "admin" || actor.role === "superadmin") {
-      const doc: any = await PriceUnlockSetting.findOne({ key: "price-unlock" }).lean();
+      // Through the read:staff switch (lib/repo/staff/shadow-read.ts); only the date and the name are sent.
+      const doc: any = await readStaff("priceUnlock.setting");
       updatedAt = doc?.updatedAt || null;
       updatedBy = doc?.updatedBy || "";
     }

@@ -10,6 +10,7 @@ import { checkAtStore } from "@/lib/store-location";
 import { notifyRoles } from "@/lib/notify";
 import { getShift } from "@/lib/shift-settings";
 import { closeAwayAtCheckout } from "@/lib/presence";
+import { readStaff } from "@/lib/repo/staff/shadow-read";
 
 // Helper: Get IST Date string (YYYY-MM-DD)
 function getISTDate(d = new Date()): string {
@@ -75,29 +76,10 @@ export async function GET(req: Request) {
     const staffId = searchParams.get("staffId");
     const month = searchParams.get("month"); // e.g. "2026-08"
     
-    await connectToDatabase();
-    
-    const filter: any = {};
-    
-    if (dateParam && dateParam !== "all") {
-      filter.date = dateParam;
-    } else if (!dateParam && !month) {
-      // Default to today in IST
-      filter.date = getISTDate();
-    }
-
-    if (month) {
-      filter.date = { $regex: `^${month}` };
-    }
-    
-    if (staffName && staffName !== "all") {
-      filter.staffName = staffName;
-    }
-    if (staffId) {
-      filter.staffId = staffId;
-    }
-    
-    const records = await Attendance.find(filter).sort({ date: -1, createdAt: -1 }).lean();
+    // Through the read:staff switch (lib/repo/staff/shadow-read.ts): MongoDB, MongoDB compared with D1, or D1.
+    // attendance.list builds the same filter as before: one date (default: today in IST), or a month prefix, one
+    // staff member by name and / or id; newest date first.
+    const records = await readStaff("attendance.list", { dateParam, staffName, staffId, month, today: getISTDate() });
     return NextResponse.json({ success: true, data: records });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

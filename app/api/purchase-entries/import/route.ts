@@ -9,6 +9,7 @@ import { resolveRows } from "@/lib/purchase-import/resolve-rows";
 import { findMatchingItem, extractEmbeddedCode } from "@/lib/purchase-import/match-item";
 import { splitSupplierLine, productNameFromLine } from "@/lib/purchase-import/supplier-line";
 import { groupSerialsByProduct, findSerialsForRow } from "@/lib/purchase-import/serial-table";
+import { readStock } from "@/lib/repo/stock/shadow-read";
 
 /**
  * Parse an uploaded Excel/CSV or PDF purchase sheet into a preview — never
@@ -138,10 +139,8 @@ export async function POST(req: Request) {
     const referenceByVpCode = new Map<string, { category: string; brand: string }>();
     const codesPresent = parsedRows.some((row) => extractEmbeddedCode(row.name));
     if (codesPresent) {
-      const references = await ProductCatalogReference.find(
-        { category: { $ne: "" } },
-        { vpCode: 1, category: 1, brand: 1 }
-      ).lean();
+      // Through the read:stock switch (lib/repo/stock/shadow-read.ts): every reference that has a category.
+      const references: any[] = await readStock("productCatalogReferences.withCategory", {});
       references.forEach((r: any) => {
         referenceByVpCode.set(r.vpCode, { category: r.category || "", brand: r.brand || "" });
       });

@@ -1,6 +1,6 @@
 /**
  * Every MongoDB read of the purchase, stock and cash area, each with its D1 twin (stage B2 of
- * docs/D1_MIGRATION_PLAN.md). Nothing calls these yet: the shadow-read framework compares `mongo` with `d1`, then the
+ * docs/D1_MIGRATION_PLAN.md). The routes call them through readStock (./shadow-read.ts): the shadow-read framework compares `mongo` with `d1`, then the
  * routes switch over area by area. What each read is, where it is used and what it returns: INVENTORY.md here.
  * Parity is tested in tests/d1-stock-reads.test.ts.
  */

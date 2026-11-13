@@ -3,10 +3,10 @@ import connectToDatabase from "@/lib/db";
 import Invoice from "@/models/Invoice";
 import Item from "@/models/Item";
 import Customer from "@/models/Customer";
-import SerialNumber from "@/models/SerialNumber";
 import Lead from "@/models/Lead";
 import DeliveryChallan from "@/models/DeliveryChallan";
 import FinanceTransaction from "@/models/FinanceTransaction";
+import { readStock } from "@/lib/repo/stock/shadow-read";
 
 export async function GET(req: Request) {
   try {
@@ -46,13 +46,9 @@ export async function GET(req: Request) {
           { gstNumber: regex },
         ],
       }).limit(5),
-      SerialNumber.find({
-        $or: [
-          { serialNumber: regex },
-          { vpCode: regex },
-          { itemName: regex },
-        ],
-      }).limit(5),
+      // Serial numbers through the read:stock switch (lib/repo/stock/shadow-read.ts): the same 5 matches on the
+      // number, VP code or product name. The other searches belong to other areas and still read MongoDB.
+      readStock<any[]>("serialNumbers.search", { q }),
       Lead.find({
         $or: [
           { leadId: regex },

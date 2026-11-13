@@ -5,6 +5,7 @@ import StaffTask from "@/models/StaffTask";
 import { notifyAssignee } from "@/lib/notify";
 import { getActor } from "@/lib/requirePermission";
 import User from "@/models/User";
+import { readStaff } from "@/lib/repo/staff/shadow-read";
 
 /** Roles that see and manage every staff member's tasks. */
 const TASK_MANAGER_ROLES = ["admin", "superadmin", "manager", "hr"];
@@ -42,10 +43,6 @@ export async function GET(req: Request) {
     const assignedStaff = searchParams.get("staff");
     const status = searchParams.get("status");
 
-    await connectToDatabase();
-
-    const filter: any = {};
-
     // Who is asking decides what they see — not a name sent by the page. Staff
     // get only tasks given to them (by id, or by their exact full name — never
     // a first name, which matched "Amit Singh" to "Amit Kumar Singh"), tasks
@@ -54,28 +51,11 @@ export async function GET(req: Request) {
     if (!actor) {
       return NextResponse.json({ success: false, error: "You must be signed in to see tasks." }, { status: 401 });
     }
-    if (!TASK_MANAGER_ROLES.includes(actor.role)) {
-      const isSales = ["salesman", "sales"].includes(actor.role);
-      filter.$or = [
-        ...(actor.id ? [{ assignedStaffId: actor.id }] : []),
-        { assignedStaff: exactName(actor.name) },
-        { assignedStaff: "All Staff" },
-        ...(isSales ? [{ assignedStaff: "Sales Staff" }] : []),
-        { createdBy: exactName(actor.name) },
-      ];
-    } else if (assignedStaff && assignedStaff !== "all") {
-      filter.$or = [
-        { assignedStaff: exactName(assignedStaff) },
-        { assignedStaff: "All Staff" },
-        { assignedStaff: "Sales Staff" },
-      ];
-    }
-    
-    if (status && status !== "all") {
-      filter.status = status;
-    }
-    
-    const tasks = await StaffTask.find(filter).sort({ dueDate: 1, createdAt: -1 }).lean();
+    // tasks.list (lib/repo/staff/mongo.ts) builds exactly this filter from the actor: staff see tasks given to them
+    // (by id or exact full name), group tasks ("All Staff", and "Sales Staff" for sales roles) and tasks they
+    // created; task managers see everyone's, or one person's (plus the group tasks) with ?staff=. Then ?status=.
+    // Through the read:staff switch (lib/repo/staff/shadow-read.ts): MongoDB, MongoDB compared with D1, or D1.
+    const tasks = await readStaff("tasks.list", { actor: { id: actor.id, name: actor.name, role: actor.role }, staff: assignedStaff, status });
     return NextResponse.json({ success: true, data: tasks });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

@@ -7,6 +7,7 @@ import StockTransfer from "@/models/StockTransfer";
 import Warehouse from "@/models/Warehouse";
 import Item from "@/models/Item";
 import { applyStockMovement } from "@/lib/stock";
+import { readStock } from "@/lib/repo/stock/shadow-read";
 
 function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -21,8 +22,8 @@ async function resolveWarehouseId(name: string): Promise<string | null> {
 
 export async function GET() {
   try {
-    await connectToDatabase();
-    const transfers = await StockTransfer.find({}).sort({ createdAt: -1 }).lean();
+    // Read through the read:stock switch (lib/repo/stock/shadow-read.ts): MongoDB, MongoDB compared with D1, or D1.
+    const transfers = await readStock("stockTransfers.list", {});
     return NextResponse.json({ success: true, data: transfers });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

@@ -6,6 +6,7 @@ import BankAccount from "@/models/BankAccount";
 import AuditLog from "@/models/AuditLog";
 import { getActor } from "@/lib/requirePermission";
 import { getCashRegisterSummary } from "@/lib/cashRegister";
+import { readStock } from "@/lib/repo/stock/shadow-read";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +25,9 @@ function momentOf(date: string, time?: string, createdAt?: any): number {
 
 /** Everything in the Admin's cash book, oldest first, with the running balance, and the totals. */
 async function buildBook() {
-  const [summary, entries] = await Promise.all([getCashRegisterSummary(), AdminCashEntry.find({}).sort({ date: 1, createdAt: 1 }).lean()]);
+  // The Admin's own entries go through the read:stock switch (lib/repo/stock/shadow-read.ts); the register summary
+  // is lib/cashRegister.ts's.
+  const [summary, entries] = await Promise.all([getCashRegisterSummary(), readStock<any[]>("adminCashEntries.book", {})]);
 
   const rows: any[] = [];
   for (const e of summary.ledger as any[]) {

@@ -2,6 +2,7 @@ import { istToday } from "@/lib/ist";
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import Salary from "@/models/Salary";
+import { readStaff } from "@/lib/repo/staff/shadow-read";
 
 export async function GET(req: Request) {
   try {
@@ -9,13 +10,9 @@ export async function GET(req: Request) {
     const month = searchParams.get("month");
     const employeeId = searchParams.get("employeeId");
     
-    await connectToDatabase();
-    
-    const filter: any = {};
-    if (month) filter.month = month;
-    if (employeeId) filter.employeeId = employeeId;
-    
-    const salaries = await Salary.find(filter).sort({ employeeName: 1 });
+    // Through the read:staff switch (lib/repo/staff/shadow-read.ts): MongoDB, MongoDB compared with D1, or D1.
+    // One month and / or one employee if asked, by name.
+    const salaries = await readStaff("salaries.list", month, employeeId);
     return NextResponse.json({ success: true, data: salaries });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
