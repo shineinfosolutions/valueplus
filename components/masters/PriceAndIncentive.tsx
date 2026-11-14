@@ -27,7 +27,8 @@ const chipTone = (percent: number) => {
  * send the request, and shows the incentive he earns on a piece at that price when the product has one running.
  */
 export function PriceAndIncentive({ item, role }: { item: any; role: string }) {
-  const selling = Number(item?.sellingPrice) || 0;
+  // The calculator works from the VSP (Value Plus Price), the price the salesman sees; the selling price only when a product has no VSP.
+  const selling = Number(item?.vsp) || Number(item?.sellingPrice) || 0;
   const [percentText, setPercentText] = useState("");
   const [priceText, setPriceText] = useState("");
   const [customer, setCustomer] = useState("");
@@ -155,7 +156,7 @@ export function PriceAndIncentive({ item, role }: { item: any; role: string }) {
       </p>
 
       {overList ? (
-        <p className="text-xs font-bold text-amber-700">This price is above the selling price ({formatCurrency(selling)}).</p>
+        <p className="text-xs font-bold text-amber-700">This price is above the VSP ({formatCurrency(selling)}).</p>
       ) : (
         <div className="space-y-1 rounded-md bg-slate-50 p-2 text-xs">
           <p className="font-bold text-slate-800">
