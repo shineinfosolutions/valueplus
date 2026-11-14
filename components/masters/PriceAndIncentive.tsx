@@ -129,7 +129,7 @@ export function PriceAndIncentive({ item, role }: { item: any; role: string }) {
         </label>
         <label className="text-[11px] font-semibold text-slate-500">
           Price (₹) per piece
-          <Input inputMode="decimal" value={priceText} placeholder={String(selling)} onChange={(e) => setByPrice(e.target.value.replace(/[^0-9.]/g, ""))} />
+          <Input inputMode="decimal" value={priceText} onChange={(e) => setByPrice(e.target.value.replace(/[^0-9.]/g, ""))} />
         </label>
       </div>
       <div className="flex flex-wrap gap-1.5">
