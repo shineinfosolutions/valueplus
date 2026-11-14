@@ -373,6 +373,22 @@ async function raceTests(db: D1DatabaseLike) {
   const flaky = await one(db, "SELECT * FROM shadow_results WHERE name = 'push.flaky'");
   check(flaky?.match === 0 && flaky.raced === 0, "shadow: when the second read fails, the mismatch stands");
 
+  // A delivery reminder stamped on a bill while the comparison runs (14 Nov, orders.list): D1 already shows it, the
+  // immediate second MongoDB read still does not, but a moment later both sides read the same -> a raced match.
+  resetShadowSampling();
+  configureShadow({ raceRecheckDelayMs: 5 });
+  let lateReads = 0;
+  const lateMongo = async () => {
+    lateReads++;
+    return JSON.parse(JSON.stringify(lateReads <= 2 ? [device(old)] : [device(now)]));
+  };
+  d1 = [device(now)];
+  await readWithShadow("staff", "push.late", lateMongo, d1Fn);
+  await flushShadowWork();
+  const late = await one(db, "SELECT * FROM shadow_results WHERE name = 'push.late'");
+  check(late?.match === 1 && late.raced === 1 && lateReads === 3, `shadow: a change still on its way is a raced match once both sides read the same (match ${late?.match}, raced ${late?.raced}, MongoDB read ${lateReads}x)`);
+  resetShadowConfig();
+
   // d1 mode (reverse shadow): D1 answers first, the update lands, MongoDB is read after the response.
   resetShadowSampling();
   await setFlag(db, "staff", "d1");

@@ -51,6 +51,8 @@ export interface ShadowConfig {
   sampleIntervalMs: number;
   /** Longest a shadow D1 read may take before it is counted as an error. */
   d1TimeoutMs: number;
+  /** How long to wait before reading both sides again when a difference may be a race (confirmRace). */
+  raceRecheckDelayMs: number;
   /** shadow_results rows older than this are deleted (checked at most once an hour per isolate). */
   keepDays: number;
   /**
@@ -65,6 +67,7 @@ export interface ShadowConfig {
 const DEFAULTS: ShadowConfig = {
   sampleIntervalMs: 10_000,
   d1TimeoutMs: 10_000,
+  raceRecheckDelayMs: 750,
   keepDays: 14,
   now: () => Date.now(),
 };
@@ -282,11 +285,25 @@ async function record(db: D1DatabaseLike, run: ShadowRun): Promise<boolean> {
  * differs (D1 behind or wrong), the run stays a mismatch, with the first answers' differences. A failure or a timeout
  * of the re-read proves nothing, so the mismatch stands.
  */
-async function confirmRace<T>(again: () => Promise<T>, sameAsOther: (fresh: T) => boolean): Promise<boolean> {
+async function confirmRace<T>(
+  again: () => Promise<T>,
+  sameAsOther: (fresh: T) => boolean,
+  bothAgain?: () => Promise<boolean>
+): Promise<boolean> {
   try {
     const r = await withTimeout(again(), cfg.d1TimeoutMs);
-    if (r === TIMED_OUT) return false;
-    return sameAsOther(r);
+    if (r !== TIMED_OUT && sameAsOther(r)) return true;
+  } catch {
+    // fall through to the second check
+  }
+  // The change may have reached the two sides in the other order, or still be on its way (a reminder stamped on a
+  // bill between the two reads, 14 Nov): wait a moment and read BOTH sides fresh. Equal now = they had only been read
+  // at different moments. A real difference (D1 behind or wrong) still differs, so it stays a mismatch.
+  if (!bothAgain) return false;
+  try {
+    await new Promise((resolve) => setTimeout(resolve, cfg.raceRecheckDelayMs));
+    const r = await withTimeout(bothAgain(), cfg.d1TimeoutMs);
+    return r === true;
   } catch {
     return false;
   }
@@ -345,7 +362,14 @@ export async function readWithShadow<T>(
           const mongoMs = performance.now() - t1;
           const cmp = compareResults(mongoResult, d1Result, opts.compare);
           // D1 answered first: read it again (compared the same way round, MongoDB first).
-          const raced = !cmp.equal && (await confirmRace(() => d1Fn(db), (freshD1) => compareResults(mongoResult, freshD1, opts.compare).equal));
+          const raced = !cmp.equal && (await confirmRace(
+              () => d1Fn(db),
+              (freshD1) => compareResults(mongoResult, freshD1, opts.compare).equal,
+              async () => {
+                const [m, d] = await Promise.all([mongoFn(), d1Fn(db)]);
+                return compareResults(m, d, opts.compare).equal;
+              }
+            ));
           const run: ShadowRun = { area, name, kind: "reverse", match: cmp.equal || raced, mongoMs, d1Ms, diffCount: cmp.diffCount, diffs: cmp.diffs, error: null, raced, recorded: false };
           run.recorded = await record(db, run);
           lastRun = run;
@@ -387,7 +411,14 @@ export async function readWithShadow<T>(
       const d1Ms = performance.now() - t1;
       const cmp: CompareResult = error ? { equal: false, diffCount: 0, diffs: [] } : compareResults(result, d1Result, opts.compare);
       // MongoDB answered first (before the response): read it again; equal to D1 now = the data moved in between.
-      const raced = !error && !cmp.equal && (await confirmRace(mongoFn, (freshMongo) => compareResults(freshMongo, d1Result, opts.compare).equal));
+      const raced = !error && !cmp.equal && (await confirmRace(
+          mongoFn,
+          (freshMongo) => compareResults(freshMongo, d1Result, opts.compare).equal,
+          async () => {
+            const [m, d] = await Promise.all([mongoFn(), d1Fn(db)]);
+            return compareResults(m, d, opts.compare).equal;
+          }
+        ));
       const run: ShadowRun = { area, name, kind: "shadow", match: cmp.equal || raced, mongoMs, d1Ms, diffCount: cmp.diffCount, diffs: cmp.diffs, error, raced, recorded: false };
       run.recorded = await record(db, run);
       lastRun = run;
