@@ -48,16 +48,23 @@ export type StageCArea = (typeof STAGE_C_ORDER)[number];
  */
 export const PROMOTION_RULES: Record<StageCArea, { days: number; minRuns: number }> = {
   masters: { days: 1, minRuns: 30 },
-  crm: { days: 2, minRuns: 30 },
-  staff: { days: 2, minRuns: 50 },
-  stock: { days: 2, minRuns: 50 },
-  sales: { days: 3, minRuns: 100 },
+  // Shortened at the owner's request (14 Nov 2026: "do it fast"): one clean shop day for every area but sales,
+  // which still needs two. The automatic demotion and the reverse comparison still guard every area after the switch.
+  crm: { days: 1, minRuns: 30 },
+  staff: { days: 1, minRuns: 50 },
+  stock: { days: 1, minRuns: 50 },
+  sales: { days: 2, minRuns: 100 },
 };
 
 /** Promotions only between 22:00 and 00:25 India time (minutes after midnight): the shop is closed then. */
 export const PROMOTION_WINDOW = { fromMin: 22 * 60, toMin: 25 };
 /** The shop's opening hours (India time), for "a full shop day in d1". */
 export const SHOP_HOURS = { openMin: 10 * 60, closeMin: 22 * 60 };
+/**
+ * How long the area before it in the order must have answered from D1, counted in shop hours (10:00–22:00 only),
+ * before the next area may be promoted. Was one full shop day; shortened to 4 shop hours at the owner's request.
+ */
+export const PREVIOUS_AREA_D1_SHOP_MINUTES = 4 * 60;
 /** Demotion looks at the last hour of comparisons. */
 export const DEMOTION_LOOKBACK_MS = 60 * 60_000;
 /** More D1 errors / fallbacks than this in the last hour demotes (a single one may be a passing D1 hiccup). */
@@ -161,11 +168,22 @@ function nextWindowOpen(ms: number): number {
   return istAt(today, PROMOTION_WINDOW.fromMin);
 }
 
-/** The end (22:00) of the first FULL shop day that starts (10:00) at or after `sinceMs`. */
-function firstFullShopDayEnd(sinceMs: number): number {
-  let day = istDateOf(sinceMs);
-  if (istAt(day, SHOP_HOURS.openMin) < sinceMs) day = addDaysIst(day, 1);
-  return istAt(day, SHOP_HOURS.closeMin);
+/** The moment `minutes` of shop time (10:00–22:00 India time only) have passed since `sinceMs`. */
+function shopMinutesEnd(sinceMs: number, minutes: number): number {
+  let t = sinceMs;
+  let left = minutes * 60_000;
+  for (let i = 0; i < 400; i++) {
+    const day = istDateOf(t);
+    const open = istAt(day, SHOP_HOURS.openMin);
+    const close = istAt(day, SHOP_HOURS.closeMin);
+    if (t < open) t = open;
+    if (t < close) {
+      if (close - t >= left) return t + left;
+      left -= close - t;
+    }
+    t = istAt(addDaysIst(day, 1), SHOP_HOURS.openMin);
+  }
+  return t;
 }
 
 function parseIso(v: unknown): number | null {
@@ -354,9 +372,9 @@ function nextPromotion(ev: StageCEvaluation, dayBy: Map<string, Map<string, { ru
       if (sinceMs === null) {
         blockers.push(`cannot tell since when ${prev.area} has been on d1 (no valid updatedAt)`);
       } else {
-        const fullDayEnd = firstFullShopDayEnd(sinceMs);
+        const fullDayEnd = shopMinutesEnd(sinceMs, PREVIOUS_AREA_D1_SHOP_MINUTES);
         if (now < fullDayEnd) {
-          blockers.push(`${prev.area} must first answer from D1 for one full shop day (10:00–22:00), until ${iso(fullDayEnd)}`);
+          blockers.push(`${prev.area} must first answer from D1 for ${PREVIOUS_AREA_D1_SHOP_MINUTES / 60} shop hours (10:00–22:00 only), until ${iso(fullDayEnd)}`);
           earliest = Math.max(earliest, fullDayEnd);
         }
       }

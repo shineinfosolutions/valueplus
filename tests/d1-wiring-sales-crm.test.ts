@@ -546,6 +546,9 @@ async function main() {
       await setMode(db, "d1");
       configureReadSource({ resolveD1: () => broken });
       setStaffD1(broken);
+      // Comparisons still running from the previous case (a possible race is re-checked after a short wait) finish
+      // first, so their rows are not counted as this case's.
+      await flushShadowWork();
       const before = await lastId(db);
       const d = await call(c);
       await flushShadowWork();
@@ -561,7 +564,7 @@ async function main() {
         !wired ||
           (rows.length > 0 &&
             rows.every((r) => (r.kind === "fallback" || (r.kind === "shadow" && mongoOnly(r))) && /simulated failure/.test(r.error || ""))),
-        `${c.label}: ${rows.length} fallback(s) recorded`
+        `${c.label}: ${rows.length} fallback(s) recorded ${JSON.stringify(rows.filter((r) => !(r.kind === "fallback" || (r.kind === "shadow" && mongoOnly(r))) || !/simulated failure/.test(r.error || "")).map((r) => [r.area, r.name, r.kind, r.match, (r.error || "").slice(0, 60)]))}`
       );
     }
   } finally {

@@ -148,16 +148,16 @@ async function orderTests(db: D1DatabaseLike) {
   const r2 = await runStageC(db, at("2026-11-20T22:05"));
   check((await flag(db, "read:staff")) === "shadow" && r2.nextPromotion?.area === "crm", "staff clean but crm (before it) is not: nothing promoted, crm is next");
 
-  // The previous area must have been d1 for a full shop day (10:00–22:00).
+  // The previous area must have answered from D1 for 4 shop hours (10:00–22:00 only).
   await reset(db);
   for (const d of ["2026-11-19", "2026-11-20"]) await day(db, "crm", d, 100);
-  await setFlag(db, "read:masters", "d1", iso(at("2026-11-20T10:30")));
+  await setFlag(db, "read:masters", "d1", iso(at("2026-11-20T19:00")));
   let r3 = await runStageC(db, at("2026-11-20T22:05"));
-  check((await flag(db, "read:crm")) === "shadow" && !!r3.nextPromotion?.blockers.some((b) => /full shop day/.test(b)), "masters on d1 only since 10:30 today: crm waits");
-  check(r3.nextPromotion?.earliestAt === iso(at("2026-11-21T22:00")), "earliest: after the next full shop day");
-  await setFlag(db, "read:masters", "d1", iso(at("2026-11-20T09:59")));
+  check((await flag(db, "read:crm")) === "shadow" && !!r3.nextPromotion?.blockers.some((b) => /4 shop hours/.test(b)), "masters on d1 only since 19:00 today (3 shop hours): crm waits");
+  check(r3.nextPromotion?.earliestAt === iso(at("2026-11-21T22:00")) || r3.nextPromotion?.earliestAt === iso(at("2026-11-21T11:00")), `earliest: once the 4th shop hour ends (11:00 tomorrow), promoted in that night's window (${r3.nextPromotion?.earliestAt})`);
+  await setFlag(db, "read:masters", "d1", iso(at("2026-11-20T14:15")));
   r3 = await runStageC(db, at("2026-11-20T22:05"));
-  check((await flag(db, "read:crm")) === "d1", "masters on d1 since before 10:00 today: crm promoted");
+  check((await flag(db, "read:crm")) === "d1", "masters on d1 since 14:15 today (7.75 shop hours): crm promoted");
 }
 
 async function blockTests(db: D1DatabaseLike) {
@@ -178,22 +178,22 @@ async function blockTests(db: D1DatabaseLike) {
     await day(db, "masters", "2026-11-21", 2, { mismatches: 1 });
   }, "masters", /2026-11-21/);
   await attempt(
-    "crm: only 1 of the 2 shop days",
+    "crm: no comparisons on the shop day",
     async () => {
       await setFlag(db, "read:masters", "d1", iso(at("2026-11-18T09:00")));
-      await day(db, "crm", "2026-11-20", 100);
+      await day(db, "crm", "2026-11-19", 100);
     },
     "crm",
-    /no shadow comparisons on 2026-11-19/
+    /no shadow comparisons on 2026-11-20/
   );
   await attempt(
-    "sales: needs 3 days and 100 runs",
+    "sales: needs 2 days and 100 runs",
     async () => {
       for (const a of ["masters", "crm", "staff", "stock"]) await setFlag(db, `read:${a}`, "d1", iso(at("2026-11-10T09:00")));
-      for (const d of ["2026-11-18", "2026-11-19", "2026-11-20"]) await day(db, "sales", d, 33);
+      for (const d of ["2026-11-19", "2026-11-20"]) await day(db, "sales", d, 49);
     },
     "sales",
-    /only 99 comparisons/
+    /only 98 comparisons/
   );
   await attempt("write-through never copied a write", () => run(db, "UPDATE write_through_state SET writes = 0").then(() => day(db, "masters", "2026-11-20", 40)), "masters", /not copied a single write/);
   await attempt("write-through off", () => setFlag(db, "writeThrough", "off").then(() => day(db, "masters", "2026-11-20", 40)), "masters", /write-through is not on/);
@@ -207,7 +207,7 @@ async function blockTests(db: D1DatabaseLike) {
     /not known fresh/
   );
   await attempt("stageC = 'demote-only' pauses promotions", () => setFlag(db, "stageC", "demote-only").then(() => day(db, "masters", "2026-11-20", 40)), "masters", /paused/);
-  check(PROMOTION_RULES.sales.days === 3 && PROMOTION_RULES.masters.minRuns === 30, "rules as documented");
+  check(PROMOTION_RULES.sales.days === 2 && PROMOTION_RULES.crm.days === 1 && PROMOTION_RULES.masters.minRuns === 30, "rules as documented");
 
   console.log("\nmanual 'mongo' is never touched");
   await reset(db);
@@ -411,15 +411,15 @@ async function reverseShadowTests(db: D1DatabaseLike) {
   await flushShadowWork();
   const row = await one(db, "SELECT * FROM shadow_results WHERE name = 't.reverse'");
   const daily = await one(db, "SELECT * FROM shadow_daily WHERE name = 't.reverse'");
-  check(mongoCalls === 1 && row?.kind === "reverse" && row.match === 0 && row.diffCount === 1, "after the answer MongoDB is read, compared, and the mismatch recorded");
+  check(mongoCalls === 2 && row?.kind === "reverse" && row.match === 0 && row.diffCount === 1, "after the answer MongoDB is read, compared, and the mismatch recorded");
   check(daily?.runs === 1 && daily.mismatches === 1 && daily.errors === 0, "counted in shadow_daily like a shadow run");
   await readWithShadow("masters", "t.reverse", mongoFn, d1Fn);
   await flushShadowWork();
-  check(mongoCalls === 1, "sampling: at most one comparison per read per 10 s");
+  check(mongoCalls === 2, "sampling: at most one comparison per read per 10 s");
   clock += 11_000;
   await readWithShadow("masters", "t.reverse", mongoFn, d1Fn);
   await flushShadowWork();
-  check(mongoCalls === 2, "after 10 s compared again");
+  check(mongoCalls === 4, "after 10 s compared again");
   await readWithShadow("masters", "t.mongoFails", async () => {
     throw new Error("Mongo down");
   }, d1Fn);
