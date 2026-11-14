@@ -792,7 +792,7 @@
 - **2026-11-14 — D1 Stage D machinery deployed DORMANT (version `078d0190`, migration 0011).** See plan §6.8a and `lib/repo/WRITES_INVENTORY.md`.
   - **Write switch:** `write:<area>` = mongo (default/missing) | fence | d1. `d1` is honoured only while the area's read areas are effectively d1; `D1_WRITES=mongo` is the emergency switch.
   - **Write path:** one guarded D1 batch (`_guard`, 409 on conflict) plus `mirror_outbox`. The reverse mirror (`lib/d1/reverse-mirror.ts`) copies documents by id from D1 into Mongo, after the response and from the cron. Write-through and the copy job skip collections of an area in fence/d1.
-  - **Job:** `lib/d1/stage-d.ts`, `stageD` = off (seeded) | demote-only | auto.
+  - **Job:** `lib/d1/stage-d.ts`, `stageD` = off (seeded) | demote-only | auto — switched to **auto** on 14 Nov 12:56 IST at the owner's request.
     - auto promotes only 22:00–00:25 IST, after the read area has been d1 for ≥7 shop days;
     - auto rolls back on outbox lag over 10 min, more than 3 drain failures an hour, or a Stage C read demotion.
   - **Wired:** U1 masters writes only (brands, categories, units, variants, warehouses, product refs).
