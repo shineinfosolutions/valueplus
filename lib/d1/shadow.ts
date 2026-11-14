@@ -151,7 +151,8 @@ function bindToRequest(task: () => Promise<void>): () => Promise<void> {
   }
 }
 
-function deferAfterResponse(rawTask: () => Promise<void>) {
+/** Queue work to run once the response is ready (the same queue as the shadow reads; Stage D drains the outbox with it). */
+export function deferAfterResponse(rawTask: () => Promise<void>) {
   const task = bindToRequest(rawTask);
   if (cfg.defer) {
     cfg.defer(() => runSafely(task));

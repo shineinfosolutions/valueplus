@@ -53,6 +53,12 @@ export interface SyncOptions {
   reconcile?: ReconcileMode;
   /** Only these collections (default: all master collections). */
   collections?: string[];
+  /**
+   * Stage D: collections whose write switch is 'fence' or 'd1' (lib/d1/write-mode.ts collectionsNotOwnedByMongo).
+   * D1 is (or is becoming) their source of truth, so copying MongoDB over them, or deleting D1 rows MongoDB does
+   * not have yet (the reverse mirror may still be copying them), would lose writes. They are reported 'skipped'.
+   */
+  skipCollections?: string[];
 }
 
 export interface CollectionRunResult {
@@ -402,7 +408,12 @@ export async function runD1Sync(db: D1DatabaseLike, opts: SyncOptions = {}): Pro
     batchDocs: opts.batchDocs ?? DEFAULT_BATCH_DOCS,
     result,
   };
-  const specs = opts.collections ? ALL_SPECS.filter((s) => opts.collections!.includes(s.collection)) : ALL_SPECS;
+  const skip = new Set(opts.skipCollections || []);
+  const specs = (opts.collections ? ALL_SPECS.filter((s) => opts.collections!.includes(s.collection)) : ALL_SPECS).filter((s) => {
+    if (!skip.has(s.collection)) return true;
+    result.collections[s.collection] = { mode: "skipped", copied: 0, fullCopyDone: true };
+    return false;
+  });
 
   try {
     ctx.mongo = opts.mongo || mongoose.connection.db;

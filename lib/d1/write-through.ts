@@ -38,6 +38,11 @@
  *
  * KILL SWITCH: `UPDATE feature_flags SET value = 'off' WHERE key = 'writeThrough'` (read at most once a minute per
  * Worker isolate), or the env var D1_WRITE_THROUGH = "off".
+ *
+ * STAGE D (lib/d1/write-mode.ts): while a write area writes to D1 ('d1' and honoured), D1 is the source of truth for
+ * its collections and the write-through leaves them alone: the only MongoDB writes left there are the reverse
+ * mirror's copies FROM D1 (lib/d1/reverse-mirror.ts), and copying those back would only bounce them. The reverse
+ * mirror's writes are also recognised by their own marker (mirrorWriteContext), whatever the switch says.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 import mongoose from "mongoose";
@@ -48,6 +53,8 @@ import { OVERLAP_MS } from "./sync";
 import { ALL_SPECS } from "./registry";
 import { chunk, deleteStatements, hashStatements, statementsFor } from "./upsert";
 import { getD1 } from "./client";
+import { isD1OwnedCollection } from "./write-mode";
+import { mirrorWriteContext } from "./write-areas";
 
 export const WRITE_METHODS = [
   "insertOne",
@@ -81,6 +88,8 @@ export interface WriteThroughConfig {
   maxRounds: number;
   /** Tests only: runs before each D1 write batch (to force two requests to interleave). */
   beforeD1Write?: (info: { collection: string; ids: string[]; round: number }) => Promise<void> | void;
+  /** Stage D: true while D1 owns the collection's writes (then a MongoDB write of it is not copied into D1). */
+  d1Owns: (collection: string) => Promise<boolean>;
 }
 
 function envSwitchOff(): boolean {
@@ -103,6 +112,7 @@ const DEFAULTS: WriteThroughConfig = {
   cap: 500,
   flagTtlMs: 60_000,
   maxRounds: 3,
+  d1Owns: isD1OwnedCollection,
 };
 
 const cfg: WriteThroughConfig = { ...DEFAULTS };
@@ -591,6 +601,8 @@ async function afterWrite(coll: any, spec: MasterSpec, db: D1DatabaseLike, metho
 
 async function writeThrough(coll: any, spec: MasterSpec, db: D1DatabaseLike, method: WriteMethod, orig: (...a: any[]) => any, args: any[]) {
   if (!(await flagOn(db))) return orig.apply(coll, args);
+  // Stage D: D1 is the source of truth for this collection right now; this MongoDB write is not copied back.
+  if (await cfg.d1Owns(spec.collection).catch(() => false)) return orig.apply(coll, args);
   let plan: Plan;
   let planError: unknown = null;
   try {
@@ -619,6 +631,8 @@ function wrap(method: WriteMethod, orig: (...a: any[]) => any) {
   return function d1WriteThrough(this: any, ...args: any[]) {
     // Fast exits stay synchronous, so an untouched write behaves exactly as before.
     if (inWrite.getStore()) return orig.apply(this, args);
+    // The reverse mirror copying a document FROM D1 into MongoDB: never copied back.
+    if (mirrorWriteContext.getStore()) return orig.apply(this, args);
     const spec = SPECS.get(String(this?.collectionName ?? ""));
     if (!spec) return orig.apply(this, args);
     let db: D1DatabaseLike | null = null;

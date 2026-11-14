@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { getWriteMode } from "@/lib/d1/write-mode";
+import * as mastersWrites from "@/lib/repo/masters/writes";
 import connectToDatabase from "@/lib/db";
 import Unit from "@/models/Unit";
 import { readWithShadow } from "@/lib/d1/shadow";
@@ -25,6 +27,11 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  // Stage D (docs/D1_MIGRATION_PLAN.md §6.8a): while write:masters is 'mongo' (the default) this is the MongoDB
+  // code below, unchanged; in 'd1' the same write is made on D1 (lib/repo/masters/writes.ts), in 'fence' it waits.
+  const writeMode = await getWriteMode("masters");
+  if (writeMode !== "mongo") return mastersWrites.createUnit(request, writeMode);
+
   try {
     await connectToDatabase();
     const body = await request.json();
@@ -46,6 +53,11 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(req: Request) {
+  // Stage D (docs/D1_MIGRATION_PLAN.md §6.8a): while write:masters is 'mongo' (the default) this is the MongoDB
+  // code below, unchanged; in 'd1' the same write is made on D1 (lib/repo/masters/writes.ts), in 'fence' it waits.
+  const writeMode = await getWriteMode("masters");
+  if (writeMode !== "mongo") return mastersWrites.deleteUnit(req, writeMode);
+
   try {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
