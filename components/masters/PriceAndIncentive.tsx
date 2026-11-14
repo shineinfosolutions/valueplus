@@ -28,6 +28,9 @@ const chipTone = (percent: number) => {
  */
 export function PriceAndIncentive({ item, role }: { item: any; role: string }) {
   const selling = Number(item?.sellingPrice) || 0;
+  // A salesman's product view shows only the VSP, so the showroom selling price is not written out here either
+  // (the discount is still worked out from it, as the approval rules are).
+  const hideSelling = role === "salesman" || role === "sales";
   const [percentText, setPercentText] = useState("");
   const [priceText, setPriceText] = useState("");
   const [customer, setCustomer] = useState("");
@@ -122,16 +125,21 @@ export function PriceAndIncentive({ item, role }: { item: any; role: string }) {
       <p className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-slate-600">
         <Calculator className="h-3.5 w-3.5" /> Set your selling price
       </p>
-      <div className="grid grid-cols-2 gap-2">
+      <div className={hideSelling ? "grid grid-cols-1 gap-2" : "grid grid-cols-2 gap-2"}>
+        {/* A discount % is worked out from the selling price, so it would give that price away: the salesman types
+            the price he will offer and is told whether he can give it himself or needs approval. */}
+        {!hideSelling && (
         <label className="text-[11px] font-semibold text-slate-500">
           Discount %
           <Input inputMode="decimal" value={percentText} placeholder="0" onChange={(e) => setByPercent(e.target.value.replace(/[^0-9.]/g, ""))} />
         </label>
+        )}
         <label className="text-[11px] font-semibold text-slate-500">
           Price (₹) per piece
-          <Input inputMode="decimal" value={priceText} placeholder={String(selling)} onChange={(e) => setByPrice(e.target.value.replace(/[^0-9.]/g, ""))} />
+          <Input inputMode="decimal" value={priceText} placeholder={hideSelling ? "Your price" : String(selling)} onChange={(e) => setByPrice(e.target.value.replace(/[^0-9.]/g, ""))} />
         </label>
       </div>
+      {!hideSelling && (
       <div className="flex flex-wrap gap-1.5">
         {CHIPS.map((c) => (
           <button
@@ -148,21 +156,26 @@ export function PriceAndIncentive({ item, role }: { item: any; role: string }) {
           Reset
         </button>
       </div>
+      )}
+      {!hideSelling && (
       <p className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] font-semibold text-slate-500">
         <span>Up to {SELF_MAX_PERCENT}%: you</span>
         <span className="text-orange-700">Orange: Cashier</span>
         <span className="text-red-700">Red: Manager / Admin</span>
       </p>
+      )}
 
-      {overList ? (
-        <p className="text-xs font-bold text-amber-700">This price is above the selling price ({formatCurrency(selling)}).</p>
+      {hideSelling && priceText === "" ? (
+        <p className="text-[11px] font-semibold text-slate-500">Type the price you will offer to see whether you can give it yourself.</p>
+      ) : overList ? (
+        <p className="text-xs font-bold text-amber-700">{hideSelling ? "This price is above the list price." : <>This price is above the selling price ({formatCurrency(selling)}).</>}</p>
       ) : (
         <div className="space-y-1 rounded-md bg-slate-50 p-2 text-xs">
           <p className="font-bold text-slate-800">
-            {formatCurrency(price)} per piece{effectivePercent > 0 ? ` · ${effectivePercent}% off` : ""}
+            {formatCurrency(price)} per piece{!hideSelling && effectivePercent > 0 ? ` · ${effectivePercent}% off` : ""}
           </p>
           {!tier ? (
-            <p className="font-semibold text-emerald-700">✓ You can give this yourself{effectivePercent > 0 ? ` (up to ${SELF_MAX_PERCENT}%)` : ""}.</p>
+            <p className="font-semibold text-emerald-700">✓ You can give this yourself{!hideSelling && effectivePercent > 0 ? ` (up to ${SELF_MAX_PERCENT}%)` : ""}.</p>
           ) : needsApproval ? (
             <p className="font-semibold text-amber-700">Needs approval from {TIER_LABEL[tier]}.</p>
           ) : (

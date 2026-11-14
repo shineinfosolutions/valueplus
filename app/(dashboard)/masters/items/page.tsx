@@ -121,6 +121,9 @@ function ItemsPageContent() {
   // The whole detail (cost, purchase and sales ledger) is for Admin, Store Manager, godown and the cashier; everyone else sees
   // the price, MRP, VSP and their own sales of the product.
   const isFullViewer = isSuperAdminOrAdmin || userRole === "cashier";
+  // The salesman sees only the VSP (Value Plus Price) of a product: its MRP and showroom selling price are hidden
+  // from his panel, so he quotes from the VSP.
+  const vspOnly = userRole === "salesman" || userRole === "sales";
 
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
@@ -973,7 +976,7 @@ function ItemsPageContent() {
                 {!isSalesperson && (
                   <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wide">Purchase ₹</th>
                 )}
-                <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wide">Selling ₹</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wide">{vspOnly ? "VSP ₹" : "Selling ₹"}</th>
                 
                 {/* Excel-Like Filter Button in Live Stock Header */}
                 <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wide min-w-[170px]">
@@ -1137,9 +1140,15 @@ function ItemsPageContent() {
                         <td className="px-4 py-3 text-right font-medium">{formatCurrency(item.purchasePrice)}</td>
                       )}
                       <td className="px-4 py-3 text-right">
-                        <p className="font-semibold text-foreground">{formatCurrency(item.sellingPrice)}</p>
-                        <p className="text-xs text-muted-foreground">MRP {formatCurrency(item.mrp)}</p>
-                        <p className="text-[10px] text-emerald-600 font-medium">VSP {formatCurrency(item.vsp || item.sellingPrice)}</p>
+                        {vspOnly ? (
+                          <p className="font-semibold text-emerald-700">VSP {formatCurrency(item.vsp || item.sellingPrice)}</p>
+                        ) : (
+                          <>
+                            <p className="font-semibold text-foreground">{formatCurrency(item.sellingPrice)}</p>
+                            <p className="text-xs text-muted-foreground">MRP {formatCurrency(item.mrp)}</p>
+                            <p className="text-[10px] text-emerald-600 font-medium">VSP {formatCurrency(item.vsp || item.sellingPrice)}</p>
+                          </>
+                        )}
                         {(() => {
                           const live = liveRulesOf(item);
                           if (live.length === 0 && !canSetIncentive) return null;
@@ -1950,16 +1959,18 @@ function ItemsPageContent() {
                       <p className="text-xs text-muted-foreground font-semibold uppercase">Purchase Cost</p>
                       <p className="font-bold text-slate-700">{formatCurrency(viewingItem?.purchasePrice || 0)}</p>
                     </div>
-                  ) : (
+                  ) : vspOnly ? null : (
                     <div>
                       <p className="text-xs text-muted-foreground font-semibold uppercase">MRP Price</p>
                       <p className="font-bold text-slate-700">{formatCurrency(viewingItem?.mrp || viewingItem?.sellingPrice || 0)}</p>
                     </div>
                   )}
-                  <div>
-                    <p className="text-xs text-muted-foreground font-semibold uppercase">Selling Price</p>
-                    <p className="font-bold text-[#3F63AD]">{formatCurrency(viewingItem?.sellingPrice || 0)}</p>
-                  </div>
+                  {!vspOnly && (
+                    <div>
+                      <p className="text-xs text-muted-foreground font-semibold uppercase">Selling Price</p>
+                      <p className="font-bold text-[#3F63AD]">{formatCurrency(viewingItem?.sellingPrice || 0)}</p>
+                    </div>
+                  )}
                   <div>
                     <p className="text-xs text-muted-foreground font-semibold uppercase">VSP</p>
                     <p className="font-bold text-emerald-700">{formatCurrency(viewingItem?.vsp || viewingItem?.sellingPrice || 0)}</p>
