@@ -1,5 +1,7 @@
 # Developer Memory & Notes
 
+> New here? Start with **README.md** (stack, deploy, D1 migration status) and **CLAUDE.md** (working rules for AI assistants).
+
 > **Rule:** Whenever anything is added or changed in this project (feature, fix, config, deployment, APK), add it to the relevant section below **and** add a dated line to the **Change Log** at the bottom.
 
 ## 1. Sidebar Configuration & Navigation
@@ -410,6 +412,14 @@
   - D1 database `valueplus-db` created 2026-11-13 in APAC, id `519a8be8-7520-4a8b-861a-11a28791648f` (not yet bound or used).
   - MongoDB Atlas is still the only data store.
 
+## 40. Salesman products view: VSP only
+- **Page** `app/(dashboard)/masters/items/page.tsx`: for role `salesman` / `sales` (`vspOnly`), the list's price column is "VSP ₹" and shows only the VSP. The product details drop the MRP and Selling Price boxes. Other roles are unchanged.
+- **Calculator** `components/masters/PriceAndIncentive.tsx` ("Set your selling price"): works from the VSP (`item.vsp`, else `sellingPrice`). The price-per-piece box starts empty (no placeholder), and the warning reads "above the VSP".
+- **Not changed:** the server still counts the discount tier from the selling price (`lib/discount-approval.ts`), so the calculator's "you can give this yourself" can differ from the tier the request gets. It was left as is on purpose; the owner was asked.
+- **Not changed either:** `/api/items` still sends MRP and selling price (the estimate form needs them); only the display is hidden.
+
+---
+
 ## Change Log
 - **2026-10-24** — Upgraded Next.js 15.3.6 → 15.5.28; added OpenNext Cloudflare setup (`wrangler.jsonc`, `open-next.config.ts`, `worker.ts`, deploy/preview scripts).
 - **2026-10-24** — `lib/db.ts`: per-request MongoDB client on Cloudflare Workers.
@@ -799,3 +809,5 @@
   - **Not wired:** item writes stay Mongo-first until U5 (stock/purchase routes also write items).
   - **Inventory:** 105 write paths — U1 15 (6 done), U2 6, U3 14, U4 9, U5 61. Still to build: U1 rest, U2–U5.
   - **Removing MongoDB:** only after everything has been d1 for weeks (§6.9–6.10).
+- **2026-11-14** — Salesman products view shows only VSP; calculator from VSP, price box not pre-filled (§40).
+- **2026-11-14** — README.md rewritten (stack, rules, deploy, D1 status/controls) and CLAUDE.md added for AI assistants.
