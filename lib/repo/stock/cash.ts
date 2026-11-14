@@ -29,7 +29,7 @@ export const CASH_READS = {
       await connectToDatabase();
       return CashTransaction.find({}).sort({ createdAt: -1 });
     },
-    d1: async (_a, db) => findDocs(useDb(db), "cash_transactions", { orderBy: "createdAt DESC, id" }),
+    d1: async (_a, db) => findDocs(useDb(db), "cash_transactions", { orderBy: "createdAt DESC, id", hydrateWith: CashTransaction }),
     // The register balance checks payouts (admin-cash POST / PATCH), the day close and calibration: never from D1.
     mongoOnlyInD1: true,
   }),
@@ -51,7 +51,7 @@ export const CASH_READS = {
       await connectToDatabase();
       return DayClose.findOne({}).sort({ date: -1 });
     },
-    d1: async (_a, db) => findOneDoc(useDb(db), "day_closes", { orderBy: "date DESC, id" }),
+    d1: async (_a, db) => findOneDoc(useDb(db), "day_closes", { orderBy: "date DESC, id", hydrateWith: DayClose }),
   }),
 
   /** lib/day-close-pending.ts (GET /api/me/summary) — only the date of the latest day close. */
@@ -78,7 +78,7 @@ export const CASH_READS = {
       await connectToDatabase();
       return DayClose.find({}).sort({ date: 1 });
     },
-    d1: async (_a, db) => findDocs(useDb(db), "day_closes", { orderBy: "date, id" }),
+    d1: async (_a, db) => findDocs(useDb(db), "day_closes", { orderBy: "date, id", hydrateWith: DayClose }),
     // Read by a POST that rewrites the day closes.
     mongoOnlyInD1: true,
   }),
@@ -107,6 +107,7 @@ export const CASH_READS = {
           where: `${ne("type")} AND (name IS NULL OR NOT (${name.sql})) AND (number IS NULL OR NOT (${number.sql}))`,
           params: ["cash", ...name.params, ...number.params],
           orderBy: "createdAt DESC, id",
+          hydrateWith: BankAccount,
         });
       }
       return findDocs(useDb(db), "bank_accounts", {
@@ -114,6 +115,7 @@ export const CASH_READS = {
         params: ["cash"],
         orderBy: "createdAt DESC, id",
         post: (d) => !name.test(d) && !number.test(d),
+        hydrateWith: BankAccount,
       });
     },
   }),

@@ -197,6 +197,7 @@ export async function rowToDoc(spec: MasterSpec, row: Row, payments: Row[] | nul
   const derived = STAFF_SYSTEM_DERIVED[spec.table] || [];
   const primary: string[] = [];
   const secondary: string[] = [];
+  const secondaryDates: string[] = [];
   for (const c of spec.columns) {
     if (derived.includes(c.col) || c.col.includes("_")) continue;
     const v = row[c.col];
@@ -204,27 +205,34 @@ export async function rowToDoc(spec: MasterSpec, row: Row, payments: Row[] | nul
       if (!(v === 1 || v === true)) primary.push(`absent:${c.col}`);
     } else if (v === null || v === undefined) {
       if (nullDefaults.includes(c.col)) primary.push(`absent:${c.col}`);
-      else secondary.push(`null:${c.col}`);
+      else (c.type === "date" ? secondaryDates : secondary).push(`null:${c.col}`);
     }
   }
   primary.push("absent:__v");
   if (payments && payments.length === 0) primary.push("absent:history");
+  // Explicit nulls on date fields first: that is what the app writes (`$set: { pinLockedUntil: null }` when a PIN
+  // lock is cleared), so they are the likeliest.
+  secondary.unshift(...secondaryDates);
 
-  // Most likely first: absent booleans / null defaults / __v (any mix of them when there are few), then explicit
-  // nulls (one or two fields, with or without __v). At most MAX_TRIES hashes for a row that matches no reading.
+  // Most likely first: absent booleans / null defaults / __v (any mix of them when there are few); then one or two
+  // explicit nulls, EACH COMBINED WITH every one of those readings. The combination matters: a user saved before
+  // liveAuditAccess existed whose PIN lock was later cleared has BOTH an absent boolean and an explicit null
+  // (shadow finding of 14 Nov 2026: users.list read liveAuditAccess false from D1 where MongoDB had none, because
+  // that mix was never tried and the first guess was kept). At most MAX_TRIES hashes for a row matching no reading.
   let tries = 0;
   const attempt = async (set: string[]) => {
     tries++;
     const d = buildDoc(spec, row, payments, new Set(set));
     return (await docHash(d)) === row.docHash ? d : null;
   };
-  for (const set of subsets(primary, primary.length <= 6 ? primary.length : 2)) {
+  const primarySets = Array.from(subsets(primary, primary.length <= 6 ? primary.length : 2));
+  for (const set of primarySets) {
     if (tries >= MAX_TRIES) return first;
     const d = await attempt(set);
     if (d) return d;
   }
   for (const set of subsets(secondary, 2)) {
-    for (const extra of [[], ["absent:__v"]]) {
+    for (const extra of [[], ...primarySets]) {
       if (tries >= MAX_TRIES) return first;
       const d = await attempt([...set, ...extra]);
       if (d) return d;
@@ -234,7 +242,7 @@ export async function rowToDoc(spec: MasterSpec, row: Row, payments: Row[] | nul
 }
 
 /** Hashes tried at most for one row whose first reading does not match its docHash. */
-const MAX_TRIES = 128;
+const MAX_TRIES = 256;
 
 /** Rows of one collection's table -> their documents, in the same order (salary history read from salaryPayments). */
 export async function rowsToDocs(db: D1DatabaseLike, collection: string, rows: Row[]): Promise<any[]> {

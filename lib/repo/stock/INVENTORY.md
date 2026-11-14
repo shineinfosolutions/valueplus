@@ -154,8 +154,14 @@ projection is given; "+lines" = line array from the child table.
    date column → Date); a legacy plain-string vendor address comes back as `{ line1 }`; Dates inside JSON columns and
    `extra` (e.g. `SerialNumber.history[].date`) come back as ISO strings (same JSON). Missing booleans come back as
    `false` (NOT NULL columns); every model has a default for them.
-4. **Mongoose defaults.** A hydrated (non-lean) read fills schema defaults for fields missing in the stored document;
-   D1 returns only what was stored. Identical for documents written by the app.
+4. **Mongoose defaults: now identical.** A non-lean read (`cashTransactions.all`, `dayCloses.latest`,
+   `dayCloses.allAsc`, `bankAccounts.list`, `serialNumbers.search`, `purchaseEntries.byBillNo`, `expenses.list`,
+   `expenses.cash`) returns mongoose documents, which carry schema defaults for fields the stored document lacks
+   (live, 14 Nov 2026: older bank accounts read `branch: "Kunraghat, Gorakhpur"` and `ifsc: "HDFC0000492"` from
+   MongoDB, stored nowhere). The D1 twin passes `hydrateWith: Model` to findDocs, which hydrates the rebuilt stored copy
+   through the same model (lib/d1/hydrate.ts): same defaults, casting and toJSON, and the answer is a mongoose
+   document as well. The test checks that both sides are documents and repeats every read on older documents whose
+   scalar defaulted fields were removed.
 5. **Stored order = `_id` order.** D1 has no record ids; natural order is taken as `_id` order, which is insertion
    order for documents created by the app (a document inserted later with an older explicit `_id` would differ).
 6. **Regex flavour.** The JS post-filter uses JS regex semantics; MongoDB uses PCRE. They agree on every pattern the

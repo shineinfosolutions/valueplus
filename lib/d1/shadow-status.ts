@@ -14,6 +14,8 @@ export interface ShadowDay {
   mismatches: number;
   errors: number;
   fallbacks: number;
+  /** Differences that a second read showed were the data changing between the two reads (counted as matches). */
+  raced: number;
 }
 
 export interface ShadowPathStatus {
@@ -26,6 +28,7 @@ export interface ShadowPathStatus {
   mismatches: number;
   errors: number;
   fallbacks: number;
+  raced: number;
   /** matches / (matches + mismatches), in %; null when nothing was compared in the window. */
   matchPct: number | null;
   avgMongoMs: number | null;
@@ -82,6 +85,7 @@ export async function getShadowStatus(db: D1DatabaseLike, opts: { days?: number;
         mismatches: 0,
         errors: 0,
         fallbacks: 0,
+        raced: 0,
         matchPct: null,
         avgMongoMs: null,
         avgD1Ms: null,
@@ -92,13 +96,14 @@ export async function getShadowStatus(db: D1DatabaseLike, opts: { days?: number;
       };
       byPath.set(key, s);
     }
-    const day: ShadowDay = { day: r.day, runs: Number(r.runs), matches: Number(r.matches), mismatches: Number(r.mismatches), errors: Number(r.errors), fallbacks: Number(r.fallbacks) };
+    const day: ShadowDay = { day: r.day, runs: Number(r.runs), matches: Number(r.matches), mismatches: Number(r.mismatches), errors: Number(r.errors), fallbacks: Number(r.fallbacks), raced: Number(r.raced) || 0 };
     s.days.push(day);
     s.runs += day.runs;
     s.matches += day.matches;
     s.mismatches += day.mismatches;
     s.errors += day.errors;
     s.fallbacks += day.fallbacks;
+    s.raced += day.raced;
     mongoTotals.set(key, (mongoTotals.get(key) ?? 0) + Number(r.mongoMsTotal));
     d1Totals.set(key, (d1Totals.get(key) ?? 0) + Number(r.d1MsTotal));
     if (r.lastAt && (!s.lastRunAt || r.lastAt > s.lastRunAt)) s.lastRunAt = r.lastAt;

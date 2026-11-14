@@ -122,6 +122,27 @@ async function seed(mongo: any) {
   const nullUser = await mk(User, { name: "Null Fields", email: "null@valueplus.in", role: "warehouse", password: FAKE_HASH("pw-null") });
   await mongo.collection("users").updateOne({ _id: nullUser._id }, { $set: { avatar: null, monthlySalary: null } });
   ids.nullUser = String(nullUser._id);
+  // The users.list finding of 14 Nov (2 of 15 live users): saved before liveAuditAccess existed (so it is absent),
+  // and later a PIN lock was cleared with `$set: { pinLockedUntil: null }` (an explicit null). D1 must give the
+  // field back ABSENT, as MongoDB does, not `false`: the rebuild has to combine the two readings.
+  const pinCleared = new ObjectId();
+  await mongo.collection("users").insertOne({
+    _id: pinCleared,
+    name: "PIN Cleared Legacy",
+    email: "pin.cleared@valueplus.in",
+    password: FAKE_HASH("pw-pin"),
+    role: "salesman",
+    pinUpdatedAt: new Date("2026-10-05T05:00:00Z"),
+    pinFailCount: 0,
+    pinLockedUntil: null,
+    createdAt: tick(),
+    updatedAt: new Date(clock),
+    __v: 0,
+  });
+  ids.pinCleared = String(pinCleared);
+  // ... and the same with many NULL text columns too (a bare legacy user), so the explicit null is one of many.
+  const bare = new ObjectId();
+  await mongo.collection("users").insertOne({ _id: bare, name: "Bare Legacy", email: "bare@valueplus.in", password: FAKE_HASH("pw-bare"), role: "salesman", pinFailCount: 0, pinLockedUntil: null, createdAt: tick(), updatedAt: new Date(clock), __v: 0 });
 
   const ravi = ids["salesman@valueplus.in"];
   const amit = ids["amit@valueplus.in"];

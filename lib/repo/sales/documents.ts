@@ -34,7 +34,7 @@ export async function d1EstimateList(db: D1DatabaseLike, phone: string | null, s
   if (phone) where.raw(`instr(customerPhone, ?) > 0`, phone.replace(/\D/g, ""));
   if (status) where.eq("status", status);
   if (approval) where.eq("approvalStatus", approval);
-  return findDocs(db, META.estimates, { where, orderBy: "createdAt DESC, id", lean: false });
+  return findDocs(db, META.estimates, { where, orderBy: "createdAt DESC, id", hydrateWith: Estimate });
 }
 
 /** GET /api/invoices/next-number?type=estimate. */
@@ -125,7 +125,7 @@ export async function d1EwayBillList(db: D1DatabaseLike, invoiceNumber: string |
   const where = new Where();
   if (invoiceNumber) where.eq("invoiceNumber", invoiceNumber);
   if (status && status !== "all") where.eq("status", status);
-  return findDocs(db, META.ewayBills, { where, orderBy: "createdAt DESC, id", lean: false });
+  return findDocs(db, META.ewayBills, { where, orderBy: "createdAt DESC, id", hydrateWith: EWayBill });
 }
 
 /** GET /api/gstr-reports?type=GSTR1: the e-way bills of the listed bills. */
@@ -170,7 +170,7 @@ export async function d1WarrantyList(db: D1DatabaseLike, { invoiceNumber, custom
   if (customerPhone) where.eq("customerPhone", customerPhone);
   if (vpCode) where.eq("vpCode", vpCode);
   if (status) where.eq("status", status);
-  return findDocs(db, META.warranties, { where, orderBy: "createdAt DESC, id", lean: false });
+  return findDocs(db, META.warranties, { where, orderBy: "createdAt DESC, id", hydrateWith: ExtendedWarranty });
 }
 
 export async function mongoWarrantyCount() {

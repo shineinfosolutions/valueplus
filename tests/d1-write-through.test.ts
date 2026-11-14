@@ -435,6 +435,64 @@ async function main() {
       installWriteThrough({ timeoutMs: 3000, beforeD1Write: undefined });
       gate = null;
     }
+    // 5e. a document that keeps changing during every verify round (many phones claiming today's scheduled_runs row
+    //     at once, 14 Nov 05:10): DEFERRED to the copy job, counted apart, NOT a failure; the copy job repairs it.
+    {
+      const ci = await Item.create(itemData());
+      let churn = true;
+      installWriteThrough({
+        beforeD1Write: async (info) => {
+          if (!churn || info.collection !== "items" || !info.ids.includes(String(ci._id))) return;
+          envOff = true; // the change in between is a plain write (its own copy is not what is tested here)
+          try {
+            await Item.updateOne({ _id: ci._id }, { $inc: { mrp: 1 } });
+          } finally {
+            envOff = false;
+          }
+        },
+      });
+      const before = await wtState("items");
+      await Item.updateOne({ _id: ci._id }, { $set: { sellingPrice: 901 } });
+      churn = false;
+      const rep = report();
+      const after = await wtState("items");
+      check(rep?.outcome === "deferred" && rep?.rounds === 3, `a document still changing after 3 rounds: outcome deferred (${rep?.outcome}, rounds ${rep?.rounds})`);
+      check(Number(after?.failures) === Number(before?.failures ?? 0) && Number(after?.deferred) === Number(before?.deferred ?? 0) + 1, `  counted in write_through_state.deferred, not in failures (failures ${before?.failures}->${after?.failures}, deferred ${before?.deferred ?? 0}->${after?.deferred})`);
+      const defErr = await one(realDb, "SELECT * FROM sync_errors WHERE phase = 'write-through-deferred' ORDER BY id DESC LIMIT 1");
+      check(defErr?.collection === "items" && String(defErr?.docId).includes(String(ci._id)), "  logged as phase 'write-through-deferred' (the freshness guard still sees it)");
+      check((await mirrored(realDb, "items", [ci._id])) !== "", "  D1 is one change behind for now");
+      // The copy job's incremental pass (updatedAt after watermark - 2 min) picks it up.
+      await realDb.prepare("INSERT OR REPLACE INTO sync_state (collection, fullCopyStartedAt, fullCopyDoneAt, watermark) VALUES ('items', ?, ?, ?)").bind("2026-11-01T00:00:00.000Z", "2026-11-01T00:01:00.000Z", new Date(Date.now() - 60_000).toISOString()).run();
+      envOff = true;
+      const run = await runD1Sync(realDb, { collections: ["items"], reconcile: "skip" });
+      envOff = false;
+      check(run.ok && run.collections.items.mode === "incremental" && (await mirrored(realDb, "items", [ci._id])) === "", "  the copy job's incremental pass repairs it (D1 = Mongo)");
+
+      // 5f. the same, but Mongo's updatedAt is OLD (a raw write that set it back): the incremental pass would not
+      //     pick it up, so that stays a real failure (left for the nightly repair).
+      const old = new Date(Date.now() - 3600_000);
+      churn = true;
+      installWriteThrough({
+        beforeD1Write: async (info) => {
+          if (!churn || info.collection !== "items" || !info.ids.includes(String(ci._id))) return;
+          envOff = true;
+          try {
+            await mongo.collection("items").updateOne({ _id: ci._id }, { $inc: { mrp: 1 }, $set: { updatedAt: old } });
+          } finally {
+            envOff = false;
+          }
+        },
+      });
+      const before2 = await wtState("items");
+      await mongo.collection("items").updateOne({ _id: ci._id }, { $set: { sellingPrice: 902, updatedAt: old } });
+      churn = false;
+      const after2 = await wtState("items");
+      check(report()?.outcome === "error" && Number(after2?.failures) === Number(before2?.failures ?? 0) + 1 && Number(after2?.deferred) === Number(before2?.deferred), "  ... with an old updatedAt the copy job would not see it: a real failure");
+      installWriteThrough({ beforeD1Write: undefined });
+      envOff = true;
+      await realDb.batch(statementsFor(realDb, ALL_SPEC_BY_COLLECTION.items, await mapDoc(ALL_SPEC_BY_COLLECTION.items, await mongo.collection("items").findOne({ _id: ci._id }))));
+      envOff = false;
+    }
 
     // ── 6. D1 failing / slow / down ──
     const fi = await Item.create(itemData());

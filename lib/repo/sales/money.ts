@@ -155,7 +155,7 @@ export async function d1FinanceList(db: D1DatabaseLike, invoiceNumber: string | 
   if (doId) where.eq("doId", doId);
   if (status && status !== "all") where.eq("approvalStatus", status);
   if (provider && provider !== "all") where.eq("financeProvider", provider);
-  return findDocs(db, META.finance, { where, orderBy: "createdAt DESC, id", lean: false });
+  return findDocs(db, META.finance, { where, orderBy: "createdAt DESC, id", hydrateWith: FinanceTransaction });
 }
 
 const REMINDER_FIELDS: Projection = {
@@ -220,7 +220,7 @@ export async function mongoCashRegisterFinanceRecords() {
 }
 
 export async function d1CashRegisterFinanceRecords(db: D1DatabaseLike) {
-  return findDocs(db, META.finance, { orderBy: "createdAt DESC, id", lean: false });
+  return findDocs(db, META.finance, { orderBy: "createdAt DESC, id", hydrateWith: FinanceTransaction });
 }
 
 // ---------------------------------------------------------------------------

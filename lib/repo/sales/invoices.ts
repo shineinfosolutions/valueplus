@@ -436,7 +436,7 @@ export async function d1CashInvoices(db: D1DatabaseLike) {
       `(paymentMode IN ('Cash', 'cash') OR EXISTS (SELECT 1 FROM invoicePayments p WHERE p.invoiceId = invoices.id AND p.idx >= 0 AND p.mode LIKE '%cash%'))`
     )
     .ne("status", "cancelled");
-  return findDocs(db, M, { where, orderBy: "createdAt DESC, id", lean: false });
+  return findDocs(db, M, { where, orderBy: "createdAt DESC, id", hydrateWith: Invoice });
 }
 
 export async function mongoFinanceLinkedInvoices(financeInvoiceNumbers: string[]) {

@@ -300,6 +300,92 @@ async function reportTests(db: D1DatabaseLike) {
   resetReadSourceConfig();
 }
 
+/**
+ * The push.subsForUsers finding of 14 Nov: "D1 newer than MongoDB". lib/push.ts reads the devices (MongoDB answers,
+ * shadow mode), sends, then sets lastSuccessAt on them; the write-through copies that to D1 at once; only after the
+ * response does the deferred D1 read run, so it sees the NEW lastSuccessAt and MongoDB's answer is the OLD one.
+ * Mongo and D1 are plain in-memory stores here, changed exactly in that order.
+ */
+async function raceTests(db: D1DatabaseLike) {
+  console.log("\nraces between the two reads of a comparison");
+  configureReadSource({ resolveD1: () => db, envValue: () => "", flagTtlMs: 0 });
+  resetShadowConfig();
+  const old = "2026-11-13T06:30:25.689Z";
+  const now = "2026-11-14T04:31:06.479Z";
+  const device = (at: string) => ({ _id: "6a0000000000000000000001", endpoint: "https://push.example/1", lastSuccessAt: at, updatedAt: at });
+  let mongo = [device(old)];
+  let d1 = [device(old)];
+  let mongoReads = 0;
+  const mongoFn = async () => {
+    mongoReads++;
+    return JSON.parse(JSON.stringify(mongo));
+  };
+  const d1Fn = async () => JSON.parse(JSON.stringify(d1));
+  const pushLike = async (name: string) => {
+    const subs = await readWithShadow("staff", name, mongoFn, d1Fn); // the devices, as pushToUsers reads them
+    // ... sent; then `PushSubscription.updateMany({ endpoint: { $in: ok } }, { $set: { lastSuccessAt: new Date() } })`,
+    // copied into D1 in the same request by the write-through:
+    mongo = [device(now)];
+    d1 = [device(now)];
+    return subs;
+  };
+
+  await setFlag(db, "staff", "shadow");
+  const subs: any = await pushLike("push.race");
+  await flushShadowWork();
+  const row = await one(db, "SELECT * FROM shadow_results WHERE name = 'push.race'");
+  const day = await one(db, "SELECT * FROM shadow_daily WHERE name = 'push.race'");
+  check(subs[0].lastSuccessAt === old, "the request got MongoDB's answer from before its own update");
+  check(row?.match === 1 && row.raced === 1 && row.diffCount === 2 && mongoReads === 2, `shadow: D1 'newer' than MongoDB was the update in between: a match, marked raced (match ${row?.match}, raced ${row?.raced}, MongoDB read ${mongoReads}x)`);
+  check(day?.mismatches === 0 && day.matches === 1 && day.raced === 1, "  daily totals: no mismatch, one raced match (Stage C sees nothing wrong)");
+
+  // D1 really behind (an earlier copy was missed), and another write lands in between whose copy is missed too: the
+  // second MongoDB read differs from D1 as well -> a mismatch, as before.
+  resetShadowSampling();
+  mongo = [device(old)];
+  d1 = [device("2026-11-12T10:00:00.000Z")];
+  await readWithShadow("staff", "push.behind", mongoFn, d1Fn);
+  mongo = [device(now)];
+  await flushShadowWork();
+  const behind = await one(db, "SELECT * FROM shadow_results WHERE name = 'push.behind'");
+  check(behind?.match === 0 && behind.raced === 0, "shadow: D1 left behind by a write is still a mismatch (the fresh MongoDB read differs from D1 too)");
+
+  // A plain wrong D1 answer, nothing changing: a mismatch.
+  resetShadowSampling();
+  mongo = [device(old)];
+  d1 = [device("2020-01-01T00:00:00.000Z")];
+  await readWithShadow("staff", "push.wrong", mongoFn, d1Fn);
+  await flushShadowWork();
+  const wrong = await one(db, "SELECT * FROM shadow_results WHERE name = 'push.wrong'");
+  check(wrong?.match === 0 && wrong.raced === 0, "shadow: a wrong D1 answer stays a mismatch");
+
+  // The second read fails: proves nothing, the mismatch stands.
+  resetShadowSampling();
+  let failSecond = false;
+  const flakyMongo = async () => {
+    if (failSecond) throw new Error("MongoDB went away");
+    failSecond = true;
+    return JSON.parse(JSON.stringify(mongo));
+  };
+  d1 = [device(now)];
+  await readWithShadow("staff", "push.flaky", flakyMongo, d1Fn);
+  await flushShadowWork();
+  const flaky = await one(db, "SELECT * FROM shadow_results WHERE name = 'push.flaky'");
+  check(flaky?.match === 0 && flaky.raced === 0, "shadow: when the second read fails, the mismatch stands");
+
+  // d1 mode (reverse shadow): D1 answers first, the update lands, MongoDB is read after the response.
+  resetShadowSampling();
+  await setFlag(db, "staff", "d1");
+  mongo = [device(old)];
+  d1 = [device(old)];
+  const served: any = await pushLike("push.reverse");
+  await flushShadowWork();
+  const rev = await one(db, "SELECT * FROM shadow_results WHERE name = 'push.reverse'");
+  check(served[0].lastSuccessAt === old && rev?.kind === "reverse" && rev.match === 1 && rev.raced === 1, "reverse: MongoDB 'newer' than D1's answer was the update in between: raced match");
+  await setFlag(db, "staff", "shadow");
+  resetReadSourceConfig();
+}
+
 async function main() {
   const local = await startLocalD1();
   try {
@@ -309,6 +395,7 @@ async function main() {
     await readSourceTests(local.db);
     await setFlag(local.db, "masters", "shadow");
     await modeTests(local.db);
+    await raceTests(local.db);
     await reportTests(local.db);
   } finally {
     await local.dispose();

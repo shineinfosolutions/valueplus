@@ -22,6 +22,7 @@
 import mongoose from "mongoose";
 import { startMemoryMongo, stopMemoryMongo } from "./helpers/memory-mongo";
 import { check, summary } from "./helpers/assert";
+import { holdsDocuments, stripScalarDefaults } from "./helpers/legacy-docs";
 import { startLocalD1, applyMigrations } from "./helpers/local-d1";
 import type { D1DatabaseLike } from "@/lib/d1/types";
 import { runD1Sync } from "@/lib/d1/sync";
@@ -521,10 +522,11 @@ function settleTies(list: any, key: (d: any) => unknown[]): any {
 
 const keyOf = (d: any) => d?.billNo ?? d?.serialNumber ?? d?.transferNo ?? d?.paymentId ?? d?.requestNumber ?? d?.expenseNo ?? d?.date ?? String(d?._id).slice(-4);
 
-async function runOne(fn: () => Promise<any>): Promise<{ ok: true; json: string; n: number; keys: string } | { ok: false; error: string }> {
+async function runOne(fn: () => Promise<any>, tie?: (d: any) => unknown[]): Promise<{ ok: true; json: string; n: number; keys: string; docs: boolean } | { ok: false; error: string }> {
   try {
-    const v = await fn();
-    return { ok: true, json: norm(v), n: Array.isArray(v) ? v.length : v ? 1 : 0, keys: Array.isArray(v) ? v.map(keyOf).join(" ") : "" };
+    const raw = await fn();
+    const v = tie ? settleTies(raw, tie) : raw;
+    return { ok: true, json: norm(v), n: Array.isArray(v) ? v.length : v ? 1 : 0, keys: Array.isArray(v) ? v.map(keyOf).join(" ") : "", docs: holdsDocuments(raw) };
   } catch (e: any) {
     return { ok: false, error: String(e?.message || e) };
   }
@@ -553,14 +555,16 @@ async function compareAll(db: D1DatabaseLike, label: string) {
   for (const name of names) {
     for (const args of all[name] || []) {
       const tie = TIE_KEYS[name];
-      const m = await runOne(async () => (tie ? settleTies(await STOCK_READS[name].mongo(args), tie) : STOCK_READS[name].mongo(args)));
-      const d = await runOne(async () => (tie ? settleTies(await STOCK_READS[name].d1(args, db), tie) : STOCK_READS[name].d1(args, db)));
+      const m = await runOne(() => STOCK_READS[name].mongo(args), tie);
+      const d = await runOne(() => STOCK_READS[name].d1(args, db), tie);
       const desc = `${label}: ${name}(${JSON.stringify(args).slice(0, 90)})`;
       if (!m.ok || !d.ok) {
         check(!m.ok && !d.ok, `${desc}: both throw (mongo: ${m.ok ? "ok" : m.error.slice(0, 60)} / d1: ${d.ok ? "ok" : d.error.slice(0, 60)})`);
         continue;
       }
       compared++;
+      // A non-lean MongoDB read gives mongoose documents (defaults filled in on load): its D1 twin must be hydrated too.
+      if (m.n > 0) check(m.docs === d.docs, `${desc}: both sides ${m.docs ? "mongoose documents (non-lean read: D1 hydrates)" : "plain objects"} (mongo ${m.docs}, d1 ${d.docs})`);
       check(m.json === d.json, `${desc}: identical (${m.n} docs, ${m.json.length} bytes)${m.json === d.json ? "" : " " + firstDiff(m.json, d.json) + `
       order mongo: ${m.keys}
       order d1:    ${d.keys}`}`);
@@ -610,7 +614,18 @@ async function main() {
     await InventoryAudit.updateOne({ auditDate: "2026-11-14", kind: "all" }, { $set: { "items.1.counted": true, "items.1.countedBy": "Sita", "items.1.countedAt": new Date("2026-11-14T07:00:00.000Z") } });
     await syncAll(db);
     const compared2 = await compareAll(db, "after writes");
-    console.log(`\n  ${compared + compared2} read calls compared`);
+
+    // Older documents without the defaulted fields (finding of 14 Nov: bankAccounts.list showed branch / ifsc from
+    // MongoDB's hydration that D1 did not have). The raw $unset keeps updatedAt, so the copy job is made to copy
+    // everything again, as its nightly repair would.
+    const stripped = await stripScalarDefaults(MODELS);
+    check(stripped > 20, `older documents without their defaulted fields (${stripped})`);
+    await db.prepare("UPDATE sync_state SET fullCopyStartedAt = NULL, fullCopyLastId = NULL, fullCopyDoneAt = NULL").run();
+    await syncAll(db);
+    const bankNull = await db.prepare("SELECT COUNT(*) AS n FROM bankAccounts WHERE ifsc IS NULL AND branch IS NULL").first<any>();
+    check(Number(bankNull?.n) >= 1, `a bank account without stored ifsc / branch is in D1 (${bankNull?.n})`);
+    const compared3 = await compareAll(db, "older documents");
+    console.log(`\n  ${compared + compared2 + compared3} read calls compared`);
   } finally {
     await local.dispose();
     await stopMemoryMongo();

@@ -183,7 +183,7 @@ export const PURCHASE_READS = {
       await connectToDatabase();
       return PurchaseEntry.findOne({ billNo });
     },
-    d1: async ({ billNo }, db) => findOneDoc(useDb(db), PE, { where: "billNo = ?", params: [billNo], orderBy: "id" }),
+    d1: async ({ billNo }, db) => findOneDoc(useDb(db), PE, { where: "billNo = ?", params: [billNo], orderBy: "id", hydrateWith: PurchaseEntry }),
   }),
 
   /** GET /api/audit?view=deleted-purchase-entries — the deleted-bill archive. */
@@ -255,7 +255,7 @@ export const PURCHASE_READS = {
       await connectToDatabase();
       return Expense.find({}).sort({ createdAt: -1 });
     },
-    d1: async (_a, db) => findDocs(useDb(db), "expenses", { orderBy: "createdAt DESC, id" }),
+    d1: async (_a, db) => findDocs(useDb(db), "expenses", { orderBy: "createdAt DESC, id", hydrateWith: Expense }),
   }),
 
   /** GET /api/dashboard/stats — the fields that pick the period's expenses, newest first. */
@@ -295,7 +295,7 @@ export const PURCHASE_READS = {
       await connectToDatabase();
       return Expense.find({ $or: [{ paymentMode: "Cash" }, { paymentMode: "cash" }] }).sort({ createdAt: -1 });
     },
-    d1: async (_a, db) => findDocs(useDb(db), "expenses", { where: "paymentMode IN ('Cash', 'cash')", orderBy: "createdAt DESC, id" }),
+    d1: async (_a, db) => findDocs(useDb(db), "expenses", { where: "paymentMode IN ('Cash', 'cash')", orderBy: "createdAt DESC, id", hydrateWith: Expense }),
     // Part of the cash register balance that validates payouts (lib/repo/stock/cash.ts cashTransactions.all).
     mongoOnlyInD1: true,
   }),

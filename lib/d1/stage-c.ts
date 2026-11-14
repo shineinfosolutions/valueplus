@@ -422,8 +422,44 @@ async function changeFlag(db: D1DatabaseLike, key: string, area: string, from: s
 // The job
 // ---------------------------------------------------------------------------
 
-/** One run of Stage C at `now` (ms). Never throws. */
+/**
+ * The job's heartbeat: one row (stage_c_state, migration 0010) written at the end of EVERY run, whatever its outcome,
+ * so the Admin view can show that the job runs at all and how its last run ended. Before it, a job that silently
+ * never ran (or always failed) looked exactly like a job with nothing to do. Never throws.
+ */
+async function recordHeartbeat(db: D1DatabaseLike, now: number, report: StageCReport): Promise<void> {
+  try {
+    const at = iso(now);
+    const result = !report.ok ? "error" : report.setting === "off" ? "off" : "ok";
+    const changes = report.changes.length ? JSON.stringify({ at, changes: report.changes.map(({ area, fromMode, toMode, applied }) => ({ area, fromMode, toMode, applied })) }) : null;
+    await db
+      .prepare(
+        `INSERT INTO stage_c_state (id, lastRunAt, lastResult, lastOkAt, lastError, lastSetting, lastChanges, runs)
+         VALUES (1, ?1, ?2, CASE WHEN ?2 = 'error' THEN NULL ELSE ?1 END, ?3, ?4, ?5, 1)
+         ON CONFLICT(id) DO UPDATE SET
+           lastRunAt = excluded.lastRunAt,
+           lastResult = excluded.lastResult,
+           lastOkAt = CASE WHEN excluded.lastResult = 'error' THEN stage_c_state.lastOkAt ELSE excluded.lastRunAt END,
+           lastError = excluded.lastError,
+           lastSetting = excluded.lastSetting,
+           lastChanges = COALESCE(excluded.lastChanges, stage_c_state.lastChanges),
+           runs = stage_c_state.runs + 1`
+      )
+      .bind(at, result, report.error ?? null, report.setting, changes)
+      .run();
+  } catch (e) {
+    console.warn(`d1 stage C: cannot write the heartbeat (${errText(e)})`);
+  }
+}
+
+/** One run of Stage C at `now` (ms). Never throws. Every run ends with its heartbeat (stage_c_state). */
 export async function runStageC(db: D1DatabaseLike, now: number = Date.now()): Promise<StageCReport> {
+  const report = await runStageCOnce(db, now);
+  await recordHeartbeat(db, now, report);
+  return report;
+}
+
+async function runStageCOnce(db: D1DatabaseLike, now: number): Promise<StageCReport> {
   const report: StageCReport = { ok: true, setting: null, changes: [], nextPromotion: null };
   try {
     let ev = await evaluateStageC(db, now);
@@ -514,5 +550,56 @@ export async function runStageCSafely(db: D1DatabaseLike, now: number = Date.now
 export async function getStageCStatus(db: D1DatabaseLike, now: number = Date.now()) {
   const ev = await evaluateStageC(db, now);
   const log = await rows(db, "SELECT id, at, area, fromMode, toMode, reason FROM stage_c_log ORDER BY at DESC, id DESC LIMIT 20");
-  return { ...ev, log };
+  return { ...ev, log, heartbeat: await heartbeatStatus(db, now), writeThroughDeferred24h: await deferredStatus(db, now) };
+}
+
+/** The cron (wrangler.jsonc "*\/5 3-18 * * *") runs the job every 5 minutes from 03:00 to 18:55 UTC. */
+function inCronHours(ms: number): boolean {
+  const h = new Date(ms).getUTCHours();
+  return h >= 3 && h <= 18;
+}
+
+/**
+ * The job's heartbeat for the Admin view. `late` = inside the cron hours and no run for more than 15 minutes (three
+ * ticks missed): the job is not running, whatever the rest of the report says. null fields when migration 0010 is
+ * not applied yet.
+ */
+async function heartbeatStatus(db: D1DatabaseLike, now: number) {
+  try {
+    const hb = await db.prepare("SELECT lastRunAt, lastResult, lastOkAt, lastError, lastSetting, lastChanges, runs FROM stage_c_state WHERE id = 1").first<any>();
+    const last = parseIso(hb?.lastRunAt);
+    const minutesSinceLastRun = last === null ? null : Math.round((now - last) / 60_000);
+    let lastChanges: unknown = null;
+    try {
+      lastChanges = hb?.lastChanges ? JSON.parse(hb.lastChanges) : null;
+    } catch {
+      lastChanges = null;
+    }
+    return {
+      lastRunAt: hb?.lastRunAt ?? null,
+      lastResult: hb?.lastResult ?? null,
+      lastOkAt: hb?.lastOkAt ?? null,
+      lastError: hb?.lastError ?? null,
+      lastSetting: hb?.lastSetting ?? null,
+      lastChanges,
+      runs: Number(hb?.runs) || 0,
+      minutesSinceLastRun,
+      late: inCronHours(now) && (minutesSinceLastRun === null || minutesSinceLastRun > 15),
+    };
+  } catch (e) {
+    return { error: `no heartbeat table (apply migration 0010): ${errText(e)}` };
+  }
+}
+
+/** Write-through copies deferred to the copy job in the last 24 h (not failures: they do not stop anything). */
+async function deferredStatus(db: D1DatabaseLike, now: number) {
+  try {
+    return await rows(
+      db,
+      "SELECT collection, deferred, lastDeferredAt, lastDeferredError FROM write_through_state WHERE lastDeferredAt >= ? ORDER BY lastDeferredAt DESC",
+      iso(now - WRITE_THROUGH_LOOKBACK_MS)
+    );
+  } catch {
+    return [];
+  }
 }

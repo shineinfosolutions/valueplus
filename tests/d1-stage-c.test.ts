@@ -20,7 +20,7 @@ import type { D1DatabaseLike } from "@/lib/d1/types";
 import { runD1Sync } from "@/lib/d1/sync";
 import { configureReadSource, getConfiguredReadMode, getReadMode, resetReadModeCache, resetReadSourceConfig } from "@/lib/d1/read-source";
 import { configureShadow, flushShadowWork, readWithShadow, resetShadowConfig, resetShadowSampling } from "@/lib/d1/shadow";
-import { PROMOTION_RULES, STAGE_C_ORDER, evaluateStageC, inPromotionWindow, runStageC, runStageCSafely, shopDayOf } from "@/lib/d1/stage-c";
+import { PROMOTION_RULES, STAGE_C_ORDER, evaluateStageC, getStageCStatus, inPromotionWindow, runStageC, runStageCSafely, shopDayOf } from "@/lib/d1/stage-c";
 import { SALES_READS } from "@/lib/repo/sales/registry";
 import { STOCK_READS } from "@/lib/repo/stock";
 import { isMongoOnlyInD1 } from "@/lib/repo/stock/types";
@@ -298,6 +298,59 @@ async function writeThroughGuardTests(db: D1DatabaseLike) {
   await day(db, "masters", "2026-11-21", 40);
   const r2 = await runStageC(db, at("2026-11-21T22:05"));
   check((await flag(db, "read:masters")) === "shadow" && !!r2.nextPromotion?.blockers.some((b) => /failed in the last 24 h/.test(b)), "but it still blocks promotions for 24 h");
+
+  // 14 Nov 05:10: a document that kept changing during the verify rounds. Now DEFERRED to the copy job (counted
+  // apart, lib/d1/write-through.ts): it neither switches the write-through off nor blocks a promotion.
+  await reset(db);
+  await setFlag(db, "read:masters", "d1");
+  await run(
+    db,
+    "INSERT INTO write_through_state (collection, writes, docs, deferred, lastDeferredAt, lastDeferredError) VALUES ('scheduled_runs', 31, 31, 1, ?, 'still changing in Mongo after 3 rounds (deferred to the copy job)')",
+    iso(now - 60_000)
+  );
+  const rd = await runStageC(db, now);
+  check((await flag(db, "writeThrough")) === "on" && (await flag(db, "read:masters")) === "d1" && rd.changes.length === 0, "a deferred copy (document still changing) is no failure: writeThrough stays on, nothing demoted");
+  await day(db, "crm", "2026-11-20", 40);
+  await day(db, "crm", "2026-11-21", 40);
+  const evd = await evaluateStageC(db, at("2026-11-21T22:05"));
+  check(!evd.nextPromotion?.blockers.some((b) => /write-through failed/.test(b)), "  and it does not block promotions");
+
+  // The same moment with a REAL failure, as the job really ran on 14 Nov (it did fire, at the next tick 05:11):
+  await run(db, "UPDATE write_through_state SET failures = 1, lastFailureAt = ?, lastError = 'D1_ERROR: boom' WHERE collection = 'scheduled_runs'", iso(now - 60_000));
+  await runStageC(db, now);
+  check((await flag(db, "writeThrough")) === "off" && (await flag(db, "read:masters")) === "shadow", "a real failure still switches it off and demotes, on the next run");
+}
+
+async function heartbeatTests(db: D1DatabaseLike) {
+  console.log("\nheartbeat (stage_c_state)");
+  await reset(db);
+  await run(db, "DELETE FROM stage_c_state");
+  const t1 = at("2026-11-21T11:00");
+  await runStageC(db, t1);
+  let hb = await one(db, "SELECT * FROM stage_c_state WHERE id = 1");
+  check(hb?.lastRunAt === iso(t1) && hb.lastResult === "ok" && hb.lastOkAt === iso(t1) && hb.runs === 1 && hb.lastSetting === "auto", "every run writes its heartbeat (time, result, setting, count)");
+  await setFlag(db, "stageC", "off");
+  const t2 = t1 + 5 * 60_000;
+  await runStageC(db, t2);
+  hb = await one(db, "SELECT * FROM stage_c_state WHERE id = 1");
+  check(hb?.lastRunAt === iso(t2) && hb.lastResult === "off" && hb.runs === 2, "  also when the job's switch is off (result 'off')");
+  await setFlag(db, "stageC", "auto");
+  const t3 = t2 + 5 * 60_000;
+  const broken = faulty(db, { fail: (sql) => /FROM feature_flags/.test(sql) });
+  const r = await runStageC(broken, t3);
+  hb = await one(db, "SELECT * FROM stage_c_state WHERE id = 1");
+  check(r.ok === false && hb?.lastRunAt === iso(t3) && hb.lastResult === "error" && !!hb.lastError && hb.lastOkAt === iso(t2) && hb.runs === 3, "  and when the run fails (result 'error', the error, the last good run kept)");
+  await setFlag(db, "read:masters", "d1");
+  await run(db, "UPDATE write_through_state SET failures = 1, lastFailureAt = ? WHERE collection = 'invoices'", iso(t3));
+  await runStageC(db, t3 + 60_000);
+  hb = await one(db, "SELECT * FROM stage_c_state WHERE id = 1");
+  const lc = JSON.parse(hb?.lastChanges || "null");
+  check(hb?.lastResult === "ok" && lc?.changes?.some((c: any) => c.area === "writeThrough" && c.toMode === "off"), "  the last run that changed something is kept (lastChanges)");
+  await runStageC(db, t3 + 6 * 60_000);
+  hb = await one(db, "SELECT * FROM stage_c_state WHERE id = 1");
+  check(JSON.parse(hb?.lastChanges || "null")?.changes?.length >= 1, "  and survives a later run without changes");
+  const missing = await runStageC(faulty(db, { fail: (sql) => /stage_c_state/.test(sql) }), t3 + 7 * 60_000);
+  check(missing.ok === true, "a heartbeat that cannot be written (migration 0010 missing) does not fail the run");
 }
 
 async function freshnessTests(db: D1DatabaseLike) {
@@ -502,6 +555,11 @@ async function cronAndAdminTests(db: D1DatabaseLike) {
   check(m.mode === "d1" && typeof m.effectiveMode === "string" && typeof m.freshness?.fresh === "boolean" && typeof m.cleanDays === "number", "each area: switch, effective mode, freshness, clean days");
   check(sc.nextPromotion?.area === "crm" && Array.isArray(sc.nextPromotion.blockers), "the next promotion with its blockers");
   check(Array.isArray(sc.log) && sc.log.length === 1 && sc.log[0].area === "masters", "the latest stage_c_log rows");
+  check(sc.heartbeat?.lastRunAt === iso(at("2026-11-20T22:05")) && sc.heartbeat.lastResult === "ok" && typeof sc.heartbeat.late === "boolean" && typeof sc.heartbeat.minutesSinceLastRun === "number", "the job's heartbeat (last run, result, minutes since, late)");
+  const later = await getStageCStatus(db, at("2026-11-21T11:00"));
+  const soon = await getStageCStatus(db, at("2026-11-20T22:15"));
+  check((later.heartbeat as any).late === true && (soon.heartbeat as any).late === false, "  no run for hours inside the cron hours shows as late; 10 minutes ago does not");
+  check(Array.isArray(sc.writeThroughDeferred24h), "the write-through copies deferred to the copy job (24 h)");
   await run(db, "DROP TABLE stage_c_log");
   const noTable: any = await (await call(admin)).json();
   check(noTable.success === true && !!noTable.stageC?.error, "without migration 0009 the rest of the report still works");
@@ -520,6 +578,7 @@ async function main() {
     await blockTests(local.db);
     await demotionTests(local.db);
     await writeThroughGuardTests(local.db);
+    await heartbeatTests(local.db);
     await freshnessTests(local.db);
     await reverseShadowTests(local.db);
     await contextTestsOnDb(local.db);

@@ -16,7 +16,9 @@
  * so it is always emitted), a missing array vs an empty one (emitted as [] where the schema defaults to [], left out
  * where the schema default is undefined), and an absent createdAt / __v (the copy fills them in).
  */
+import type { Model } from "mongoose";
 import type { D1DatabaseLike } from "@/lib/d1/types";
+import { hydrateLikeMongoose } from "@/lib/d1/hydrate";
 import { SALES_SPECS, INVOICE_ITEM_FIELDS, INVOICE_PAYMENT_FIELDS, INVOICE_FINANCE_FIELDS, INVOICE_DELIVERY_FIELDS } from "@/lib/d1/maps/sales";
 
 export type ColType = "text" | "real" | "int" | "bool" | "date" | "json";
@@ -382,8 +384,11 @@ export interface FindOptions {
   /** A filter on the top-level document (columns + extra), for conditions SQL cannot express exactly. */
   filter?: (doc: Record<string, any>) => boolean;
   projection?: Projection;
-  /** false = the Mongo read was not .lean(): apply mongoose's toJSON `minimize`. */
-  lean?: boolean;
+  /**
+   * The Mongo read is NOT .lean(): give the documents as that read does, hydrated through this model (schema
+   * defaults for fields the stored copy lacks, casting, toJSON). See lib/d1/hydrate.ts.
+   */
+  hydrateWith?: Model<any>;
 }
 
 async function allRows(db: D1DatabaseLike, sql: string, params: unknown[]): Promise<Record<string, unknown>[]> {
@@ -401,9 +406,10 @@ export async function findDocs(db: D1DatabaseLike, meta: TableMeta, opts: FindOp
   if (opts.filter) docs = docs.filter(opts.filter);
   if (opts.limit !== undefined && opts.filter) docs = docs.slice(0, Math.max(0, Math.floor(opts.limit)));
   await attachChildren(db, meta, docs, projectedTopFields(opts.projection));
-  let out = opts.projection ? docs.map((d) => project(d, opts.projection!)) : docs;
-  if (opts.lean === false) out = out.map(minimize);
-  return out;
+  const out = opts.projection ? docs.map((d) => project(d, opts.projection!)) : docs;
+  // A non-lean read: mongoose fills in the defaults of fields an older document never stored (an estimate saved
+  // before advanceAmount existed reads advanceAmount 0 from MongoDB), so the D1 answer is hydrated the same way.
+  return opts.hydrateWith ? hydrateLikeMongoose(opts.hydrateWith, out, opts.projection) : out;
 }
 
 export async function findOneDoc(db: D1DatabaseLike, meta: TableMeta, opts: FindOptions = {}): Promise<any | null> {

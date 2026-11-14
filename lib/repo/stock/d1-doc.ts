@@ -18,8 +18,10 @@
  * (e.g. a number in a text column comes back as text, a date-like string in a date column comes back as a Date),
  * a legacy plain-string vendor address (comes back as { line1 }), and the order of keys inside a document.
  */
+import type { Model } from "mongoose";
 import type { D1DatabaseLike } from "@/lib/d1/types";
 import type { MasterSpec } from "@/lib/d1/masters-map";
+import { hydrateLikeMongoose } from "@/lib/d1/hydrate";
 import { ALL_SPEC_BY_COLLECTION } from "@/lib/d1/registry";
 import { LINE_TABLES, type LineTable } from "@/lib/d1/maps/stock-cash";
 import { getD1 } from "@/lib/d1/client";
@@ -196,6 +198,11 @@ export interface FindOptions {
   projection?: Record<string, 0 | 1>;
   /** false: the line arrays are not needed (excluded by the projection), so the child tables are not read. */
   lines?: boolean;
+  /**
+   * The Mongo read is NOT .lean() (it returns mongoose documents): hydrate the rebuilt documents through this model,
+   * so the fields mongoose fills in on load (schema defaults the stored copy lacks) are there too. lib/d1/hydrate.ts.
+   */
+  hydrateWith?: Model<any>;
 }
 
 /** The rows of a collection's table as Mongo documents: filtered, sorted, limited and projected as asked. */
@@ -215,7 +222,10 @@ export async function findDocs(db: D1DatabaseLike, collection: string, o: FindOp
   } else if (needLines) {
     await attachLines(db, spec, docs);
   }
-  return o.projection ? docs.map((d) => applyProjection(d, o.projection!)) : docs;
+  const out = o.projection ? docs.map((d) => applyProjection(d, o.projection!)) : docs;
+  // E.g. a bank account saved before `branch` / `ifsc` had defaults: MongoDB's non-lean read shows the defaults
+  // ("Kunraghat, Gorakhpur", "HDFC0000492") although they are not stored; hydrating gives D1 the same answer.
+  return o.hydrateWith ? hydrateLikeMongoose(o.hydrateWith, out, o.projection) : out;
 }
 
 export async function findOneDoc(db: D1DatabaseLike, collection: string, o: FindOptions = {}): Promise<any | null> {

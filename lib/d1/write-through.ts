@@ -28,7 +28,8 @@
  *    was given up on by the timeout but still lands later;
  *  - after writing, the request reads the documents from Mongo once more and compares their hash with the hash D1
  *    now holds (read in the same D1 batch); any that differ (a newer write slipped in between, with the same
- *    updatedAt) are written again, up to 3 rounds. What still differs is logged and left for the copy job.
+ *    updatedAt) are written again, up to 3 rounds. What still differs because the document is still changing is
+ *    DEFERRED to the copy job (counted apart, not a failure: see logDeferred); anything else is a failure.
  *
  * NEVER BREAKS THE USER'S REQUEST: every D1 problem is caught and written to `sync_errors` (and counted in
  * `write_through_state`); the D1 part is capped by a timeout (3 s), after which the request goes on and the copy
@@ -42,7 +43,8 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import mongoose from "mongoose";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import type { D1DatabaseLike, D1PreparedStatementLike, D1Result } from "./types";
-import { MasterSpec, MappedDoc, docHash, idText, mapDoc } from "./masters-map";
+import { MasterSpec, MappedDoc, docHash, idText, mapDoc, toDate } from "./masters-map";
+import { OVERLAP_MS } from "./sync";
 import { ALL_SPECS } from "./registry";
 import { chunk, deleteStatements, hashStatements, statementsFor } from "./upsert";
 import { getD1 } from "./client";
@@ -114,7 +116,8 @@ export interface WriteThroughReport {
   collection: string;
   method: string;
   ids: number;
-  outcome: "mirrored" | "partial" | "full-recopy" | "timeout" | "error" | "nothing";
+  /** deferred: the document kept changing during the verify rounds; the copy job copies its last change. */
+  outcome: "mirrored" | "deferred" | "full-recopy" | "timeout" | "error" | "nothing";
   ms: number;
   rounds: number;
 }
@@ -401,6 +404,39 @@ async function logFailure(db: D1DatabaseLike, collection: string, ids: string[],
   }
 }
 
+/**
+ * The document kept changing while its write was copied (several quick updates of the same document, e.g. many
+ * phones claiming today's `scheduled_runs` row at once), so after maxRounds D1 may hold one change less than Mongo.
+ * That is NOT a failure: D1 was written from Mongo every round, nothing was refused, and the very next write of the
+ * document, or the copy job within 5 minutes (its updatedAt watermark, every collection here has updatedAt), copies
+ * the last change. So it is counted apart (`deferred`), never in `failures`, which the stage C guard turns the
+ * write-through off for (14 Nov 2026: one such race switched it off for the whole day).
+ * A sync_errors row is still written, phase 'write-through-deferred': the freshness guard (lib/d1/read-source.ts)
+ * then keeps the collection's read area on MongoDB answers for 15 minutes, until the copy job has caught up for sure.
+ * Never throws; gives up after logTimeoutMs.
+ */
+async function logDeferred(db: D1DatabaseLike, collection: string, ids: string[], message: string) {
+  const at = nowIso();
+  const docId = ids.slice(0, 5).join(",") + (ids.length > 5 ? `,+${ids.length - 5}` : "") || null;
+  try {
+    const r = await withTimeout(
+      db.batch([
+        db.prepare("INSERT INTO sync_errors (at, collection, docId, phase, message) VALUES (?, ?, ?, ?, ?)").bind(at, collection, docId, "write-through-deferred", message.slice(0, 1000)),
+        db
+          .prepare(
+            "INSERT INTO write_through_state (collection, deferred, lastDeferredAt, lastDeferredError) VALUES (?, 1, ?, ?) " +
+              "ON CONFLICT(collection) DO UPDATE SET deferred = deferred + 1, lastDeferredAt = excluded.lastDeferredAt, lastDeferredError = excluded.lastDeferredError"
+          )
+          .bind(collection, at, message.slice(0, 500)),
+      ]),
+      cfg.logTimeoutMs
+    );
+    if (r === TIMED_OUT) console.warn(`d1 write-through ${collection} ${docId ?? ""}: ${message} (logging it timed out)`);
+  } catch (e) {
+    console.warn(`d1 write-through ${collection} ${docId ?? ""}: ${message} (and logging it failed: ${errText(e)})`);
+  }
+}
+
 /** Too many documents for one request: the copy job copies the whole collection again (lib/d1/sync.ts full copy). */
 async function markFullRecopy(db: D1DatabaseLike, collection: string, reason: string) {
   const at = nowIso();
@@ -424,7 +460,7 @@ const STATEMENTS_PER_BATCH = 200;
  * Makes D1 hold the current Mongo state of these documents (write, then verify against a fresh read, repeat).
  * Returns the ids still not matching after maxRounds (normally none) and the rounds used.
  */
-async function mirrorIds(coll: any, spec: MasterSpec, db: D1DatabaseLike, rawIds: unknown[]): Promise<{ left: string[]; rounds: number }> {
+async function mirrorIds(coll: any, spec: MasterSpec, db: D1DatabaseLike, rawIds: unknown[]): Promise<{ left: string[]; rounds: number; latest: Map<string, any> }> {
   const rawById = new Map<string, unknown[]>();
   for (const v of rawIds) {
     const t = idText(v);
@@ -481,9 +517,9 @@ async function mirrorIds(coll: any, spec: MasterSpec, db: D1DatabaseLike, rawIds
       if (want !== inD1.get(id)) next.push(id);
     }
     pending = next;
-    if (!pending.length) return { left: [], rounds: round };
+    if (!pending.length) return { left: [], rounds: round, latest: docs };
   }
-  return { left: pending, rounds: cfg.maxRounds };
+  return { left: pending, rounds: cfg.maxRounds, latest: docs };
 }
 
 async function afterWrite(coll: any, spec: MasterSpec, db: D1DatabaseLike, method: WriteMethod, args: any[], plan: Plan, result: any, error: any) {
@@ -505,10 +541,33 @@ async function afterWrite(coll: any, spec: MasterSpec, db: D1DatabaseLike, metho
       await markFullRecopy(db, spec.collection, `${method} wrote more than ${cfg.cap} documents`);
       return;
     }
-    const { left, rounds } = await mirrorIds(coll, spec, db, raw);
+    const { left, rounds, latest } = await mirrorIds(coll, spec, db, raw);
     report.rounds = rounds;
-    report.outcome = left.length ? "partial" : "mirrored";
-    if (left.length) await logFailure(db, spec.collection, left, `still differs from Mongo after ${rounds} rounds (left for the copy job)`);
+    report.outcome = left.length ? "deferred" : "mirrored";
+    if (!left.length) return;
+    // Deferred only when the copy job will really pick the document up by itself: its incremental pass copies
+    // what has updatedAt after (watermark - 2 min), so Mongo's updatedAt must be that recent and not older than
+    // the one D1 holds. Anything else (the document is gone from Mongo, or its updatedAt went back in time) would
+    // wait for the nightly repair: that stays a real failure.
+    const inD1 = new Map<string, string>();
+    for (const part of chunk(left, 90)) {
+      const res = await db.prepare(`SELECT id, updatedAt FROM ${spec.table} WHERE id IN (${part.map(() => "?").join(", ")})`).bind(...part).all<any>();
+      for (const r of res.results || []) inD1.set(String(r.id), String(r.updatedAt ?? ""));
+    }
+    const recentFrom = Date.now() - OVERLAP_MS;
+    const copyJobWill = (id: string) => {
+      const doc = latest.get(id);
+      const mongoUpdated = doc ? toDate(doc.updatedAt) : null;
+      const t = mongoUpdated ? Date.parse(mongoUpdated) : NaN;
+      return Number.isFinite(t) && t >= recentFrom && (inD1.get(id) ?? "") <= mongoUpdated!;
+    };
+    const deferred = left.filter(copyJobWill);
+    const stuck = left.filter((id) => !copyJobWill(id));
+    if (deferred.length) await logDeferred(db, spec.collection, deferred, `still changing in Mongo after ${rounds} rounds (deferred to the copy job)`);
+    if (stuck.length) {
+      report.outcome = "error";
+      await logFailure(db, spec.collection, stuck, `still differs from Mongo after ${rounds} rounds, and the copy job would not pick it up by itself (left for the nightly repair)`);
+    }
   })();
   try {
     const r = await withTimeout(work, cfg.timeoutMs);

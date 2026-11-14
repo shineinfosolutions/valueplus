@@ -211,9 +211,9 @@ export const INVENTORY_READS = {
     d1: async ({ q }, db) => {
       const parts = ["serialNumber", "vpCode", "itemName"].map((f) => regexFilter(f, f, q));
       if (parts.every((p) => p.sql)) {
-        return findDocs(useDb(db), "serial_numbers", { where: `(${parts.map((p) => p.sql).join(" OR ")})`, params: parts.flatMap((p) => p.params), orderBy: "id", limit: 5 });
+        return findDocs(useDb(db), "serial_numbers", { where: `(${parts.map((p) => p.sql).join(" OR ")})`, params: parts.flatMap((p) => p.params), orderBy: "id", limit: 5, hydrateWith: SerialNumber });
       }
-      return findDocs(useDb(db), "serial_numbers", { orderBy: "id", limit: 5, post: (d) => parts.some((p) => p.test(d)) });
+      return findDocs(useDb(db), "serial_numbers", { orderBy: "id", limit: 5, post: (d) => parts.some((p) => p.test(d)), hydrateWith: SerialNumber });
     },
   }),
 

@@ -98,6 +98,11 @@ export interface ShadowRun {
   diffCount: number;
   diffs: CompareResult["diffs"];
   error: string | null;
+  /**
+   * The answers differed, but the side that answered first, read again, now equals the other: the data changed
+   * between the two reads (see `confirmRace`). Counted as a match; `diffs` keeps what the first answers showed.
+   */
+  raced: boolean;
   recorded: boolean;
 }
 let lastRun: ShadowRun | null = null;
@@ -229,14 +234,15 @@ async function record(db: D1DatabaseLike, run: ShadowRun): Promise<boolean> {
     const mismatch = compared && !run.match ? 1 : 0;
     const isError = run.error ? 1 : 0;
     const fallback = run.kind === "fallback" ? 1 : 0;
+    const raced = run.raced ? 1 : 0;
     await db.batch([
       db
-        .prepare("INSERT INTO shadow_results (area, name, at, kind, match, mongoMs, d1Ms, diffCount, diffs, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-        .bind(run.area, run.name, at, run.kind, run.match ? 1 : 0, run.mongoMs, run.d1Ms, run.diffCount, run.diffs.length ? JSON.stringify(run.diffs) : null, run.error),
+        .prepare("INSERT INTO shadow_results (area, name, at, kind, match, mongoMs, d1Ms, diffCount, diffs, error, raced) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        .bind(run.area, run.name, at, run.kind, run.match ? 1 : 0, run.mongoMs, run.d1Ms, run.diffCount, run.diffs.length ? JSON.stringify(run.diffs) : null, run.error, raced),
       db
         .prepare(
-          `INSERT INTO shadow_daily (area, name, day, runs, matches, mismatches, errors, fallbacks, mongoMsTotal, d1MsTotal, lastAt)
-           VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)
+          `INSERT INTO shadow_daily (area, name, day, runs, matches, mismatches, errors, fallbacks, mongoMsTotal, d1MsTotal, lastAt, raced)
+           VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(area, name, day) DO UPDATE SET
              runs = runs + 1,
              matches = matches + excluded.matches,
@@ -245,9 +251,10 @@ async function record(db: D1DatabaseLike, run: ShadowRun): Promise<boolean> {
              fallbacks = fallbacks + excluded.fallbacks,
              mongoMsTotal = mongoMsTotal + excluded.mongoMsTotal,
              d1MsTotal = d1MsTotal + excluded.d1MsTotal,
-             lastAt = excluded.lastAt`
+             lastAt = excluded.lastAt,
+             raced = raced + excluded.raced`
         )
-        .bind(run.area, run.name, day, compared && run.match ? 1 : 0, mismatch, isError, fallback, run.mongoMs ?? 0, run.d1Ms ?? 0, at),
+        .bind(run.area, run.name, day, compared && run.match ? 1 : 0, mismatch, isError, fallback, run.mongoMs ?? 0, run.d1Ms ?? 0, at, raced),
     ]);
     if (nowMs - lastPrune > 3600_000) {
       lastPrune = nowMs;
@@ -257,6 +264,29 @@ async function record(db: D1DatabaseLike, run: ShadowRun): Promise<boolean> {
     return true;
   } catch (e) {
     console.warn(`d1 shadow: cannot record ${run.area}/${run.name} (${errText(e)})`);
+    return false;
+  }
+}
+
+/**
+ * A difference may be no difference at all: the two answers of a comparison are read at DIFFERENT moments. In shadow
+ * mode MongoDB answers the request and D1 is read after the response; if the document changed in between, D1 shows
+ * the change and MongoDB's answer does not. That is exactly what push.subsForUsers showed on 14 Nov: lib/push.ts
+ * reads the devices, sends, then sets `lastSuccessAt` on them (copied to D1 at once by the write-through), and only
+ * then did the deferred D1 read run, so D1 "had a newer lastSuccessAt than MongoDB". D1 was right; MongoDB's answer
+ * was simply older. (In d1 mode the same happens the other way round.)
+ *
+ * So on a difference, the side that answered FIRST is read once more. If that fresh answer equals the other side,
+ * the data moved between the two reads and D1 agrees with MongoDB: the run is a match, marked `raced`. If it still
+ * differs (D1 behind or wrong), the run stays a mismatch, with the first answers' differences. A failure or a timeout
+ * of the re-read proves nothing, so the mismatch stands.
+ */
+async function confirmRace<T>(again: () => Promise<T>, sameAsOther: (fresh: T) => boolean): Promise<boolean> {
+  try {
+    const r = await withTimeout(again(), cfg.d1TimeoutMs);
+    if (r === TIMED_OUT) return false;
+    return sameAsOther(r);
+  } catch {
     return false;
   }
 }
@@ -313,7 +343,9 @@ export async function readWithShadow<T>(
           }
           const mongoMs = performance.now() - t1;
           const cmp = compareResults(mongoResult, d1Result, opts.compare);
-          const run: ShadowRun = { area, name, kind: "reverse", match: cmp.equal, mongoMs, d1Ms, diffCount: cmp.diffCount, diffs: cmp.diffs, error: null, recorded: false };
+          // D1 answered first: read it again (compared the same way round, MongoDB first).
+          const raced = !cmp.equal && (await confirmRace(() => d1Fn(db), (freshD1) => compareResults(mongoResult, freshD1, opts.compare).equal));
+          const run: ShadowRun = { area, name, kind: "reverse", match: cmp.equal || raced, mongoMs, d1Ms, diffCount: cmp.diffCount, diffs: cmp.diffs, error: null, raced, recorded: false };
           run.recorded = await record(db, run);
           lastRun = run;
         });
@@ -326,7 +358,7 @@ export async function readWithShadow<T>(
       const t1 = performance.now();
       const result = await mongoFn();
       const mongoMs = performance.now() - t1;
-      const run: ShadowRun = { area, name, kind: "fallback", match: false, mongoMs, d1Ms, diffCount: 0, diffs: [], error, recorded: false };
+      const run: ShadowRun = { area, name, kind: "fallback", match: false, mongoMs, d1Ms, diffCount: 0, diffs: [], error, raced: false, recorded: false };
       deferAfterResponse(async () => {
         run.recorded = await record(db, run);
         lastRun = run;
@@ -353,7 +385,9 @@ export async function readWithShadow<T>(
       }
       const d1Ms = performance.now() - t1;
       const cmp: CompareResult = error ? { equal: false, diffCount: 0, diffs: [] } : compareResults(result, d1Result, opts.compare);
-      const run: ShadowRun = { area, name, kind: "shadow", match: cmp.equal, mongoMs, d1Ms, diffCount: cmp.diffCount, diffs: cmp.diffs, error, recorded: false };
+      // MongoDB answered first (before the response): read it again; equal to D1 now = the data moved in between.
+      const raced = !error && !cmp.equal && (await confirmRace(mongoFn, (freshMongo) => compareResults(freshMongo, d1Result, opts.compare).equal));
+      const run: ShadowRun = { area, name, kind: "shadow", match: cmp.equal || raced, mongoMs, d1Ms, diffCount: cmp.diffCount, diffs: cmp.diffs, error, raced, recorded: false };
       run.recorded = await record(db, run);
       lastRun = run;
     });

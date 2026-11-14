@@ -22,8 +22,10 @@ export async function GET(req: Request) {
   try {
     await connectToDatabase();
   } catch (e) {
-    // Nothing to copy from; the next run tries again. Not an error for anyone using the app.
-    return NextResponse.json({ success: false, error: `MongoDB not reachable: ${e instanceof Error ? e.message : String(e)}` });
+    // Nothing to copy from; the next run tries again. Not an error for anyone using the app. Stage C still runs:
+    // it reads only D1, and its safety half (write-through guard, demotions) must not wait for MongoDB to be back.
+    const stageC = await runStageCSafely(db, Date.now()).catch((err) => ({ ok: false, error: String(err) }));
+    return NextResponse.json({ success: false, error: `MongoDB not reachable: ${e instanceof Error ? e.message : String(e)}`, stageC });
   }
   const result = await runD1Sync(db);
   // Stage C (lib/d1/stage-c.ts): move the read switches between 'shadow' and 'd1' when the rules say so. After the

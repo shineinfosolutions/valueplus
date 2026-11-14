@@ -23,10 +23,14 @@ export async function sendOfficeStartReminder(options: { fromCron?: boolean } = 
     if (!options.fromCron && !(now.hour >= 10 && now.hour < 12)) return { sent: false, reason: "outside the 10:00-12:00 window" };
 
     // Claim today's slot: the first caller inserts the row (and goes on to send); anyone later finds it there.
+    // timestamps: false with the times set on insert only: otherwise mongoose adds `$set: { updatedAt }` and every
+    // notifications poll between 10:00 and 12:00 (many phones at once) REWRITES today's row, which made the D1
+    // write-through chase a document that kept changing (14 Nov: "still differs from Mongo after 3 rounds").
+    const at = new Date();
     const earlier = await ScheduledRun.findOneAndUpdate(
       { key: `office-start:${now.day}` },
-      { $setOnInsert: { ranAt: new Date() } },
-      { upsert: true, new: false }
+      { $setOnInsert: { ranAt: at, createdAt: at, updatedAt: at } },
+      { upsert: true, new: false, timestamps: false }
     );
     if (earlier) return { sent: false, reason: "already sent today" };
     const waiting = await staffNotCheckedIn(now.day);

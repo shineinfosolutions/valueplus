@@ -23,6 +23,7 @@
 import mongoose from "mongoose";
 import { startMemoryMongo, stopMemoryMongo } from "./helpers/memory-mongo";
 import { check, summary } from "./helpers/assert";
+import { holdsDocuments, stripScalarDefaults } from "./helpers/legacy-docs";
 import { startLocalD1, applyMigrations } from "./helpers/local-d1";
 import { SALES_SPECS } from "@/lib/d1/maps/sales";
 import { runD1Sync } from "@/lib/d1/sync";
@@ -104,6 +105,10 @@ async function compare(key: string, args: any[], label = "") {
   const b = canon(d);
   const n = Array.isArray(m) ? m.length : Array.isArray(m?.invoices) ? m.invoices.length : Array.isArray(m?.approvals) ? m.approvals.length : typeof m === "number" ? m : m ? 1 : 0;
   (sizes[key] ||= []).push(n);
+  // A non-lean MongoDB read gives mongoose documents (schema defaults filled in on load): its D1 twin hydrates too.
+  if (n > 0 && typeof m === "object") {
+    check(holdsDocuments(m) === holdsDocuments(d), `${name}: both sides ${holdsDocuments(m) ? "mongoose documents (non-lean read: D1 hydrates)" : "plain objects"}`);
+  }
   check(a === b, `${name}: identical (${n})${a === b ? "" : "\n         " + firstDiff(a, b)}`);
 }
 
@@ -653,6 +658,20 @@ async function main() {
     await change();
     await runD1Sync(db, { reconcile: "force", collections: SALES_COLLECTIONS });
     await compareAll("after changes + incremental copy");
+
+    // Older documents without their defaulted fields (shadow findings of 14 Nov: estimates.list advanceAmount 0 /
+    // advanceMode "" / advanceTxnRef "", cashRegister.cashInvoices backdate* "" came from MongoDB's hydration only).
+    const stripped = await stripScalarDefaults(MODELS);
+    check(stripped >= 10, `older documents without their defaulted fields (${stripped})`);
+    const noAdvance = await db.prepare("SELECT COUNT(*) AS n FROM estimates WHERE advanceAmount IS NULL").first<any>();
+    await db.prepare("UPDATE sync_state SET fullCopyStartedAt = NULL, fullCopyLastId = NULL, fullCopyDoneAt = NULL").run();
+    for (let i = 0; i < 5; i++) {
+      const r = await runD1Sync(db, { reconcile: "skip", collections: SALES_COLLECTIONS });
+      if (SALES_COLLECTIONS.every((c) => r.collections[c]?.fullCopyDone)) break;
+    }
+    const noAdvanceNow = await db.prepare("SELECT COUNT(*) AS n FROM estimates WHERE advanceAmount IS NULL").first<any>();
+    check(Number(noAdvanceNow?.n) > Number(noAdvance?.n), `estimates without a stored advanceAmount are in D1 (${noAdvance?.n} -> ${noAdvanceNow?.n})`);
+    await compareAll("older documents");
 
     const missing = Object.keys(SALES_READS).filter((k) => !covered.has(k));
     check(missing.length === 0, `every registry entry compared (${covered.size} of ${Object.keys(SALES_READS).length})${missing.length ? ": missing " + missing.join(", ") : ""}`);
