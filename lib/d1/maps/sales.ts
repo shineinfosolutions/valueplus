@@ -664,6 +664,9 @@ const discountApprovalSpec = flat("discountapprovals", "discountApprovals", [
   ["reviewedBy", "text"],
   ["reviewedAt", "date"],
   ["reviewNote", "text"],
+  ["vsp", "real"],
+  ["purchasePrice", "real"],
+  ["requestedPrice", "real"],
 ]);
 
 /** payloadKind / payloadTarget are read out of the payload (plan: generated columns; written by the copy instead). */

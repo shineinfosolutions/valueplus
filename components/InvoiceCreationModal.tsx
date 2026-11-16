@@ -1517,6 +1517,15 @@ export function InvoiceCreationModal({
         const r = rows.find((x) => x.status === "rejected");
         toast.error(`Discount on ${r.itemName} was rejected${r.reviewNote ? `: ${r.reviewNote}` : ""}. Change the price and try again.`, { duration: 8000 });
         setDiscountWait(null);
+      } else if (rows.length > 0 && rows.every((r) => r.status === "approved") && rows.some((r) => r.requestedPrice && r.price > r.requestedPrice + 0.01)) {
+        // Approved at a higher price than the bill carries: saving now would be refused, so ask for the rate change.
+        discountHandled.current = key;
+        const r = rows.find((x) => x.requestedPrice && x.price > x.requestedPrice + 0.01);
+        toast.warning(
+          `${r.reviewedBy || "The approver"} approved ${r.itemName} at ₹${Number(r.price).toLocaleString("en-IN")} per piece, not ₹${Number(r.requestedPrice).toLocaleString("en-IN")}. Change the rate to the approved price and save again.`,
+          { duration: 10000 }
+        );
+        setDiscountWait(null);
       } else if (rows.length > 0 && rows.every((r) => r.status === "approved")) {
         discountHandled.current = key;
         setDiscountWait(null);

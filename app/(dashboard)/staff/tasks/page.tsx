@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { useSession } from "next-auth/react";
 import { TableShimmer } from "@/components/shared/shimmer-skeleton";
 import { todayInIndia } from "@/lib/today";
+import { appPrompt } from "@/components/shared/AppDialogs";
 import { StaffFilter, useStaffParam, sameStaff } from "@/components/shared/StaffFilter";
 
 export default function StaffTasksPage() {
@@ -103,6 +104,29 @@ export default function StaffTasksPage() {
       );
     });
   }, [rawTasks, isIndividualStaff, currentUserName, session]);
+
+  // "Recount from date" on a Sales Target (Admin / Manager / HR): counts the salesman's bills again from that date.
+  const recountTarget = async (t: any) => {
+    const firstOfMonth = `${String(t.assignedDate || todayInIndia()).slice(0, 7)}-01`;
+    const from = await appPrompt(
+      `Count ${t.assignedStaff}'s bills for "${t.taskTitle}" from which date? (YYYY-MM-DD, up to the due date ${t.dueDate}). The current count is replaced.`,
+      t.countFrom || firstOfMonth
+    );
+    if (from === null) return;
+    try {
+      const res = await (
+        await fetch("/api/staff/tasks/recount", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: t._id, from: from.trim() }) })
+      ).json();
+      if (!res.success) {
+        toast.error(res.error || "Could not recount the target.");
+        return;
+      }
+      toast.success(res.message || "Target recounted.");
+      queryClient.invalidateQueries({ queryKey: ["staffTasks"] });
+    } catch {
+      toast.error("Could not recount the target. Check the connection and try again.");
+    }
+  };
 
   // Create Task Mutation
   const createTaskMutation = useMutation({
@@ -442,6 +466,14 @@ export default function StaffTasksPage() {
                               <p className="text-[10.5px] text-slate-600 dark:text-slate-400 italic">
                                 Note: {t.completionRemarks}
                               </p>
+                            )}
+                            {t.countFrom && (
+                              <p className="text-[10px] text-slate-500">Counting bills from {t.countFrom}{t.recountedBy ? ` (recounted by ${t.recountedBy})` : ""}</p>
+                            )}
+                            {isSuperAdminOrAdmin && (
+                              <Button size="sm" variant="outline" className="h-6 px-2 text-[10.5px]" onClick={() => recountTarget(t)}>
+                                Recount from date
+                              </Button>
                             )}
                             </div>
                           </div>

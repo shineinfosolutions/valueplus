@@ -3,7 +3,7 @@
  * these counts (plus loose coins) — it is never typed in directly — so the form,
  * the API and the audit history all read the same list.
  */
-export const CASH_NOTE_VALUES = [500, 200, 100, 50, 20, 10] as const;
+export const CASH_NOTE_VALUES = [2000, 500, 200, 100, 50, 20, 10] as const;
 
 export interface CashDenomination {
   value: number;

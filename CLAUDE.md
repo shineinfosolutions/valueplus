@@ -22,8 +22,8 @@ Read **README.md** first (stack, layout, deploy, D1 migration status), then the 
 
 ## Before you deploy
 
-- `npm test` passes: all test files, currently 28.
-- `npx tsc --noEmit -p .` stays at or below **60 errors**. These are pre-existing; add none.
+- `npm test` passes: all test files, currently 29.
+- `npx tsc --noEmit -p .` stays at or below **56 errors**. These are pre-existing; add none.
 - Apply any new `d1/migrations/*.sql` to the remote D1 **before** deploying the code that uses it: `npx wrangler d1 migrations apply valueplus-db --remote`.
 - After the deploy, check: `/login` 200, `/dashboard` 307, `/api/items` 401, `/realtime` 426 (all signed out).
 - Rollback: `npx wrangler rollback --name valueplus-erp`.

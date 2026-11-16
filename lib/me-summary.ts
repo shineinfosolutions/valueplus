@@ -102,7 +102,7 @@ const ESTIMATE_FIELDS = ["_id", "estimateNumber", "total", "customerName", "sale
 const LEAVE_FIELDS = ["_id", "staffName", "staffRole", "kind", "breakMinutes", "fromDate", "toDate", "days", "reason"];
 const DISCOUNT_FIELDS = [
   "_id", "itemName", "brand", "percent", "quantity", "context", "customerName",
-  "sellingPrice", "price", "requestedBy", "requestedByRole", "tier",
+  "sellingPrice", "price", "requestedBy", "requestedByRole", "tier", "vsp", "purchasePrice",
 ];
 const LEAD_FIELDS = ["_id", "customerName", "mobile", "interestedProduct", "assignedStaff"];
 

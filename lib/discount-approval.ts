@@ -33,6 +33,8 @@ export interface DiscountLine {
   itemName: string;
   brand: string;
   sellingPrice: number;
+  vsp: number;
+  purchasePrice: number;
   price: number;
   quantity: number;
   percent: number;
@@ -57,7 +59,7 @@ export async function discountedLines(items: any[]): Promise<DiscountLine[]> {
   const ids = lines.map((l) => l?.itemId).filter((id) => mongoose.isValidObjectId(id));
   const names = lines.map((l) => String(l?.itemName || l?.name || "").trim()).filter(Boolean);
   if (ids.length + names.length === 0) return [];
-  const catalog: any[] = await Item.find({ $or: [{ _id: { $in: ids } }, { name: { $in: names } }] }, { name: 1, brand: 1, sellingPrice: 1 }).lean();
+  const catalog: any[] = await Item.find({ $or: [{ _id: { $in: ids } }, { name: { $in: names } }] }, { name: 1, brand: 1, sellingPrice: 1, vsp: 1, purchasePrice: 1 }).lean();
   const byId = new Map(catalog.map((c) => [String(c._id), c]));
   const byName = new Map(catalog.map((c) => [normKey(c.name), c]));
 
@@ -77,6 +79,8 @@ export async function discountedLines(items: any[]): Promise<DiscountLine[]> {
       itemName: String(prod.name),
       brand: String(prod.brand || ""),
       sellingPrice: selling,
+      vsp: Number(prod.vsp) || 0,
+      purchasePrice: Number(prod.purchasePrice) || 0,
       price: r2(price),
       quantity: Number(l.quantity ?? l.qty) || 1,
       percent,

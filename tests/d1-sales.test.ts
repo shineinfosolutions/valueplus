@@ -294,7 +294,9 @@ async function main() {
     for (const spec of SALES_SPECS) {
       const cols = (await all(db, `PRAGMA table_info(${spec.table})`)).map((c) => c.name);
       const want = tableColumns(spec);
-      check(JSON.stringify(cols) === JSON.stringify(want), `${spec.table}: columns match the mapping (${cols.length})`);
+      // Same set of columns; a column added later by ALTER TABLE sits at the end of the table, and every write names
+      // its columns, so the order does not matter.
+      check(JSON.stringify([...cols].sort()) === JSON.stringify([...want].sort()), `${spec.table}: columns match the mapping (${cols.length})`);
       check(want.length <= 100, `${spec.table}: ${want.length} columns <= 100 (one row per statement fits 100 params)`);
       for (const child of spec.children || []) {
         const ccols = (await all(db, `PRAGMA table_info(${child.table})`)).map((c) => c.name);

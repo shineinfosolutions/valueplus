@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Calculator } from "lucide-react";
-import { TIER_LABEL, SELF_MAX_PERCENT, exemptFrom, tierFor } from "@/lib/discount-bands";
+import { TIER_LABEL, SELF_MAX_PERCENT, exemptFrom, roleRank, tierFor } from "@/lib/discount-bands";
 import { lineIncentive, liveRulesOf, todayIST } from "@/lib/incentive-rules";
 import { formatCurrency } from "@/lib/utils";
 
@@ -25,6 +25,10 @@ const chipTone = (percent: number) => {
  * The salesman sets the price he will offer, as a discount % or a price, from the product's selling price. It says who
  * has to approve that discount (him up to 7%, the Cashier up to 10%, the Store Manager up to 12%, the Admin above), lets him
  * send the request, and shows the incentive he earns on a piece at that price when the product has one running.
+ *
+ * For the salesman, a discount above his own limit (more than 7%) shows no amount until it is approved: the price
+ * (when he picked a %) or the % (when he typed a price) stays hidden. Tapping such a % chip sends the approval request
+ * at once to whoever decides that band, for the customer named above the chips.
  */
 export function PriceAndIncentive({ item, role }: { item: any; role: string }) {
   // The calculator works from the VSP (Value Plus Price), the price the salesman sees; the selling price only when a product has no VSP.
@@ -33,8 +37,11 @@ export function PriceAndIncentive({ item, role }: { item: any; role: string }) {
   const [priceText, setPriceText] = useState("");
   const [customer, setCustomer] = useState("");
   const [sending, setSending] = useState(false);
-  const [request, setRequest] = useState<{ id: string; status: string; price: number; tier: string } | null>(null);
+  const [request, setRequest] = useState<{ id: string; status: string; price: number; tier: string; askedPrice?: number } | null>(null);
   const timer = useRef<any>(null);
+  // Which box the salesman filled last; the other one is the figure hidden until approval.
+  const [lastEdit, setLastEdit] = useState<"percent" | "price">("percent");
+  const isSalesman = roleRank(role) === 0;
 
   // A different product: start again.
   useEffect(() => {
@@ -50,12 +57,14 @@ export function PriceAndIncentive({ item, role }: { item: any; role: string }) {
   const overList = selling > 0 && price > selling;
 
   const setByPercent = (v: string) => {
+    setLastEdit("percent");
     setPercentText(v);
     const p = Math.max(0, Math.min(100, Number(v) || 0));
     setPriceText(v === "" ? "" : String(r2(selling * (1 - p / 100))));
     setRequest(null);
   };
   const setByPrice = (v: string) => {
+    setLastEdit("price");
     setPriceText(v);
     const pr = Number(v) || 0;
     setPercentText(v === "" || selling <= 0 ? "" : String(r2(Math.max(0, ((selling - pr) / selling) * 100))));
@@ -68,7 +77,7 @@ export function PriceAndIncentive({ item, role }: { item: any; role: string }) {
   // Rules that need a higher price than this one: what the salesman would earn by holding the price.
   const missed = rules.filter((r) => (r.minPrice || 0) > price + 0.005);
 
-  const send = async () => {
+  const send = async (atPrice: number = price) => {
     if (!customer.trim()) {
       toast.error("Enter the customer's name first.");
       return;
@@ -79,7 +88,7 @@ export function PriceAndIncentive({ item, role }: { item: any; role: string }) {
         await fetch("/api/discount-approvals", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ context: "estimate", customerName: customer.trim(), lines: [{ itemId: item._id, name: item.name, rate: price, discount: 0, quantity: 1 }] }),
+          body: JSON.stringify({ context: "estimate", customerName: customer.trim(), lines: [{ itemId: item._id, name: item.name, rate: atPrice, discount: 0, quantity: 1 }] }),
         })
       ).json();
       if (!res.success) {
@@ -88,7 +97,7 @@ export function PriceAndIncentive({ item, role }: { item: any; role: string }) {
       }
       const doc = res.data?.[0];
       if (doc) {
-        setRequest({ id: String(doc._id), status: doc.status, price, tier: doc.tier });
+        setRequest({ id: String(doc._id), status: doc.status, price: atPrice, tier: doc.tier });
         toast.success(`Sent to ${TIER_LABEL[doc.tier as keyof typeof TIER_LABEL] || "the approver"} for approval.`);
       }
     } catch {
@@ -106,7 +115,18 @@ export function PriceAndIncentive({ item, role }: { item: any; role: string }) {
       try {
         const res = await (await fetch(`/api/discount-approvals?ids=${request.id}`)).json();
         const row = res.data?.[0];
-        if (row && row.status !== "pending") setRequest((r) => (r ? { ...r, status: row.status } : r));
+        if (row && row.status !== "pending") {
+          const approved = Number(row.price) || 0;
+          // Approved at another price than asked: that price becomes the one on screen.
+          if (row.status === "approved" && approved > 0 && Math.abs(approved - request.price) >= 0.01) {
+            setLastEdit("price");
+            setPriceText(String(approved));
+            setPercentText(selling > 0 ? String(r2(Math.max(0, ((selling - approved) / selling) * 100))) : "");
+            setRequest((r) => (r ? { ...r, status: row.status, price: approved, askedPrice: r.price } : r));
+          } else {
+            setRequest((r) => (r ? { ...r, status: row.status } : r));
+          }
+        }
       } catch {
         /* try again on the next tick */
       }
@@ -117,20 +137,49 @@ export function PriceAndIncentive({ item, role }: { item: any; role: string }) {
   if (selling <= 0) return null;
 
   const samePrice = !!request && Math.abs(request.price - price) < 0.01;
+  // Salesman, above his limit, not yet approved at this price: no amount on screen.
+  const hideAmount = isSalesman && needsApproval && !overList && !(samePrice && request!.status === "approved");
+  const hidePrice = hideAmount && lastEdit === "percent";
+  const hidePercent = hideAmount && lastEdit === "price";
+
+  // A % chip: below the salesman's limit it only fills the boxes; above it, the request goes out straight away.
+  const pickChip = (c: number) => {
+    setByPercent(String(c));
+    const t = tierFor(c);
+    if (!isSalesman || !t || exemptFrom(role, t)) return;
+    if (!customer.trim()) {
+      toast.error("Enter the customer's name first, then tap the %.");
+      return;
+    }
+    void send(r2(selling * (1 - c / 100)));
+  };
 
   return (
     <div className="space-y-2.5 rounded-lg border border-slate-200 bg-white p-3">
       <p className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-slate-600">
         <Calculator className="h-3.5 w-3.5" /> Set your selling price
       </p>
+      {isSalesman && (
+        <Input placeholder="Customer name (needed for discounts above your limit)" value={customer} onChange={(e) => setCustomer(e.target.value)} />
+      )}
       <div className="grid grid-cols-2 gap-2">
         <label className="text-[11px] font-semibold text-slate-500">
           Discount %
-          <Input inputMode="decimal" value={percentText} placeholder="0" onChange={(e) => setByPercent(e.target.value.replace(/[^0-9.]/g, ""))} />
+          <Input
+            inputMode="decimal"
+            value={hidePercent ? "" : percentText}
+            placeholder={hidePercent ? "After approval" : "0"}
+            onChange={(e) => setByPercent(e.target.value.replace(/[^0-9.]/g, ""))}
+          />
         </label>
         <label className="text-[11px] font-semibold text-slate-500">
           Price (₹) per piece
-          <Input inputMode="decimal" value={priceText} onChange={(e) => setByPrice(e.target.value.replace(/[^0-9.]/g, ""))} />
+          <Input
+            inputMode="decimal"
+            value={hidePrice ? "" : priceText}
+            placeholder={hidePrice ? "After approval" : undefined}
+            onChange={(e) => setByPrice(e.target.value.replace(/[^0-9.]/g, ""))}
+          />
         </label>
       </div>
       <div className="flex flex-wrap gap-1.5">
@@ -138,9 +187,9 @@ export function PriceAndIncentive({ item, role }: { item: any; role: string }) {
           <button
             key={c}
             type="button"
-            onClick={() => setByPercent(String(c))}
+            onClick={() => pickChip(c)}
             title={tierFor(c) ? `Needs approval from ${TIER_LABEL[tierFor(c)!]}` : "You can give this yourself"}
-            className={`rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${chipTone(c)} ${Number(percentText) === c ? "ring-2 ring-offset-1 ring-[#30539C]" : ""}`}
+            className={`rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${chipTone(c)} ${!hidePercent && Number(percentText) === c ? "ring-2 ring-offset-1 ring-[#30539C]" : ""}`}
           >
             {c}%
           </button>
@@ -160,7 +209,11 @@ export function PriceAndIncentive({ item, role }: { item: any; role: string }) {
       ) : (
         <div className="space-y-1 rounded-md bg-slate-50 p-2 text-xs">
           <p className="font-bold text-slate-800">
-            {formatCurrency(price)} per piece{effectivePercent > 0 ? ` · ${effectivePercent}% off` : ""}
+            {hidePrice
+              ? `${effectivePercent}% off · price shown after approval`
+              : hidePercent
+              ? `${formatCurrency(price)} per piece · discount shown after approval`
+              : `${formatCurrency(price)} per piece${effectivePercent > 0 ? ` · ${effectivePercent}% off` : ""}`}
           </p>
           {!tier ? (
             <p className="font-semibold text-emerald-700">✓ You can give this yourself{effectivePercent > 0 ? ` (up to ${SELF_MAX_PERCENT}%)` : ""}.</p>
@@ -172,18 +225,21 @@ export function PriceAndIncentive({ item, role }: { item: any; role: string }) {
         </div>
       )}
 
-      {needsApproval && !overList && (
+      {(needsApproval || (samePrice && request!.status === "approved")) && !overList && (
         <div className="space-y-1.5">
           {samePrice && request!.status === "pending" ? (
             <p className="text-xs font-bold text-[#30539C]">Waiting for {TIER_LABEL[request!.tier as keyof typeof TIER_LABEL] || "approval"}...</p>
           ) : samePrice && request!.status === "approved" ? (
-            <p className="text-xs font-bold text-emerald-700">✓ Approved. Valid for 24 hours for this customer, at this price or higher.</p>
+            <p className="text-xs font-bold text-emerald-700">
+              ✓ Approved: {formatCurrency(price)} per piece
+              {request!.askedPrice ? ` (you asked ${formatCurrency(request!.askedPrice)})` : ""}. Valid for 24 hours for this customer, at this price or higher.
+            </p>
           ) : samePrice && request!.status === "rejected" ? (
             <p className="text-xs font-bold text-red-600">✗ Not approved. Try a smaller discount.</p>
           ) : (
             <>
-              <Input placeholder="Customer name" value={customer} onChange={(e) => setCustomer(e.target.value)} />
-              <Button size="sm" className="w-full" disabled={sending} onClick={send}>
+              {!isSalesman && <Input placeholder="Customer name" value={customer} onChange={(e) => setCustomer(e.target.value)} />}
+              <Button size="sm" className="w-full" disabled={sending} onClick={() => send()}>
                 {sending ? "Sending..." : `Send for approval to ${TIER_LABEL[tier!]}`}
               </Button>
             </>

@@ -965,37 +965,14 @@ export async function POST(req: Request) {
             ],
           });
 
+          // Which lines count, and how product / brand names are matched: lib/target-progress.ts.
+          const { billCountsForTarget } = await import("@/lib/target-progress");
           for (const task of activeTargetTasks) {
-            let matchesTarget = false;
-            let qtyIncrement = 0;
             const invoiceTotal = Number(invoice.total || invoice.netAmount || 0);
-            // A target on a product counts only that product's lines (qty and ₹);
-            // a general revenue target counts the whole bill.
-            let amountIncrement = invoiceTotal;
-
-            // Check if task targets a specific product or brand
-            if (task.targetProduct || task.targetBrand) {
-              const targetP = (task.targetProduct || "").toLowerCase().trim();
-              const targetB = (task.targetBrand || "").toLowerCase().trim();
-              amountIncrement = 0;
-
-              for (const lineItem of (invoice.items || [])) {
-                const itemN = (lineItem.itemName || "").toLowerCase();
-                const itemC = (lineItem.category || "").toLowerCase();
-                const itemB = (lineItem.brand || "").toLowerCase();
-
-                if ((targetP && (itemN.includes(targetP) || itemC.includes(targetP))) ||
-                    (targetB && (itemB.includes(targetB) || itemN.includes(targetB)))) {
-                  matchesTarget = true;
-                  qtyIncrement += Number(lineItem.quantity || lineItem.qty || 1);
-                  amountIncrement += Number(lineItem.amount) || (Number(lineItem.rate) || 0) * (Number(lineItem.quantity || lineItem.qty) || 1);
-                }
-              }
-            } else {
-              // General revenue/sales target
-              matchesTarget = true;
-              qtyIncrement = (invoice.items || []).reduce((acc: number, it: any) => acc + (Number(it.quantity || it.qty) || 1), 0);
-            }
+            const counted = billCountsForTarget(task, invoice);
+            const matchesTarget = counted.matched;
+            const qtyIncrement = counted.qty;
+            const amountIncrement = counted.amount;
 
             if (matchesTarget) {
               task.currentQty = (Number(task.currentQty) || 0) + (qtyIncrement || 1);

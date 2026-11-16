@@ -372,7 +372,9 @@ async function main() {
       check(!!model && model.collection.name === spec.collection, `${spec.table}: reads Mongo collection "${spec.collection}" (the model's)`);
       const cols = (await all(db, `PRAGMA table_info(${spec.table})`)).map((c) => c.name);
       const want = tableColumns(spec);
-      check(JSON.stringify(cols) === JSON.stringify(want), `${spec.table}: columns match the mapping (${cols.length})`);
+      // Same set of columns; a column added later by ALTER TABLE sits at the end of the table, and every write names
+      // its columns, so the order does not matter.
+      check(JSON.stringify([...cols].sort()) === JSON.stringify([...want].sort()), `${spec.table}: columns match the mapping (${cols.length})`);
       check(want.length <= 100, `${spec.table}: ${want.length} columns ≤ 100 (one row per statement ≤ 100 params)`);
       // Every schema path is a column, a flattened sub-column, a child table or a JSON column: none goes to extra.
       const paths = new Set(Object.keys(model.schema.paths).map((p: string) => p.split(".")[0]));

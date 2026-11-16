@@ -9,40 +9,172 @@ import { Button } from "@/components/ui/button";
  * is read; then a still photo of that moment (the sticker with the barcode) is handed back with the code, so the
  * scan itself is the serial-number photo.
  *
- * Uses ZXing (works in every browser, unlike the built-in BarcodeDetector). The library is loaded only when the
- * scanner is opened.
+ * Uses the browser's own BarcodeDetector where it exists (fast, Chrome on Android), else ZXing (works in every
+ * browser). The ZXing library is loaded only when it is needed.
  */
+/** Formats asked of the browser's own reader (named as BarcodeDetector names them). */
+const NATIVE_FORMATS = ["code_128", "code_39", "code_93", "ean_13", "ean_8", "upc_a", "upc_e", "itf", "codabar", "qr_code", "data_matrix"];
+/** How often a camera frame is checked: native reader / ZXing. */
+const NATIVE_INTERVAL_MS = 60;
+const ZXING_DELAY_MS = 40;
+/** No barcode read for this long → "barcode is not clear" message. */
+const UNCLEAR_AFTER_MS = 4000;
+
 export function BarcodeScanner({
   open,
   onClose,
   onScan,
   title = "Scan the serial number barcode",
+  accept,
 }: {
   open: boolean;
   onClose: () => void;
   /** `code` is the text of the barcode; `photo` is a JPEG of the camera view when it was read. */
   onScan: (code: string, photo: File) => void;
   title?: string;
+  /**
+   * Optional check of each code read: `true` takes it; a message string skips it, shows the message and keeps
+   * scanning (e.g. the box's company barcode when the serial number is wanted). When several barcodes are in view,
+   * the first one accepted is taken.
+   */
+  accept?: (code: string) => true | string;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState("");
   const [ready, setReady] = useState(false);
+  const [unclear, setUnclear] = useState(false);
+  const [skipped, setSkipped] = useState("");
   // The latest callbacks, so the camera is not restarted when the parent re-renders.
   const onScanRef = useRef(onScan);
   const onCloseRef = useRef(onClose);
   onScanRef.current = onScan;
   onCloseRef.current = onClose;
+  const acceptRef = useRef(accept);
+  acceptRef.current = accept;
 
   useEffect(() => {
     if (!open) return;
     let stopped = false;
     let controls: { stop: () => void } | null = null;
+    let unclearTimer: ReturnType<typeof setTimeout> | null = null;
     setError("");
     setReady(false);
+    setUnclear(false);
+    setSkipped("");
+
+    // Called once with the first code read: takes the still photo, stops the camera and hands both back.
+    const finish = (rawCode: string) => {
+      const v = videoRef.current;
+      if (stopped || !v || !v.videoWidth) return;
+      const code = String(rawCode || "").trim();
+      if (!code) return;
+      const verdict = acceptRef.current ? acceptRef.current(code) : true;
+      if (verdict !== true) {
+        setSkipped(verdict);
+        return;
+      }
+      stopped = true;
+      if (unclearTimer) clearTimeout(unclearTimer);
+      const canvas = document.createElement("canvas");
+      const scale = Math.min(1, 1280 / v.videoWidth);
+      canvas.width = Math.round(v.videoWidth * scale);
+      canvas.height = Math.round(v.videoHeight * scale);
+      canvas.getContext("2d")?.drawImage(v, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob(
+        (blob) => {
+          controls?.stop();
+          if (!blob) {
+            onCloseRef.current();
+            return;
+          }
+          // Named like the in-app camera's photos, which is what the server accepts from delivery staff.
+          onScanRef.current(code, new File([blob], `photo-${Date.now()}.jpg`, { type: "image/jpeg" }));
+          onCloseRef.current();
+        },
+        "image/jpeg",
+        0.85
+      );
+    };
+
+    // Nothing read after a few seconds: tell the user the barcode is not clear, so they move closer / steady it
+    // instead of waiting.
+    const startUnclearTimer = () => {
+      unclearTimer = setTimeout(() => {
+        if (!stopped) setUnclear(true);
+      }, UNCLEAR_AFTER_MS);
+    };
+
+    const constraints: MediaStreamConstraints = {
+      video: {
+        facingMode: { ideal: "environment" },
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+        // Continuous autofocus where the camera supports it; ignored elsewhere.
+        advanced: [{ focusMode: "continuous" } as any],
+      },
+      audio: false,
+    };
 
     (async () => {
       try {
         if (!navigator.mediaDevices?.getUserMedia) throw new Error("This browser cannot open the camera.");
+
+        // 1. The browser's own barcode reader (Chrome on Android) — much faster than decoding in JavaScript.
+        const Native: any = (window as any).BarcodeDetector;
+        if (Native) {
+          try {
+            const supported: string[] = await Native.getSupportedFormats();
+            const formats = NATIVE_FORMATS.filter((f) => supported.includes(f));
+            if (formats.length > 0) {
+              const detector = new Native({ formats });
+              const stream = await navigator.mediaDevices.getUserMedia(constraints);
+              const v = videoRef.current;
+              if (stopped || !v) {
+                stream.getTracks().forEach((t) => t.stop());
+                return;
+              }
+              v.srcObject = stream;
+              await v.play();
+              controls = {
+                stop: () => {
+                  stream.getTracks().forEach((t) => t.stop());
+                  if (videoRef.current) videoRef.current.srcObject = null;
+                },
+              };
+              if (stopped) {
+                controls.stop();
+                return;
+              }
+              setReady(true);
+              startUnclearTimer();
+              const tick = async () => {
+                if (stopped) return;
+                try {
+                  if (v.readyState >= 2) {
+                    const found: any[] = (await detector.detect(v)) || [];
+                    // Several barcodes on the sticker: take the first one accepted, else report the first skipped.
+                    for (const f of found) {
+                      if (f?.rawValue) finish(f.rawValue);
+                      if (stopped) return;
+                    }
+                  }
+                } catch {
+                  /* a frame that could not be read — try the next one */
+                }
+                setTimeout(tick, NATIVE_INTERVAL_MS);
+              };
+              tick();
+              return;
+            }
+          } catch {
+            /* fall through to ZXing */
+            controls?.stop();
+            controls = null;
+            if (stopped) return;
+          }
+        }
+
+        // 2. ZXing (every other browser).
         const [{ BrowserMultiFormatReader }, { BarcodeFormat, DecodeHintType }] = await Promise.all([
           import("@zxing/browser"),
           import("@zxing/library"),
@@ -62,39 +194,15 @@ export function BarcodeScanner({
           BarcodeFormat.DATA_MATRIX,
         ]);
         hints.set(DecodeHintType.TRY_HARDER, true);
-        const reader = new BrowserMultiFormatReader(hints, { delayBetweenScanAttempts: 120 });
-        controls = await reader.decodeFromConstraints(
-          { video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 } }, audio: false },
-          videoRef.current,
-          (result) => {
-            if (!result || stopped) return;
-            const v = videoRef.current;
-            if (!v || !v.videoWidth) return;
-            stopped = true;
-            const code = String(result.getText() || "").trim();
-            const canvas = document.createElement("canvas");
-            const scale = Math.min(1, 1280 / v.videoWidth);
-            canvas.width = Math.round(v.videoWidth * scale);
-            canvas.height = Math.round(v.videoHeight * scale);
-            canvas.getContext("2d")?.drawImage(v, 0, 0, canvas.width, canvas.height);
-            canvas.toBlob(
-              (blob) => {
-                controls?.stop();
-                if (!blob || !code) {
-                  onCloseRef.current();
-                  return;
-                }
-                // Named like the in-app camera's photos, which is what the server accepts from delivery staff.
-                onScanRef.current(code, new File([blob], `photo-${Date.now()}.jpg`, { type: "image/jpeg" }));
-                onCloseRef.current();
-              },
-              "image/jpeg",
-              0.85
-            );
-          }
-        );
+        const reader = new BrowserMultiFormatReader(hints, { delayBetweenScanAttempts: ZXING_DELAY_MS });
+        controls = await reader.decodeFromConstraints(constraints, videoRef.current, (result) => {
+          if (result) finish(result.getText());
+        });
         if (stopped) controls.stop();
-        else setReady(true);
+        else {
+          setReady(true);
+          startUnclearTimer();
+        }
       } catch (e: any) {
         setError(e?.name === "NotAllowedError" ? "Camera permission is blocked. Allow the camera for this site and try again." : e?.message || "Could not open the camera.");
       }
@@ -102,6 +210,7 @@ export function BarcodeScanner({
 
     return () => {
       stopped = true;
+      if (unclearTimer) clearTimeout(unclearTimer);
       controls?.stop();
     };
   }, [open]);
@@ -121,6 +230,14 @@ export function BarcodeScanner({
             <div className="pointer-events-none absolute inset-x-6 top-1/2 h-0.5 -translate-y-1/2 bg-rose-500/80" />
             {!ready && <p className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-white">Opening the camera...</p>}
           </div>
+        )}
+        {!error && skipped && (
+          <p className="rounded-lg border border-rose-200 bg-rose-50 p-2.5 text-xs font-semibold text-rose-800">{skipped}</p>
+        )}
+        {!error && unclear && !skipped && (
+          <p className="rounded-lg border border-amber-300 bg-amber-50 p-2.5 text-xs font-semibold text-amber-900">
+            Barcode is not clear. Hold the phone steady, bring it a little closer, and make sure there is light and no glare on the sticker.
+          </p>
         )}
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>

@@ -174,6 +174,9 @@ const TASK_COLUMNS: Column[] = [
   f("completedAt", "date"),
   f("completionRemarks"),
   f("notes"),
+  f("countFrom"),
+  f("recountedAt", "date"),
+  f("recountedBy"),
 ];
 
 const SALARY_COLUMNS: Column[] = [

@@ -105,6 +105,18 @@ export function StoreExitDialog({
     toast.success(check.matched ? "✓ Serial number matches this product." : "Serial scanned (this product has no serial number on the bill to match it with).");
   };
 
+  // A product box also carries the company's EAN / UPC barcode (only digits, 8 or 12-14 long, e.g. 8905191040045),
+  // which the camera often reads before the serial number barcode. When the line has a serial number, such a code
+  // that is not that serial is skipped and the scanner keeps looking for the serial barcode.
+  const acceptScan = (code: string): true | string => {
+    if (!active) return true;
+    const check = checkSerialOnBill(code, [{ serialNumber: active.serialNumber }]);
+    if (check.billHasSerials && !check.matched && /^(\d{8}|\d{12,14})$/.test(code.trim())) {
+      return `${code} is the company barcode of the box, not the serial number. Point the camera at the serial number (S/N) barcode on the sticker.`;
+    }
+    return true;
+  };
+
   const saveLine = async (all: File[]) => {
     if (!bill || !active || !scan) return;
     setSaving(true);
@@ -326,7 +338,7 @@ export function StoreExitDialog({
           </div>
         )}
 
-        <BarcodeScanner open={scannerOpen} onClose={() => setScannerOpen(false)} onScan={onScanned} />
+        <BarcodeScanner open={scannerOpen} onClose={() => setScannerOpen(false)} onScan={onScanned} accept={acceptScan} />
         <CameraCapture open={cameraOpen} onClose={() => setCameraOpen(false)} onCapture={onPhoto} title={cameraTitle} />
       </DialogContent>
     </Dialog>

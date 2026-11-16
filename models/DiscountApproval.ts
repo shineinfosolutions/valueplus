@@ -12,6 +12,11 @@ export interface IDiscountApproval extends Document {
   /** The product's selling price (the base the discount is measured from) and the price offered, per piece. */
   sellingPrice: number;
   price: number;
+  /** The product's VSP and purchase price when the request was made (shown to the approver). */
+  vsp?: number;
+  purchasePrice?: number;
+  /** Set when the approver approved a different price: the price first asked for (`price` is then the approved one). */
+  requestedPrice?: number;
   quantity: number;
   percent: number;
   /** Who has to approve: the Cashier (above 5%, below 10%), the Store Manager (10–12%) or the Admin (above 12%). */
@@ -34,6 +39,9 @@ const DiscountApprovalSchema = new Schema<IDiscountApproval>(
     brand: { type: String, default: "" },
     sellingPrice: { type: Number, required: true },
     price: { type: Number, required: true },
+    vsp: { type: Number },
+    purchasePrice: { type: Number },
+    requestedPrice: { type: Number },
     quantity: { type: Number, default: 1 },
     percent: { type: Number, required: true },
     tier: { type: String, enum: ["cashier", "manager", "admin"], required: true, index: true },

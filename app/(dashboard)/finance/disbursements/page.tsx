@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageShell } from "@/components/shared/page-shell";
 import { Input } from "@/components/ui/input";
@@ -129,6 +129,28 @@ export default function BankDisbursementsStandalonePage() {
     }
   });
 
+  // The UTR reminder's "Fill now" opens /finance/disbursements?doId=<DO>. That DO
+  // can be from an earlier month than the default "This Month" view, so it is
+  // searched for directly (date range ignored) and its UTR dialog opened.
+  const [focusDoId, setFocusDoId] = useState("");
+  const focusOpened = useRef(false);
+  useEffect(() => {
+    const doId = new URLSearchParams(window.location.search).get("doId") || "";
+    if (doId) {
+      setFocusDoId(doId);
+      setSearchTerm(doId);
+    }
+  }, []);
+  useEffect(() => {
+    if (!focusDoId || focusOpened.current || financeRecords.length === 0) return;
+    const rec = financeRecords.find((r: any) => r.doId === focusDoId);
+    if (rec) {
+      focusOpened.current = true;
+      handleOpenPayoutModal(rec);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusDoId, financeRecords]);
+
   const handleOpenPayoutModal = (rec: any) => {
     const defaultAmount = Number(rec.netDisbursement || (rec.grossLoanAmount || rec.productPrice || 0) - (rec.customerDownPayment || 0) - (rec.dealerInterestSubsidy || 0));
     
@@ -229,7 +251,8 @@ export default function BankDisbursementsStandalonePage() {
       matchesStatus = rec.approvalStatus !== "Disbursed";
     }
 
-    const matchesDate = isDateInRange(rec.date || rec.createdAt, startDate, endDate);
+    const matchesDate =
+      (focusDoId !== "" && rec.doId === focusDoId) || isDateInRange(rec.date || rec.createdAt, startDate, endDate);
 
     return matchesSearch && matchesBank && matchesStatus && matchesDate;
   });
@@ -391,9 +414,9 @@ export default function BankDisbursementsStandalonePage() {
                   <th className="py-3 px-3">DO ID</th>
                   <th className="py-3 px-3">Finance Bank</th>
                   <th className="py-3 px-3">Customer Name</th>
-                  <th className="py-3 px-3 text-right">Gross Loan (₹)</th>
-                  <th className="py-3 px-3 text-right">Dealer Subsidy (₹)</th>
-                  <th className="py-3 px-3 text-right font-black">Net Expected (₹)</th>
+                  <th className="py-3 px-3 text-right">Loan (₹)</th>
+                  <th className="py-3 px-3 text-right">Down Payment (₹)</th>
+                  <th className="py-3 px-3 text-right font-black">Total Amount (₹)</th>
                   <th className="py-3 px-3 text-center">Payout Status & Bank UTR</th>
                   <th className="py-3 px-3 text-right">Action</th>
                 </tr>
@@ -410,7 +433,6 @@ export default function BankDisbursementsStandalonePage() {
                 ) : (
                   filtered.map((rec: any, idx: number) => {
                     const isDisbursed = rec.approvalStatus === "Disbursed";
-                    const netAmt = Number(rec.netDisbursement || (rec.grossLoanAmount || rec.productPrice || 0) - (rec.customerDownPayment || 0) - (rec.dealerInterestSubsidy || 0));
 
                     return (
                       <tr key={idx} className={isDisbursed ? "bg-emerald-50/20 hover:bg-emerald-50/40" : "hover:bg-slate-50"}>
@@ -426,13 +448,13 @@ export default function BankDisbursementsStandalonePage() {
                           <span className="text-[10px] text-slate-500">{rec.model || rec.brand}</span>
                         </td>
                         <td className="py-3 px-3 text-right font-mono font-bold text-slate-900">
-                          ₹{Number(rec.grossLoanAmount || rec.productPrice || 0).toLocaleString("en-IN")}
+                          ₹{Number(rec.grossLoanAmount || rec.netLoanAmount || 0).toLocaleString("en-IN")}
                         </td>
                         <td className="py-3 px-3 text-right font-mono text-slate-600">
-                          ₹{Number(rec.dealerInterestSubsidy || 0).toLocaleString("en-IN")}
+                          ₹{Number(rec.customerDownPayment || 0).toLocaleString("en-IN")}
                         </td>
                         <td className="py-3 px-3 text-right font-mono font-black text-emerald-800 text-sm">
-                          ₹{netAmt.toLocaleString("en-IN")}
+                          ₹{Number(rec.productPrice || 0).toLocaleString("en-IN")}
                         </td>
                         <td className="py-3 px-3 text-center">
                           {isDisbursed ? (

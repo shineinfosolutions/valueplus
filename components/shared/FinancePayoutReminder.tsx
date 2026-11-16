@@ -57,7 +57,7 @@ export function FinancePayoutReminder() {
         {
           id: "finance-payout-reminder",
           duration: 10000,
-          action: { label: "Fill now", onClick: () => router.push("/finance/disbursements") },
+          action: { label: "Fill now", onClick: () => router.push(`/finance/disbursements?doId=${encodeURIComponent(first.doId)}`) },
         }
       );
     };

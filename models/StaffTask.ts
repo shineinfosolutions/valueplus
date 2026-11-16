@@ -22,6 +22,10 @@ export interface IStaffTask extends Document {
   currentQty: number; // e.g. 1
   currentAmount: number; // e.g. 25000
   linkedInvoiceNumber?: string; // e.g. "INV-2026-0042"
+  /** "Recount from date": the first bill date counted (set by the recount; live counting is unchanged). */
+  countFrom?: string; // e.g. "2026-11-01"
+  recountedAt?: Date;
+  recountedBy?: string;
 
   createdBy: string;
   /** Same task given to several people at once: every copy carries the same id. */
@@ -77,6 +81,9 @@ const StaffTaskSchema = new Schema<IStaffTask>(
     targetBrand: { type: String, default: "" },
     targetQty: { type: Number, default: 0 },
     targetAmount: { type: Number, default: 0 },
+    countFrom: { type: String },
+    recountedAt: { type: Date },
+    recountedBy: { type: String },
     currentQty: { type: Number, default: 0 },
     currentAmount: { type: Number, default: 0 },
     linkedInvoiceNumber: { type: String, default: "" },
