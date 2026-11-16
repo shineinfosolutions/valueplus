@@ -827,3 +827,4 @@
 - **2026-11-16** — Salesman calculator: amount hidden above own discount limit until approved; % chip sends the approval in one tap (§41).
 - **2026-11-16** — Discount approval popup shows VSP / selling / purchase price and can approve a different price; salesman sees the approved price (§41).
 - **2026-11-16** — Sales Target names match ignoring spaces / dashes, short names whole-word; Recount from date button (§41).
+- **2026-11-16** — Deployed to production during shop hours at the owner's request (version b6160564, 16:18 IST), after D1 migration 0012 on remote. Smoke test: /login 200, /dashboard 307, /api/items 401, /api/staff/tasks/recount 401, /realtime 426. Still to do by Admin/Manager: Recount the 4 "November 2026" targets from 2026-11-01; fill the UTR for SVAK2026RI00012 (DO B443597074).
